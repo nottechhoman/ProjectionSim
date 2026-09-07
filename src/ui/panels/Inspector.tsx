@@ -26,6 +26,7 @@ export function Inspector() {
   const dockRightPanel = useAppStore((s) => s.dockRightPanel);
   const updateProjector = useAppStore((s) => s.updateProjector);
   const updateProjectorOptics = useAppStore((s) => s.updateProjectorOptics);
+  const pushSceneHistoryCheckpoint = useAppStore((s) => s.pushSceneHistoryCheckpoint);
   const removeProjector = useAppStore((s) => s.removeProjector);
   const removeSceneObject = useAppStore((s) => s.removeSceneObject);
   const updateSceneObjectTransform = useAppStore((s) => s.updateSceneObjectTransform);
@@ -69,6 +70,7 @@ export function Inspector() {
   const euler = quaternionToEulerYXZ(transform.quaternion);
 
   const setPosition = (axis: 'x' | 'y' | 'z', displayValue: number) => {
+    pushSceneHistoryCheckpoint();
     const meters = fromDisplayUnit(displayValue, displayUnit);
     const position = { ...transform.position, [axis]: meters };
     if (projector) {
@@ -79,12 +81,19 @@ export function Inspector() {
   };
 
   const setRotation = (yaw: number, pitch: number, roll: number) => {
+    pushSceneHistoryCheckpoint();
     const quaternion = eulerYXZToQuaternion(yaw, pitch, roll);
     if (projector) {
       updateProjector(projector.id, { transform: { ...transform, quaternion } });
     } else if (sceneObject) {
       updateSceneObjectTransform(sceneObject.id, { quaternion });
     }
+  };
+
+  const patchProjector = (patch: Parameters<typeof updateProjector>[1]) => {
+    if (!projector) return;
+    pushSceneHistoryCheckpoint();
+    updateProjector(projector.id, patch);
   };
 
   return (
@@ -174,7 +183,7 @@ export function Inspector() {
               <input
                 type="checkbox"
                 checked={projector.enabled}
-                onChange={(e) => updateProjector(projector.id, { enabled: e.target.checked })}
+                onChange={(e) => patchProjector({ enabled: e.target.checked })}
               />
               Enabled
             </label>
@@ -182,7 +191,7 @@ export function Inspector() {
               label="Brightness"
               value={projector.brightness}
               step={0.05}
-              onChange={(v) => updateProjector(projector.id, { brightness: Math.max(0, v) })}
+              onChange={(v) => patchProjector({ brightness: Math.max(0, v) })}
             />
             <p className={styles.hint}>
               Use toolbar Composite → Solo, then select each projector here to preview its image on surfaces.
@@ -200,7 +209,7 @@ export function Inspector() {
               value={projector.blendEdges.left}
               step={0.01}
               onChange={(v) =>
-                updateProjector(projector.id, {
+                patchProjector({
                   blendEdges: { ...projector.blendEdges, left: Math.min(0.5, Math.max(0, v)) },
                 })
               }
@@ -210,7 +219,7 @@ export function Inspector() {
               value={projector.blendEdges.right}
               step={0.01}
               onChange={(v) =>
-                updateProjector(projector.id, {
+                patchProjector({
                   blendEdges: { ...projector.blendEdges, right: Math.min(0.5, Math.max(0, v)) },
                 })
               }
@@ -220,7 +229,7 @@ export function Inspector() {
               value={projector.blendEdges.top}
               step={0.01}
               onChange={(v) =>
-                updateProjector(projector.id, {
+                patchProjector({
                   blendEdges: { ...projector.blendEdges, top: Math.min(0.5, Math.max(0, v)) },
                 })
               }
@@ -230,7 +239,7 @@ export function Inspector() {
               value={projector.blendEdges.bottom}
               step={0.01}
               onChange={(v) =>
-                updateProjector(projector.id, {
+                patchProjector({
                   blendEdges: { ...projector.blendEdges, bottom: Math.min(0.5, Math.max(0, v)) },
                 })
               }
@@ -239,7 +248,7 @@ export function Inspector() {
               <input
                 type="checkbox"
                 checked={projector.outerEdgeFade}
-                onChange={(e) => updateProjector(projector.id, { outerEdgeFade: e.target.checked })}
+                onChange={(e) => patchProjector({ outerEdgeFade: e.target.checked })}
               />
               Outer edge fade
             </label>
@@ -349,7 +358,7 @@ export function Inspector() {
               <select
                 value={projector.testPattern}
                 onChange={(e) =>
-                  updateProjector(projector.id, { testPattern: e.target.value as TestPattern })
+                  patchProjector({ testPattern: e.target.value as TestPattern })
                 }
               >
                 {PATTERNS.map((p) => (

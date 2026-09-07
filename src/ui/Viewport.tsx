@@ -39,6 +39,12 @@ export function Viewport() {
           state.updateSceneObjectTransform(id, patch);
         }
       },
+      onMeasurePoint: (point) => {
+        useAppStore.getState().addMeasurePoint(point);
+      },
+      onHistoryCheckpoint: () => {
+        useAppStore.getState().pushSceneHistoryCheckpoint();
+      },
     });
 
     let lastSync = '';
@@ -53,8 +59,16 @@ export function Viewport() {
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-      if (e.key === 'w' || e.key === 'W') useAppStore.getState().setTransformMode('translate');
-      if (e.key === 'e' || e.key === 'E') useAppStore.getState().setTransformMode('rotate');
+      const store = useAppStore.getState();
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) store.redo();
+        else store.undo();
+        return;
+      }
+      if (e.key === 'w' || e.key === 'W') store.setTransformMode('translate');
+      if (e.key === 'e' || e.key === 'E') store.setTransformMode('rotate');
+      if (e.key === 'm' || e.key === 'M') store.setMeasureMode(!store.measureMode);
     };
     window.addEventListener('keydown', onKeyDown);
 
@@ -79,5 +93,7 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     transformMode: state.transformMode,
     materialPreviewMode: state.materialPreviewMode,
     projectionCompositeMode: state.projectionCompositeMode,
+    measureMode: state.measureMode,
+    measurePoints: state.measurePoints,
   };
 }

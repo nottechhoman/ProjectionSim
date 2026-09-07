@@ -20,6 +20,7 @@ import type {
   SceneObject,
   Transform,
   TransformMode,
+  Vec3,
   ViewPreset,
 } from '../types';
 import { validateOptics } from '../optics/validate';
@@ -35,10 +36,23 @@ import {
   type PersistedStateSlice,
 } from './persistenceHelpers';
 import { clampPanelWidth, clampFloatPosition, FLOATING_PANEL_HEIGHT } from '../ui/panelLayout';
+import {
+  appendHistory,
+  captureSceneHistory,
+  type SceneHistorySnapshot,
+} from './history';
+import {
+  buildCalculationCsv,
+  buildCalculationHtml,
+  downloadTextFile,
+} from '../persistence/reportExport';
 
 interface AppState extends PersistedStateSlice {
   projectMessage: string | null;
   measureMode: boolean;
+  measurePoints: [Vec3 | null, Vec3 | null];
+  historyPast: SceneHistorySnapshot[];
+  historyFuture: SceneHistorySnapshot[];
   frameTimeMs: number;
   webgl2Available: boolean | null;
   calculationResults: CalculationResults;
@@ -48,6 +62,7 @@ interface AppState extends PersistedStateSlice {
   setSelectedProjector: (id: string) => void;
   updateProjector: (id: string, patch: Partial<ProjectorConfig>) => void;
   updateProjectorOptics: (id: string, patch: Partial<ProjectorConfig['optics']>) => void;
+  pushSceneHistoryCheckpoint: () => void;
   updateSceneObjectTransform: (
     id: string,
     patch: { position?: SceneObject['transform']['position']; quaternion?: SceneObject['transform']['quaternion'] },
@@ -64,6 +79,12 @@ interface AppState extends PersistedStateSlice {
   addProjector: () => void;
   removeProjector: (id: string) => void;
   setMeasureMode: (enabled: boolean) => void;
+  addMeasurePoint: (point: Vec3) => void;
+  clearMeasurePoints: () => void;
+  undo: () => void;
+  redo: () => void;
+  exportCalculationCsv: () => void;
+  exportCalculationHtml: () => void;
   setFrameTimeMs: (ms: number) => void;
   setWebgl2Available: (available: boolean) => void;
   setShaderWarning: (warning: string | null) => void;
@@ -118,6 +139,31 @@ function findProjectionScreen(sceneObjects: SceneObject[]): SceneObject | undefi
   );
 }
 
+function pushSceneHistory(get: () => AppState, set: (partial: Partial<AppState>) => void): void {
+  const state = get();
+  set({ historyPast: appendHistory(state.historyPast, captureSceneHistory(state)) });
+}
+
+function restoreSceneHistory(
+  snapshot: SceneHistorySnapshot,
+  set: (partial: Partial<AppState>) => void,
+): void {
+  set({
+    sceneObjects: snapshot.sceneObjects,
+    projectors: snapshot.projectors,
+    mediaAssets: snapshot.mediaAssets,
+  });
+}
+
+function buildReportContext(state: AppState) {
+  return {
+    projectName: state.projectName,
+    displayUnit: state.displayUnit,
+    projectors: state.projectors,
+    calculationResults: state.calculationResults,
+  };
+}
+
 function pickPersistedFields(state: AppState): PersistedStateSlice {
   return {
     projectName: state.projectName,
@@ -158,6 +204,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   displayUnit: initial.displayUnit,
   viewPreset: initial.viewPreset,
   measureMode: false,
+  measurePoints: [null, null],
+  historyPast: [],
+  historyFuture: [],
   frameTimeMs: 0,
   webgl2Available: null,
   calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
@@ -191,6 +240,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ calculationResults: { ...state.calculationResults, opticsError: v.error ?? 'Invalid optics' } });
       return;
     }
+    pushSceneHistory(get, set);
     set((s) => ({
       projectors: s.projectors.map((p) => (p.id === id ? { ...p, optics: next } : p)),
       calculationResults: { ...s.calculationResults, opticsError: null },
@@ -213,6 +263,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCalculations();
   },
   updateSceneObjectFlags: (id, patch) => {
+    pushSceneHistory(get, set);
     set((s) => ({
       sceneObjects: s.sceneObjects.map((obj) => (obj.id === id ? { ...obj, ...patch } : obj)),
     }));
@@ -228,6 +279,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (!target) return;
     if (!window.confirm(`Delete "${target.name}"?`)) return;
 
+    pushSceneHistory(get, set);
     const next = state.sceneObjects.filter((o) => o.id !== id);
     let selectedObjectId = state.selectedObjectId;
     if (selectedObjectId === id) {
@@ -241,6 +293,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     get().recomputeCalculations();
   },
+  pushSceneHistoryCheckpoint: () => pushSceneHistory(get, set),
   setDisplayUnit: (u) => set({ displayUnit: u }),
   setViewPreset: (preset) => set({ viewPreset: preset }),
   setMaterialPreviewMode: (mode) => set({ materialPreviewMode: mode }),
@@ -251,6 +304,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ projectMessage: `Maximum ${MAX_PROJECTORS} projectors` });
       return;
     }
+    pushSceneHistory(get, set);
     const index = state.projectors.length;
     const id = `proj-${Date.now()}`;
     const offsetX = index * 1.6;
@@ -297,6 +351,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const target = state.projectors.find((p) => p.id === id);
     if (!target) return;
     if (!window.confirm(`Delete "${target.name}"?`)) return;
+    pushSceneHistory(get, set);
     const next = state.projectors.filter((p) => p.id !== id);
     const selectedProjectorId =
       state.selectedProjectorId === id ? next[0].id : state.selectedProjectorId;
@@ -310,7 +365,59 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
     get().recomputeCalculations();
   },
-  setMeasureMode: (enabled) => set({ measureMode: enabled }),
+  setMeasureMode: (enabled) =>
+    set({
+      measureMode: enabled,
+      measurePoints: enabled ? get().measurePoints : [null, null],
+    }),
+  addMeasurePoint: (point) =>
+    set((s) => {
+      const [a, b] = s.measurePoints;
+      if (a && b) return { measurePoints: [point, null] as [Vec3 | null, Vec3 | null] };
+      if (!a) return { measurePoints: [point, null] as [Vec3 | null, Vec3 | null] };
+      return { measurePoints: [a, point] as [Vec3 | null, Vec3 | null] };
+    }),
+  clearMeasurePoints: () => set({ measurePoints: [null, null] }),
+  undo: () => {
+    const state = get();
+    if (state.historyPast.length === 0) return;
+    const previous = state.historyPast[state.historyPast.length - 1];
+    const current = captureSceneHistory(state);
+    restoreSceneHistory(previous, set);
+    set({
+      historyPast: state.historyPast.slice(0, -1),
+      historyFuture: [current, ...state.historyFuture],
+      projectMessage: 'Undo',
+    });
+    get().recomputeCalculations();
+  },
+  redo: () => {
+    const state = get();
+    if (state.historyFuture.length === 0) return;
+    const [next, ...rest] = state.historyFuture;
+    const current = captureSceneHistory(state);
+    restoreSceneHistory(next, set);
+    set({
+      historyPast: appendHistory(state.historyPast, current),
+      historyFuture: rest,
+      projectMessage: 'Redo',
+    });
+    get().recomputeCalculations();
+  },
+  exportCalculationCsv: () => {
+    const state = get();
+    const csv = buildCalculationCsv(buildReportContext(state));
+    const filename = `${state.projectName.replace(/\s+/g, '-').toLowerCase() || 'projectionlab'}-report.csv`;
+    downloadTextFile(csv, filename, 'text/csv');
+    set({ projectMessage: 'Exported CSV report' });
+  },
+  exportCalculationHtml: () => {
+    const state = get();
+    const html = buildCalculationHtml(buildReportContext(state));
+    const filename = `${state.projectName.replace(/\s+/g, '-').toLowerCase() || 'projectionlab'}-report.html`;
+    downloadTextFile(html, filename, 'text/html');
+    set({ projectMessage: 'Exported HTML report' });
+  },
   setFrameTimeMs: (ms) => set({ frameTimeMs: ms }),
   setWebgl2Available: (available) => set({ webgl2Available: available }),
   setShaderWarning: (warning) => set({ shaderWarning: warning }),
@@ -395,6 +502,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ calculationResults: { nominal, footprint, opticsError: null, overlap } });
   },
   addBox: () => {
+    pushSceneHistory(get, set);
     const id = `box-${Date.now()}`;
     set((s) => ({
       sceneObjects: [
@@ -417,6 +525,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCalculations();
   },
   addCurvedScreen: () => {
+    pushSceneHistory(get, set);
     const id = `curved-${Date.now()}`;
     set((s) => ({
       sceneObjects: [
@@ -448,6 +557,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const record = await importMediaBlob(file, file.name, kind, file.type || 'application/octet-stream');
+      pushSceneHistory(get, set);
       set((s) => ({ mediaAssets: [...s.mediaAssets, record] }));
 
       if (kind === 'model') {
@@ -486,6 +596,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   setProjectorMedia: (projectorId, source, assetId, fit) => {
+    pushSceneHistory(get, set);
     set((s) => ({
       projectors: s.projectors.map((p) =>
         p.id === projectorId
@@ -521,6 +632,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       projectMessage: 'New project created',
       calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
       videoPlaying: false,
+      measureMode: false,
+      measurePoints: [null, null],
+      historyPast: [],
+      historyFuture: [],
     });
     clearAutosave();
     get().recomputeCalculations();
@@ -544,6 +659,10 @@ export const useAppStore = create<AppState>((set, get) => ({
             : `Loaded "${snapshot.name}"`,
         calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
         videoPlaying: false,
+        measureMode: false,
+        measurePoints: [null, null],
+        historyPast: [],
+        historyFuture: [],
       });
       writeAutosave(snapshot);
       get().recomputeCalculations();

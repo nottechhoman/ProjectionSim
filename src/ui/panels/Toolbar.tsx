@@ -34,6 +34,14 @@ export function Toolbar() {
   const newProject = useAppStore((s) => s.newProject);
   const saveProjectToFile = useAppStore((s) => s.saveProjectToFile);
   const loadProjectFromFile = useAppStore((s) => s.loadProjectFromFile);
+  const measureMode = useAppStore((s) => s.measureMode);
+  const setMeasureMode = useAppStore((s) => s.setMeasureMode);
+  const historyPast = useAppStore((s) => s.historyPast);
+  const historyFuture = useAppStore((s) => s.historyFuture);
+  const undo = useAppStore((s) => s.undo);
+  const redo = useAppStore((s) => s.redo);
+  const exportCalculationCsv = useAppStore((s) => s.exportCalculationCsv);
+  const exportCalculationHtml = useAppStore((s) => s.exportCalculationHtml);
 
   const handleOpenFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -193,9 +201,36 @@ export function Toolbar() {
 
       <div className={styles.separator} />
 
-      <button type="button" disabled className={styles.disabled}>
-        Measure (M4)
+      <button
+        type="button"
+        className={measureMode ? styles.active : undefined}
+        onClick={() => setMeasureMode(!measureMode)}
+        title="Measure distance (M)"
+      >
+        Measure
       </button>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <button type="button" onClick={undo} disabled={historyPast.length === 0} title="Undo (Ctrl+Z)">
+          Undo
+        </button>
+        <button type="button" onClick={redo} disabled={historyFuture.length === 0} title="Redo (Ctrl+Shift+Z)">
+          Redo
+        </button>
+      </div>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <button type="button" onClick={exportCalculationCsv} title="Download CSV calculation report">
+          CSV
+        </button>
+        <button type="button" onClick={exportCalculationHtml} title="Download printable HTML report">
+          HTML
+        </button>
+      </div>
 
       <div className={styles.separator} />
 

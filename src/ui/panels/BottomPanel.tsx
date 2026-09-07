@@ -1,4 +1,6 @@
 import { useAppStore } from '../../store';
+import { distance3 } from '../../utils/distance';
+import { formatLength } from '../../utils/units';
 import styles from './BottomPanel.module.css';
 
 export function BottomPanel() {
@@ -7,6 +9,10 @@ export function BottomPanel() {
   const shaderWarning = useAppStore((s) => s.shaderWarning);
   const projectMessage = useAppStore((s) => s.projectMessage);
   const projectName = useAppStore((s) => s.projectName);
+  const displayUnit = useAppStore((s) => s.displayUnit);
+  const measureMode = useAppStore((s) => s.measureMode);
+  const measurePoints = useAppStore((s) => s.measurePoints);
+  const clearMeasurePoints = useAppStore((s) => s.clearMeasurePoints);
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
   const clearProjectMessage = useAppStore((s) => s.clearProjectMessage);
   const videoPlaying = useAppStore((s) => s.videoPlaying);
@@ -31,6 +37,9 @@ export function BottomPanel() {
         ? styles.ok
         : styles.error;
 
+  const [a, b] = measurePoints;
+  const measureDistance = a && b ? distance3(a, b) : null;
+
   return (
     <div className={styles.panel}>
       <div className={styles.item}>
@@ -49,6 +58,23 @@ export function BottomPanel() {
         <button type="button" className={styles.videoBtn} onClick={toggleVideoPlayback}>
           {videoPlaying ? 'Pause' : 'Play'} video
         </button>
+      )}
+      {measureMode && (
+        <div className={styles.item}>
+          <span>Measure:</span>
+          <span>
+            {!a
+              ? 'click first point'
+              : !b
+                ? 'click second point'
+                : formatLength(measureDistance ?? 0, displayUnit)}
+          </span>
+          {(a || b) && (
+            <button type="button" className={styles.videoBtn} onClick={clearMeasurePoints}>
+              Clear
+            </button>
+          )}
+        </div>
       )}
       {projectMessage && (
         <div

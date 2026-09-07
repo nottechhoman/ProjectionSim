@@ -8,6 +8,7 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     passWithNoTests: false,
+    exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
   },
   assetsInclude: ['**/*.glsl'],
 });

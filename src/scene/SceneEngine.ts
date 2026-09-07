@@ -34,6 +34,8 @@ export interface SceneEngineCallbacks {
   onWebglStatus?: (available: boolean) => void;
   onSelect?: (id: string) => void;
   onTransformChange?: (id: string, patch: { position?: Transform['position']; quaternion?: Transform['quaternion'] }) => void;
+  onMeasurePoint?: (point: { x: number; y: number; z: number }) => void;
+  onHistoryCheckpoint?: () => void;
 }
 
 function dimensionsKey(obj: SceneObject): string {
@@ -123,6 +125,10 @@ export class SceneEngine {
   private gizmoRotateStartEuler: { yaw: number; pitch: number; roll: number } | null = null;
   private gizmoRotateStartQuat: THREE.Quaternion | null = null;
   private currentTransformMode: TransformMode = 'translate';
+  private measureMode = false;
+  private readonly measureGroup = new THREE.Group();
+  private measureLine: THREE.Line | null = null;
+  private readonly measureMarkers: THREE.Mesh[] = [];
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -161,7 +167,7 @@ export class SceneEngine {
 
     const grid = new THREE.GridHelper(20, 20, 0x555555, 0x333333);
     const axes = new THREE.AxesHelper(2);
-    this.helpersGroup.add(grid, axes);
+    this.helpersGroup.add(grid, axes, this.measureGroup);
 
     this.editorCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 500);
     this.editorCamera.position.set(8, 6, 12);
@@ -176,6 +182,10 @@ export class SceneEngine {
     this.transformControls.addEventListener('dragging-changed', (event) => {
       this.gizmoDragging = event.value as boolean;
       if (this.controls) this.controls.enabled = !this.gizmoDragging;
+
+      if (this.gizmoDragging) {
+        this.callbacks.onHistoryCheckpoint?.();
+      }
 
       if (this.gizmoDragging && this.transformControls?.mode === 'rotate') {
         const obj = this.transformControls.object;
@@ -279,11 +289,65 @@ export class SceneEngine {
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
     this.syncProjectors(state.projectors, state.selectedProjectorId, this.gizmoDragging);
-    this.syncSelectionGizmo(state.selectedObjectId, state.projectors);
+    if (state.measureMode) {
+      this.transformControls?.detach();
+    } else {
+      this.syncSelectionGizmo(state.selectedObjectId, state.projectors);
+    }
+    this.syncMeasureOverlay(state.measureMode, state.measurePoints);
+  }
+
+  private syncMeasureOverlay(
+    measureMode: boolean,
+    measurePoints: [{ x: number; y: number; z: number } | null, { x: number; y: number; z: number } | null],
+  ): void {
+    this.measureMode = measureMode;
+
+    if (this.measureLine) {
+      this.measureGroup.remove(this.measureLine);
+      this.measureLine.geometry.dispose();
+      (this.measureLine.material as THREE.Material).dispose();
+      this.measureLine = null;
+    }
+    for (const marker of this.measureMarkers) {
+      this.measureGroup.remove(marker);
+      marker.geometry.dispose();
+      (marker.material as THREE.Material).dispose();
+    }
+    this.measureMarkers.length = 0;
+
+    if (!measureMode) {
+      this.measureGroup.visible = false;
+      return;
+    }
+
+    this.measureGroup.visible = true;
+    const lineMat = new THREE.LineBasicMaterial({ color: 0xffeb3b });
+
+    for (const point of measurePoints) {
+      if (!point) continue;
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(0.06, 12, 12),
+        new THREE.MeshBasicMaterial({ color: 0xffeb3b }),
+      );
+      marker.position.set(point.x, point.y, point.z);
+      this.measureGroup.add(marker);
+      this.measureMarkers.push(marker);
+    }
+
+    const [a, b] = measurePoints;
+    if (a && b) {
+      const geometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(a.x, a.y, a.z),
+        new THREE.Vector3(b.x, b.y, b.z),
+      ]);
+      this.measureLine = new THREE.Line(geometry, lineMat);
+      this.measureGroup.add(this.measureLine);
+    }
   }
 
   private syncSelectionGizmo(selectedId: string | null, projectors: ProjectorConfig[]): void {
-    if (!this.transformControls) return;
+    if (this.measureMode || !this.transformControls) return;
 
     if (!selectedId) {
       this.transformControls.detach();
@@ -375,6 +439,25 @@ export class SceneEngine {
     this.transformControls.size = THREE.MathUtils.clamp(raw, 0.35, 2.5);
   }
 
+  private pickWorldPoint(): THREE.Vector3 | null {
+    if (!this.editorCamera) return null;
+
+    const pickables: THREE.Object3D[] = [];
+    for (const mesh of this.objectMeshes.values()) {
+      if (mesh.visible) pickables.push(mesh);
+    }
+    for (const visual of this.projectorVisuals.values()) {
+      if (visual.body.visible) pickables.push(visual.body);
+    }
+
+    const hits = this.raycaster.intersectObjects(pickables, true);
+    if (hits.length > 0) return hits[0].point.clone();
+
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const target = new THREE.Vector3();
+    return this.raycaster.ray.intersectPlane(plane, target) ? target : null;
+  }
+
   private onPointerDown = (event: PointerEvent): void => {
     if (!this.editorCamera || this.gizmoDragging || event.button !== 0) return;
 
@@ -383,6 +466,14 @@ export class SceneEngine {
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
 
     this.raycaster.setFromCamera(this.pointer, this.editorCamera);
+
+    if (this.measureMode) {
+      const point = this.pickWorldPoint();
+      if (point) {
+        this.callbacks.onMeasurePoint?.({ x: point.x, y: point.y, z: point.z });
+      }
+      return;
+    }
 
     const pickables: THREE.Object3D[] = [];
     for (const mesh of this.objectMeshes.values()) {
