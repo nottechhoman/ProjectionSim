@@ -295,7 +295,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             ...s.sceneObjects,
             {
               id,
-              name: file.name.replace(/\.(glb|gltf)$/i, ''),
+              name: file.name.replace(/\.(glb|gltf|obj)$/i, ''),
               type: 'model' as const,
               transform: {
                 position: { x: 0, y: 0, z: 0 },

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import type { Transform } from '../types';
 
 export interface ModelLoadResult {
@@ -8,20 +9,42 @@ export interface ModelLoadResult {
   size: THREE.Vector3;
 }
 
-const loader = new GLTFLoader();
+const gltfLoader = new GLTFLoader();
+const objLoader = new OBJLoader();
+
+function finalizeLoadedObject(object: THREE.Object3D): ModelLoadResult {
+  const root = object instanceof THREE.Group ? object : new THREE.Group().add(object);
+  root.updateMatrixWorld(true);
+  const bbox = new THREE.Box3().setFromObject(root);
+  const size = bbox.getSize(new THREE.Vector3());
+  return { object: root, bbox, size };
+}
+
+function isObjFile(filename: string): boolean {
+  return filename.toLowerCase().endsWith('.obj');
+}
 
 export async function loadGltfFromBlob(blob: Blob): Promise<ModelLoadResult> {
   const url = URL.createObjectURL(blob);
   try {
-    const gltf = await loader.loadAsync(url);
-    const object = gltf.scene;
-    object.updateMatrixWorld(true);
-    const bbox = new THREE.Box3().setFromObject(object);
-    const size = bbox.getSize(new THREE.Vector3());
-    return { object, bbox, size };
+    const gltf = await gltfLoader.loadAsync(url);
+    return finalizeLoadedObject(gltf.scene);
   } finally {
     URL.revokeObjectURL(url);
   }
+}
+
+export async function loadObjFromBlob(blob: Blob): Promise<ModelLoadResult> {
+  const text = await blob.text();
+  const object = objLoader.parse(text);
+  return finalizeLoadedObject(object);
+}
+
+export async function loadModelFromBlob(blob: Blob, filename: string): Promise<ModelLoadResult> {
+  if (isObjFile(filename)) {
+    return loadObjFromBlob(blob);
+  }
+  return loadGltfFromBlob(blob);
 }
 
 export function cloneModelGroup(source: THREE.Group): THREE.Group {

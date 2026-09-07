@@ -1,7 +1,7 @@
 import { saveAssetBlob, loadAssetBlob } from '../persistence/assetStore';
 import { MediaTextureCache } from './MediaTextureCache';
 import { modelCache } from './modelCache';
-import { loadGltfFromBlob } from '../scene/ModelLoader';
+import { loadModelFromBlob } from '../scene/ModelLoader';
 import type { MediaAssetRecord } from '../types';
 
 export const mediaTextureCache = new MediaTextureCache();
@@ -20,7 +20,7 @@ export async function importMediaBlob(
   } else if (kind === 'video') {
     await mediaTextureCache.loadVideo(id, blob);
   } else {
-    const { object, size } = await loadGltfFromBlob(blob);
+    const { object, size } = await loadModelFromBlob(blob, name);
     object.userData.bboxSize = size;
     modelCache.set(id, object);
   }
@@ -46,7 +46,7 @@ export async function hydrateAssetsFromRecords(records: MediaAssetRecord[]): Pro
       } else if (record.kind === 'video') {
         await mediaTextureCache.loadVideo(record.id, blob);
       } else {
-        const { object, size } = await loadGltfFromBlob(blob);
+        const { object, size } = await loadModelFromBlob(blob, record.name);
         object.userData.bboxSize = size;
         modelCache.set(record.id, object);
       }
@@ -63,6 +63,7 @@ export function detectFileKind(file: File): 'image' | 'video' | 'model' | null {
   if (
     file.name.endsWith('.glb') ||
     file.name.endsWith('.gltf') ||
+    file.name.endsWith('.obj') ||
     file.type === 'model/gltf-binary' ||
     file.type === 'model/gltf+json'
   ) {

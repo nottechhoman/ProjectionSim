@@ -63,7 +63,7 @@ Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection
 ## M2 Features
 
 - **Media on projectors** — assign imported images or videos; fit modes (contain, cover, stretch)
-- **GLB/GLTF import** — load 3D models with scale confirmation prompt
+- **GLB/GLTF/OBJ import** — load 3D models with scale confirmation prompt
 - **Curved screens** — cylindrical receiving surfaces for projection preview
 - **Material preview modes** — Projection (projective overlay) vs. Original (base materials)
 - **Surface flags** — per-object receives projection / blocks projection toggles

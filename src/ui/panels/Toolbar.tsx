@@ -47,7 +47,7 @@ export function Toolbar() {
     const file = event.target.files?.[0];
     if (!file) return;
     let scale = 1;
-    if (file.name.endsWith('.glb') || file.name.endsWith('.gltf')) {
+    if (/\.(glb|gltf|obj)$/i.test(file.name)) {
       const input = window.prompt(
         'Model scale factor (1 = file units treated as meters):',
         '1',
@@ -162,7 +162,7 @@ export function Toolbar() {
           Save
         </button>
         <input ref={fileInputRef} type="file" accept=".json,.projectionlab.json" className={styles.hiddenFile} onChange={handleOpenFile} />
-        <input ref={importInputRef} type="file" accept="image/*,video/*,.glb,.gltf" className={styles.hiddenFile} onChange={handleImport} />
+        <input ref={importInputRef} type="file" accept="image/*,video/*,.glb,.gltf,.obj" className={styles.hiddenFile} onChange={handleImport} />
       </div>
     </div>
   );
