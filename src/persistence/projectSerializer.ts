@@ -128,7 +128,11 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     typeof data.selectedProjectorId === 'string' ? data.selectedProjectorId : projectors[0].id;
 
   const materialPreviewMode: MaterialPreviewMode =
-    data.materialPreviewMode === 'original' ? 'original' : 'projectionPreview';
+    data.materialPreviewMode === 'original'
+      ? 'original'
+      : data.materialPreviewMode === 'projectionUv'
+        ? 'projectionUv'
+        : 'projectionPreview';
   const projectionCompositeMode: ProjectionCompositeMode =
     data.projectionCompositeMode === 'heatmap' ||
     data.projectionCompositeMode === 'blended' ||

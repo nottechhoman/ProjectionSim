@@ -41,7 +41,11 @@ export function Viewport() {
       },
     });
 
+    let lastSync = '';
     const unsub = useAppStore.subscribe((state) => {
+      const snapshot = JSON.stringify(getEngineSyncState(state));
+      if (snapshot === lastSync) return;
+      lastSync = snapshot;
       engine.sync(state);
     });
     engine.sync(useAppStore.getState());
@@ -63,4 +67,17 @@ export function Viewport() {
   }, []);
 
   return <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />;
+}
+
+function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
+  return {
+    sceneObjects: state.sceneObjects,
+    projectors: state.projectors,
+    selectedObjectId: state.selectedObjectId,
+    selectedProjectorId: state.selectedProjectorId,
+    viewPreset: state.viewPreset,
+    transformMode: state.transformMode,
+    materialPreviewMode: state.materialPreviewMode,
+    projectionCompositeMode: state.projectionCompositeMode,
+  };
 }

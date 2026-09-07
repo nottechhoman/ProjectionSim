@@ -249,10 +249,10 @@ export class SceneEngine {
       this.transformControls?.setMode(state.transformMode);
     }
 
-    this.syncSceneObjects(state.sceneObjects);
+    this.syncSceneObjects(state.sceneObjects, this.gizmoDragging);
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
-    this.syncProjectors(state.projectors, state.selectedProjectorId);
+    this.syncProjectors(state.projectors, state.selectedProjectorId, this.gizmoDragging);
     this.syncSelectionGizmo(state.selectedObjectId, state.projectors);
   }
 
@@ -345,7 +345,7 @@ export class SceneEngine {
     if (id) this.callbacks.onSelect?.(id);
   };
 
-  private syncSceneObjects(sceneObjects: SceneObject[]): void {
+  private syncSceneObjects(sceneObjects: SceneObject[], skipTransforms = false): void {
     const nextIds = new Set(sceneObjects.map((obj) => obj.id));
 
     for (const [id, obj3d] of this.objectMeshes) {
@@ -371,11 +371,16 @@ export class SceneEngine {
         this.contentGroup.add(obj3d);
       }
 
-      obj3d.position.set(obj.transform.position.x, obj.transform.position.y, obj.transform.position.z);
-      obj3d.quaternion.set(...obj.transform.quaternion);
-      if (obj.type === 'model') {
+      if (!skipTransforms) {
+        obj3d.position.set(obj.transform.position.x, obj.transform.position.y, obj.transform.position.z);
+        obj3d.quaternion.set(...obj.transform.quaternion);
+        if (obj.type === 'model') {
+          const scale = obj.modelScale ?? 1;
+          obj3d.scale.setScalar(scale);
+        }
+      } else if (obj.type === 'model') {
         const scale = obj.modelScale ?? 1;
-        obj3d.scale.setScalar(scale);
+        if (obj3d.scale.x !== scale) obj3d.scale.setScalar(scale);
       }
       obj3d.visible = obj.visibleInEditor;
       obj3d.userData.id = obj.id;
@@ -398,7 +403,7 @@ export class SceneEngine {
     return visual;
   }
 
-  private syncProjectors(projectors: ProjectorConfig[], selectedProjectorId: string): void {
+  private syncProjectors(projectors: ProjectorConfig[], selectedProjectorId: string, skipTransforms = false): void {
     this.allProjectors = projectors;
     this.selectedProjectorId = selectedProjectorId;
     const enabled = projectors.filter((p) => p.enabled);
@@ -433,10 +438,12 @@ export class SceneEngine {
       }
 
       const worldMatrix = projectorWorldMatrix(projector);
-      const position = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
-      const quaternion = new THREE.Quaternion().setFromRotationMatrix(worldMatrix);
-      visual.body.position.copy(position);
-      visual.body.quaternion.copy(quaternion);
+      if (!skipTransforms) {
+        const position = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
+        const quaternion = new THREE.Quaternion().setFromRotationMatrix(worldMatrix);
+        visual.body.position.copy(position);
+        visual.body.quaternion.copy(quaternion);
+      }
 
       const throwDistance = Math.max(
         2,
@@ -462,6 +469,8 @@ export class SceneEngine {
 
   private applyProjectiveUniforms(projector: ProjectorConfig): void {
     const worldMatrix = projectorWorldMatrix(projector);
+    const forceUv = this.materialPreviewMode === 'projectionUv' ? 1 : 0;
+    this.projectiveMaterial.uniforms.forceUvPreview.value = forceUv;
     this.projectiveMaterial.uniforms.projectorMatrix.value.copy(
       getProjectorViewProjectionMatrix(projector.optics, worldMatrix),
     );
@@ -521,7 +530,11 @@ export class SceneEngine {
 
     const savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
 
-    if (this.materialPreviewMode === 'projectionPreview' && projectorsToRender.length > 0 && depthMeshes.length > 0) {
+    if (
+      (this.materialPreviewMode === 'projectionPreview' || this.materialPreviewMode === 'projectionUv') &&
+      projectorsToRender.length > 0 &&
+      depthMeshes.length > 0
+    ) {
       if (projectorsToRender.length === 1) {
         const projector = projectorsToRender[0];
         this.applyProjectiveUniforms(projector);
@@ -559,6 +572,7 @@ export class SceneEngine {
           projectorsToRender.slice(0, 4),
           depthTextures,
           this.projectionCompositeMode,
+          this.materialPreviewMode === 'projectionUv',
         );
         this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(
           this.depthPass.target.width,

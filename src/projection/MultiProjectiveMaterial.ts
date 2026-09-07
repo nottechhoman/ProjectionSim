@@ -55,6 +55,7 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       depthMapSize: { value: new THREE.Vector2(512, 512) },
       projectorCount: { value: 0 },
       compositeMode: { value: 0 },
+      forceUvPreview: { value: 0 },
     },
     vertexShader: vert,
     fragmentShader: multiFrag,
@@ -70,10 +71,12 @@ export function updateMultiProjectiveMaterial(
   projectors: ProjectorConfig[],
   depthTextures: THREE.Texture[],
   compositeMode: ProjectionCompositeMode,
+  forceUvPreview = false,
 ): void {
   const count = Math.min(projectors.length, MAX);
   material.uniforms.projectorCount.value = count;
   material.uniforms.compositeMode.value = COMPOSITE_INT[compositeMode];
+  material.uniforms.forceUvPreview.value = forceUvPreview ? 1 : 0;
 
   const matrices = material.uniforms.projectorMatrices.value as THREE.Matrix4[];
   const brightness = material.uniforms.brightness.value as Float32Array;

@@ -176,6 +176,14 @@ export function Toolbar() {
         </button>
         <button
           type="button"
+          className={materialPreviewMode === 'projectionUv' ? styles.active : undefined}
+          onClick={() => setMaterialPreviewMode('projectionUv')}
+          title="Projector raster UV on receiving surfaces"
+        >
+          UV
+        </button>
+        <button
+          type="button"
           className={materialPreviewMode === 'original' ? styles.active : undefined}
           onClick={() => setMaterialPreviewMode('original')}
         >

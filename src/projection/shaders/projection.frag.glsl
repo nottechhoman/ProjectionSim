@@ -9,7 +9,7 @@ uniform int fitMode;
 uniform float mediaAspect;
 uniform float rasterAspect;
 uniform vec3 projectorColor;
-uniform vec2 depthMapSize;
+uniform int forceUvPreview;
 
 varying vec3 vWorldPos;
 
@@ -46,7 +46,9 @@ void main() {
   if (fragDepth > sceneDepth + depthBias) discard;
 
   vec3 color;
-  if (useMediaTexture == 1) {
+  if (forceUvPreview == 1) {
+    color = vec3(uv, 0.2);
+  } else if (useMediaTexture == 1) {
     vec2 mediaUv = applyFit(uv);
     if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) discard;
     color = texture2D(mediaMap, mediaUv).rgb;

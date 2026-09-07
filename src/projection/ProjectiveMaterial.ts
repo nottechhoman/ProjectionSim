@@ -30,6 +30,7 @@ export function createProjectiveMaterial(): THREE.ShaderMaterial {
       rasterAspect: { value: 16 / 9 },
       projectorColor: { value: new THREE.Color('#4fc3f7') },
       depthMapSize: { value: new THREE.Vector2(512, 512) },
+      forceUvPreview: { value: 0 },
     },
     vertexShader: vert,
     fragmentShader: frag,

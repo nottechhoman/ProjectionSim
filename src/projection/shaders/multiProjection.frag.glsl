@@ -16,6 +16,7 @@ uniform float outerEdgeFade[MAX_P];
 uniform vec2 depthMapSize;
 uniform int projectorCount;
 uniform int compositeMode;
+uniform int forceUvPreview;
 
 varying vec3 vWorldPos;
 
@@ -112,7 +113,12 @@ void main() {
     if (!projectorVisible(i, uv, fragDepth)) continue;
 
     hitCount++;
-    vec3 color = sampleProjectorColor(i, uv) * brightness[i];
+    vec3 color;
+    if (forceUvPreview == 1) {
+      color = vec3(uv, 0.2);
+    } else {
+      color = sampleProjectorColor(i, uv) * brightness[i];
+    }
     float w = rawBlendWeight(uv, blendEdges[i], outerEdgeFade[i]);
 
     if (compositeMode == 0) {
