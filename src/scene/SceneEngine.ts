@@ -179,7 +179,10 @@ export class SceneEngine {
 
       if (this.gizmoDragging && this.transformControls?.mode === 'rotate') {
         const obj = this.transformControls.object;
-        if (obj) {
+        const isProjector =
+          obj &&
+          [...this.projectorVisuals.values()].some((visual) => visual.body === obj);
+        if (obj && isProjector) {
           this.gizmoRotateStartQuat = obj.quaternion.clone();
           this.gizmoRotateStartEuler = quaternionToEulerYXZ([
             obj.quaternion.x,
@@ -316,8 +319,12 @@ export class SceneEngine {
 
     let q = obj.quaternion;
 
-    // Map local X/Y/Z rings to pitch/yaw/roll so only one inspector field changes.
+    const isProjector = [...this.projectorVisuals.values()].some((visual) => visual.body === obj);
+
+    // Projectors use YXZ yaw/pitch/roll — map gizmo rings to single inspector fields.
+    // Scene objects use the gizmo quaternion directly (YXZ remapping breaks their rotation).
     if (
+      isProjector &&
       this.currentTransformMode === 'rotate' &&
       this.gizmoRotateStartEuler &&
       this.gizmoRotateStartQuat &&
