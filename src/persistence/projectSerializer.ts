@@ -130,7 +130,9 @@ export function parseProjectJson(text: string): ProjectSnapshot {
   const materialPreviewMode: MaterialPreviewMode =
     data.materialPreviewMode === 'original' ? 'original' : 'projectionPreview';
   const projectionCompositeMode: ProjectionCompositeMode =
-    data.projectionCompositeMode === 'heatmap' || data.projectionCompositeMode === 'blended'
+    data.projectionCompositeMode === 'heatmap' ||
+    data.projectionCompositeMode === 'blended' ||
+    data.projectionCompositeMode === 'solo'
       ? data.projectionCompositeMode
       : 'unblended';
 

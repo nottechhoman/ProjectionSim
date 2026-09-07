@@ -103,7 +103,9 @@ export class SceneEngine {
   private readonly multiProjectiveMaterial = createMultiProjectiveMaterial();
   private readonly projectorVisuals = new Map<string, { body: THREE.Mesh; frustum: FrustumHelper }>();
   private readonly objectMeshes = new Map<string, THREE.Object3D>();
+  private allProjectors: ProjectorConfig[] = [];
   private activeProjectors: ProjectorConfig[] = [];
+  private selectedProjectorId = 'proj-1';
   private materialPreviewMode: MaterialPreviewMode = 'projectionPreview';
   private projectionCompositeMode: ProjectionCompositeMode = 'unblended';
   private animationId: number | null = null;
@@ -248,9 +250,9 @@ export class SceneEngine {
     }
 
     this.syncSceneObjects(state.sceneObjects);
-    this.syncProjectors(state.projectors);
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
+    this.syncProjectors(state.projectors, state.selectedProjectorId);
     this.syncSelectionGizmo(state.selectedObjectId, state.projectors);
   }
 
@@ -396,7 +398,9 @@ export class SceneEngine {
     return visual;
   }
 
-  private syncProjectors(projectors: ProjectorConfig[]): void {
+  private syncProjectors(projectors: ProjectorConfig[], selectedProjectorId: string): void {
+    this.allProjectors = projectors;
+    this.selectedProjectorId = selectedProjectorId;
     const enabled = projectors.filter((p) => p.enabled);
     this.activeProjectors = enabled;
 
@@ -416,9 +420,14 @@ export class SceneEngine {
     for (const projector of projectors) {
       const visual = this.ensureProjectorVisual(projector.id);
       visual.body.userData.pickId = projector.id;
-      visual.body.visible = projector.enabled;
 
-      if (!projector.enabled) {
+      const showInViewport =
+        projector.enabled &&
+        (this.projectionCompositeMode !== 'solo' || projector.id === selectedProjectorId);
+
+      visual.body.visible = showInViewport;
+
+      if (!projector.enabled || !showInViewport) {
         visual.frustum.visible = false;
         continue;
       }
@@ -443,32 +452,39 @@ export class SceneEngine {
     }
 
     if (enabled.length === 1) {
-      const projector = enabled[0];
-      const worldMatrix = projectorWorldMatrix(projector);
-      this.projectiveMaterial.uniforms.projectorMatrix.value.copy(
-        getProjectorViewProjectionMatrix(projector.optics, worldMatrix),
-      );
-      this.projectiveMaterial.uniforms.patternType.value = patternToInt(projector.testPattern);
-      this.projectiveMaterial.uniforms.brightness.value = projector.brightness;
-      this.projectiveMaterial.uniforms.rasterAspect.value = projector.optics.aspectRatio;
-      (this.projectiveMaterial.uniforms.projectorColor.value as THREE.Color).set(projector.color);
+      this.applyProjectiveUniforms(enabled[0]);
+    } else if (this.projectionCompositeMode === 'solo') {
+      const solo =
+        projectors.find((p) => p.id === selectedProjectorId && p.enabled) ?? enabled[0];
+      if (solo) this.applyProjectiveUniforms(solo);
+    }
+  }
 
-      const useMedia =
-        (projector.mediaSource === 'image' || projector.mediaSource === 'video') &&
-        projector.mediaAssetId;
-      if (useMedia) {
-        const entry = mediaTextureCache.get(projector.mediaAssetId!);
-        if (entry) {
-          this.projectiveMaterial.uniforms.useMediaTexture.value = 1;
-          this.projectiveMaterial.uniforms.mediaMap.value = entry.texture;
-          this.projectiveMaterial.uniforms.mediaAspect.value = entry.aspect;
-          this.projectiveMaterial.uniforms.fitMode.value = fitModeToInt(projector.mediaFit);
-        } else {
-          this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
-        }
+  private applyProjectiveUniforms(projector: ProjectorConfig): void {
+    const worldMatrix = projectorWorldMatrix(projector);
+    this.projectiveMaterial.uniforms.projectorMatrix.value.copy(
+      getProjectorViewProjectionMatrix(projector.optics, worldMatrix),
+    );
+    this.projectiveMaterial.uniforms.patternType.value = patternToInt(projector.testPattern);
+    this.projectiveMaterial.uniforms.brightness.value = projector.brightness;
+    this.projectiveMaterial.uniforms.rasterAspect.value = projector.optics.aspectRatio;
+    (this.projectiveMaterial.uniforms.projectorColor.value as THREE.Color).set(projector.color);
+
+    const useMedia =
+      (projector.mediaSource === 'image' || projector.mediaSource === 'video') &&
+      projector.mediaAssetId;
+    if (useMedia) {
+      const entry = mediaTextureCache.get(projector.mediaAssetId!);
+      if (entry) {
+        this.projectiveMaterial.uniforms.useMediaTexture.value = 1;
+        this.projectiveMaterial.uniforms.mediaMap.value = entry.texture;
+        this.projectiveMaterial.uniforms.mediaAspect.value = entry.aspect;
+        this.projectiveMaterial.uniforms.fitMode.value = fitModeToInt(projector.mediaFit);
       } else {
         this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
       }
+    } else {
+      this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
     }
   }
 
@@ -494,13 +510,21 @@ export class SceneEngine {
 
     const depthMeshes = this.getDepthMeshes();
     const receivers = this.getReceiverRoots();
-    const enabled = this.activeProjectors;
+    let projectorsToRender = this.activeProjectors;
+
+    if (this.projectionCompositeMode === 'solo') {
+      const selected =
+        this.allProjectors.find((p) => p.id === this.selectedProjectorId && p.enabled) ??
+        projectorsToRender[0];
+      projectorsToRender = selected ? [selected] : [];
+    }
 
     const savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
 
-    if (this.materialPreviewMode === 'projectionPreview' && enabled.length > 0 && depthMeshes.length > 0) {
-      if (enabled.length === 1) {
-        const projector = enabled[0];
+    if (this.materialPreviewMode === 'projectionPreview' && projectorsToRender.length > 0 && depthMeshes.length > 0) {
+      if (projectorsToRender.length === 1) {
+        const projector = projectorsToRender[0];
+        this.applyProjectiveUniforms(projector);
         const worldMatrix = projectorWorldMatrix(projector);
         const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
         const depthMap = this.depthPass.render(
@@ -519,7 +543,7 @@ export class SceneEngine {
         }
       } else {
         const depthTextures: THREE.Texture[] = [];
-        for (const projector of enabled.slice(0, 4)) {
+        for (const projector of projectorsToRender.slice(0, 4)) {
           let pass = this.depthPassByProjector.get(projector.id);
           if (!pass) {
             pass = new DepthPass();
@@ -532,7 +556,7 @@ export class SceneEngine {
 
         updateMultiProjectiveMaterial(
           this.multiProjectiveMaterial,
-          enabled.slice(0, 4),
+          projectorsToRender.slice(0, 4),
           depthTextures,
           this.projectionCompositeMode,
         );

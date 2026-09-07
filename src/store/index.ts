@@ -249,6 +249,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({ projectMessage: 'At least one projector is required' });
       return;
     }
+    const target = state.projectors.find((p) => p.id === id);
+    if (!target) return;
+    if (!window.confirm(`Delete "${target.name}"?`)) return;
     const next = state.projectors.filter((p) => p.id !== id);
     const selectedProjectorId =
       state.selectedProjectorId === id ? next[0].id : state.selectedProjectorId;
@@ -258,7 +261,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       projectors: next,
       selectedProjectorId,
       selectedObjectId,
-      projectMessage: 'Projector removed',
+      projectMessage: `Deleted ${target.name}`,
     });
     get().recomputeCalculations();
   },

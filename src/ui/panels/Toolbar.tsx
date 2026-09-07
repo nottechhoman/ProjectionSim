@@ -137,16 +137,28 @@ export function Toolbar() {
 
       <div className={styles.group}>
         <span className={styles.label}>Composite</span>
-        {(['unblended', 'blended', 'heatmap'] as ProjectionCompositeMode[]).map((mode) => (
+        {(['solo', 'unblended', 'blended', 'heatmap'] as ProjectionCompositeMode[]).map((mode) => (
           <button
             key={mode}
             type="button"
             className={projectionCompositeMode === mode ? styles.active : undefined}
             onClick={() => setProjectionCompositeMode(mode)}
-            disabled={projectorCount < 2 && mode !== 'unblended'}
-            title={projectorCount < 2 ? 'Add a second projector' : undefined}
+            disabled={projectorCount < 2 && mode !== 'solo' && mode !== 'unblended'}
+            title={
+              mode === 'solo'
+                ? 'Show only the selected projector on surfaces'
+                : projectorCount < 2
+                  ? 'Add a second projector'
+                  : undefined
+            }
           >
-            {mode === 'unblended' ? 'Raw' : mode === 'blended' ? 'Blend' : 'Heatmap'}
+            {mode === 'solo'
+              ? 'Solo'
+              : mode === 'unblended'
+                ? 'Raw'
+                : mode === 'blended'
+                  ? 'Blend'
+                  : 'Heatmap'}
           </button>
         ))}
       </div>

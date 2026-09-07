@@ -19,7 +19,7 @@ export type TestPattern =
   | 'white'
   | 'projectorId';
 
-export type ProjectionCompositeMode = 'unblended' | 'heatmap' | 'blended';
+export type ProjectionCompositeMode = 'solo' | 'unblended' | 'heatmap' | 'blended';
 
 export interface BlendEdges {
   /** Feather width as fraction of image width/height (0–0.5). */

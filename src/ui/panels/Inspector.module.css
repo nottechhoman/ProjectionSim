@@ -121,3 +121,20 @@
   padding-top: 6px;
   border-top: 1px solid #333;
 }
+
+.dangerBtn {
+  margin-top: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  font: inherit;
+  font-size: 12px;
+  color: #f0a0a0;
+  background: #3a2020;
+  border: 1px solid #6a3030;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.dangerBtn:hover {
+  background: #4a2828;
+}

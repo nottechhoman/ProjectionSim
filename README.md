@@ -73,17 +73,24 @@ Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection
 - **Project persistence v2** — JSON project files + IndexedDB blob storage for media assets; v1 projects load with defaults
 - **Autosave** — localStorage snapshot every 2 seconds
 
+## M3 Features
+
+- **Multiple projectors** — up to 4, each with independent optics, media, color, and transform
+- **Composite preview modes** — Raw (additive), Blend (normalized edge weights), Heatmap (overlap count)
+- **Per-edge blend controls** — left/right/top/bottom feather in projector UV space
+- **Overlap calculations** — pairwise area, union, multi-coverage, horizontal overlap, overlap pixels (planar screens)
+- **Acceptance Tests 4 & 5** — overlap union math and blend weight normalization
+
 ## Known Limitations
 
 Features deferred to later milestones are disabled in the UI or stubbed in code:
 
 | Feature | Milestone |
 |---------|-----------|
-| Curved screen footprint calculation | M2+ (preview only; planar math still used for calc panel) |
+| Curved screen footprint / overlap calculation | M3+ (preview works; calc panel planar only) |
+| Shared-canvas mapping mode | M3+ |
 | Video seek/loop/mute timeline | M2+ |
 | CSV/HTML export | M4 |
-| Multi-projector overlap and edge blending | M3 |
-| Raw vs shared-canvas mapping modes | M3 |
 | Undo/redo | M4 |
 | Playwright smoke tests | M4 |
 | Two-point measure tool | M4 |

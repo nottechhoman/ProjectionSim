@@ -18,6 +18,7 @@ const PATTERN_MAP: Record<TestPattern, number> = {
 };
 
 const COMPOSITE_INT: Record<ProjectionCompositeMode, number> = {
+  solo: 0,
   unblended: 0,
   blended: 1,
   heatmap: 2,

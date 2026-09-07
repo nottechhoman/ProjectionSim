@@ -152,8 +152,11 @@ export function Inspector() {
               step={0.05}
               onChange={(v) => updateProjector(projector.id, { brightness: Math.max(0, v) })}
             />
-            <button type="button" onClick={() => removeProjector(projector.id)}>
-              Remove projector
+            <p className={styles.hint}>
+              Use toolbar Composite → Solo, then select each projector here to preview its image on surfaces.
+            </p>
+            <button type="button" className={styles.dangerBtn} onClick={() => removeProjector(projector.id)}>
+              Delete projector
             </button>
           </div>
 

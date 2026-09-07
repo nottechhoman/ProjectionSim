@@ -83,7 +83,40 @@
 }
 
 .type {
-  margin-left: auto;
   font-size: 10px;
   color: #666;
+  flex-shrink: 0;
+}
+
+.badge {
+  font-size: 9px;
+  color: #888;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.deleteBtn {
+  margin-left: auto;
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 1;
+  color: #888;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.deleteBtn:hover:not(:disabled) {
+  color: #f0a0a0;
+  border-color: #6a3030;
+  background: #3a2020;
+}
+
+.deleteBtn:disabled {
+  opacity: 0.25;
+  cursor: not-allowed;
 }

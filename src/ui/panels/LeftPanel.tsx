@@ -7,6 +7,7 @@ export function LeftPanel() {
   const selectedObjectId = useAppStore((s) => s.selectedObjectId);
   const setSelectedObject = useAppStore((s) => s.setSelectedObject);
   const setSelectedProjector = useAppStore((s) => s.setSelectedProjector);
+  const removeProjector = useAppStore((s) => s.removeProjector);
   const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
 
   return (
@@ -45,6 +46,19 @@ export function LeftPanel() {
             >
               <span className={styles.swatch} style={{ background: proj.color }} />
               <span className={styles.name}>{proj.name}</span>
+              {!proj.enabled && <span className={styles.badge}>off</span>}
+              <button
+                type="button"
+                className={styles.deleteBtn}
+                title={projectors.length <= 1 ? 'At least one projector required' : `Delete ${proj.name}`}
+                disabled={projectors.length <= 1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeProjector(proj.id);
+                }}
+              >
+                ×
+              </button>
             </li>
           ))}
         </ul>

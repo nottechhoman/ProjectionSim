@@ -84,7 +84,7 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     projectors: structuredClone(DEFAULT_PROJECTORS),
     mediaAssets: [],
     materialPreviewMode: 'projectionPreview',
-    projectionCompositeMode: 'unblended',
+    projectionCompositeMode: 'solo',
     selectedObjectId: 'proj-1',
     selectedProjectorId: 'proj-1',
     displayUnit: 'm',

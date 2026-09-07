@@ -65,6 +65,11 @@ export function BottomPanel() {
           Shader: {shaderWarning}
         </div>
       )}
+      {projectionCompositeMode === 'solo' && (
+        <div className={styles.item} title="Select a projector in the scene list to preview its projection">
+          Solo: {projector?.name ?? '—'}
+        </div>
+      )}
       {projectionCompositeMode === 'unblended' && projectorCount > 1 && (
         <div className={styles.warningBanner} title="Overlap regions appear brighter in raw additive mode">
           Raw overlap: additive brightness
