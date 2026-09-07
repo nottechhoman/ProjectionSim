@@ -13,6 +13,11 @@ export function Viewport() {
     const engine = new SceneEngine(canvas);
     engineRef.current = engine;
 
+    engine.setCallbacks({
+      onFrameTime: (ms) => useAppStore.getState().setFrameTimeMs(ms),
+      onWebglStatus: (available) => useAppStore.getState().setWebgl2Available(available),
+    });
+
     const unsub = useAppStore.subscribe((state) => {
       engine.sync(state);
     });

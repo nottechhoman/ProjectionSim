@@ -4,13 +4,18 @@ import type { useAppStore } from '../store';
 import { buildProjectorCamera, getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { createProjectiveMaterial, patternToInt } from '../projection/ProjectiveMaterial';
 import { DepthPass } from '../visibility/DepthPass';
-import type { ProjectorConfig, SceneObject } from '../types';
+import type { ProjectorConfig, SceneObject, ViewPreset } from '../types';
 import { createScreen } from './objects/createScreen';
 import { createFloor } from './objects/createFloor';
 import { createBox } from './objects/createBox';
 import { FrustumHelper } from './helpers/FrustumHelper';
 
 type AppState = ReturnType<typeof useAppStore.getState>;
+
+export interface SceneEngineCallbacks {
+  onFrameTime?: (ms: number) => void;
+  onWebglStatus?: (available: boolean) => void;
+}
 
 function dimensionsKey(obj: SceneObject): string {
   const depth = obj.dimensions.depth ?? 0;
@@ -59,6 +64,9 @@ export class SceneEngine {
   private activeProjector: ProjectorConfig | null = null;
   private animationId: number | null = null;
   private disposed = false;
+  private currentViewPreset: ViewPreset = 'persp';
+  private callbacks: SceneEngineCallbacks = {};
+  private readonly viewTarget = new THREE.Vector3(0, 1.5, 0);
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -122,6 +130,41 @@ export class SceneEngine {
     window.addEventListener('resize', this.onResize);
   }
 
+  get isWebglAvailable(): boolean {
+    return this.webglAvailable;
+  }
+
+  setCallbacks(callbacks: SceneEngineCallbacks): void {
+    this.callbacks = callbacks;
+    callbacks.onWebglStatus?.(this.webglAvailable);
+  }
+
+  setViewPreset(preset: ViewPreset): void {
+    if (!this.editorCamera || !this.controls || this.currentViewPreset === preset) return;
+    this.currentViewPreset = preset;
+    this.editorCamera.up.set(0, 1, 0);
+
+    switch (preset) {
+      case 'persp':
+        this.editorCamera.position.set(8, 6, 12);
+        break;
+      case 'top':
+        this.editorCamera.position.set(0, 20, 0.001);
+        this.editorCamera.up.set(0, 0, -1);
+        break;
+      case 'front':
+        this.editorCamera.position.set(0, 1.5, 20);
+        break;
+      case 'side':
+        this.editorCamera.position.set(20, 1.5, 0);
+        break;
+    }
+
+    this.editorCamera.lookAt(this.viewTarget);
+    this.controls.target.copy(this.viewTarget);
+    this.controls.update();
+  }
+
   private onResize = (): void => {
     this.resize();
   };
@@ -139,6 +182,10 @@ export class SceneEngine {
 
   sync(state: AppState): void {
     if (!this.webglAvailable || this.disposed) return;
+
+    if (state.viewPreset !== this.currentViewPreset) {
+      this.setViewPreset(state.viewPreset);
+    }
 
     this.syncSceneObjects(state.sceneObjects);
     this.syncProjector(state.projectors);
@@ -232,6 +279,8 @@ export class SceneEngine {
   private render(): void {
     if (!this.renderer || !this.editorCamera || !this.depthPass || this.disposed) return;
 
+    const frameStart = performance.now();
+
     this.controls?.update();
     this.resize();
     this.editorScene.updateMatrixWorld(true);
@@ -264,6 +313,8 @@ export class SceneEngine {
     for (const [mesh, material] of savedMaterials) {
       mesh.material = material;
     }
+
+    this.callbacks.onFrameTime?.(performance.now() - frameStart);
   }
 
   private getDepthMeshes(): THREE.Mesh[] {

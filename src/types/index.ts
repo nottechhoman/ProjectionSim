@@ -1,5 +1,7 @@
 export type DisplayUnit = 'm' | 'cm' | 'mm';
 
+export type ViewPreset = 'persp' | 'top' | 'front' | 'side';
+
 export type SceneObjectType = 'screen' | 'floor' | 'wall' | 'box';
 
 export type TestPattern =

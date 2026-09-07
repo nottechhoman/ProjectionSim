@@ -1,0 +1,37 @@
+.panel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  height: 100%;
+  padding: 0 10px;
+  background: #252525;
+  border-top: 1px solid #333;
+  font-size: 11px;
+  color: #999;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ok {
+  color: #7ec87e;
+}
+
+.warn {
+  color: #e0a060;
+}
+
+.error {
+  color: #e08080;
+}
+
+.warningBanner {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #e0a060;
+}

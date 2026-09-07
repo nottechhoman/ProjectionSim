@@ -1,5 +1,11 @@
 import { create } from 'zustand';
-import type { CalculationResults, DisplayUnit, ProjectorConfig, SceneObject } from '../types';
+import type {
+  CalculationResults,
+  DisplayUnit,
+  ProjectorConfig,
+  SceneObject,
+  ViewPreset,
+} from '../types';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
@@ -10,12 +16,26 @@ interface AppState {
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
+  viewPreset: ViewPreset;
+  measureMode: boolean;
+  frameTimeMs: number;
+  webgl2Available: boolean | null;
   calculationResults: CalculationResults;
   shaderWarning: string | null;
   setSelectedObject: (id: string | null) => void;
+  setSelectedProjector: (id: string) => void;
   updateProjector: (id: string, patch: Partial<ProjectorConfig>) => void;
   updateProjectorOptics: (id: string, patch: Partial<ProjectorConfig['optics']>) => void;
+  updateSceneObjectTransform: (
+    id: string,
+    patch: { position?: SceneObject['transform']['position']; quaternion?: SceneObject['transform']['quaternion'] },
+  ) => void;
   setDisplayUnit: (u: DisplayUnit) => void;
+  setViewPreset: (preset: ViewPreset) => void;
+  setMeasureMode: (enabled: boolean) => void;
+  setFrameTimeMs: (ms: number) => void;
+  setWebgl2Available: (available: boolean) => void;
+  setShaderWarning: (warning: string | null) => void;
   recomputeCalculations: () => void;
   addBox: () => void;
 }
@@ -26,9 +46,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   selectedObjectId: 'proj-1',
   selectedProjectorId: 'proj-1',
   displayUnit: 'm',
+  viewPreset: 'persp',
+  measureMode: false,
+  frameTimeMs: 0,
+  webgl2Available: null,
   calculationResults: { nominal: null, footprint: null, opticsError: null },
   shaderWarning: null,
   setSelectedObject: (id) => set({ selectedObjectId: id }),
+  setSelectedProjector: (id) => set({ selectedProjectorId: id, selectedObjectId: id }),
   updateProjector: (id, patch) => {
     set((s) => ({
       projectors: s.projectors.map((p) => (p.id === id ? { ...p, ...patch } : p)),
@@ -51,7 +76,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     get().recomputeCalculations();
   },
+  updateSceneObjectTransform: (id, patch) => {
+    set((s) => ({
+      sceneObjects: s.sceneObjects.map((obj) => {
+        if (obj.id !== id) return obj;
+        return {
+          ...obj,
+          transform: {
+            position: patch.position ?? obj.transform.position,
+            quaternion: patch.quaternion ?? obj.transform.quaternion,
+          },
+        };
+      }),
+    }));
+  },
   setDisplayUnit: (u) => set({ displayUnit: u }),
+  setViewPreset: (preset) => set({ viewPreset: preset }),
+  setMeasureMode: (enabled) => set({ measureMode: enabled }),
+  setFrameTimeMs: (ms) => set({ frameTimeMs: ms }),
+  setWebgl2Available: (available) => set({ webgl2Available: available }),
+  setShaderWarning: (warning) => set({ shaderWarning: warning }),
   recomputeCalculations: () => {
     const { projectors } = get();
     const proj = projectors[0];
