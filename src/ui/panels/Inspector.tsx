@@ -84,10 +84,7 @@ export function Inspector() {
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Transform</div>
-        <p className={styles.hint}>
-          Click a value to type · drag gizmo in viewport
-          {projector ? ' (projector: Y=yaw, X=pitch, Z=roll)' : ''}
-        </p>
+        <p className={styles.hint}>Click a value to type · drag gizmo rings for local X / Y / Z rotation</p>
         <NumInput
           label="Pos X"
           value={toDisplayUnit(transform.position.x, displayUnit)}
@@ -103,9 +100,24 @@ export function Inspector() {
           value={toDisplayUnit(transform.position.z, displayUnit)}
           onChange={(v) => setPosition('z', v)}
         />
-        <NumInput label="Yaw" value={euler.yaw} step={0.1} onChange={(v) => setRotation(v, euler.pitch, euler.roll)} />
-        <NumInput label="Pitch" value={euler.pitch} step={0.1} onChange={(v) => setRotation(euler.yaw, v, euler.roll)} />
-        <NumInput label="Roll" value={euler.roll} step={0.1} onChange={(v) => setRotation(euler.yaw, euler.pitch, v)} />
+        <NumInput
+          label="Rotation X"
+          value={euler.pitch}
+          step={0.1}
+          onChange={(v) => setRotation(euler.yaw, v, euler.roll)}
+        />
+        <NumInput
+          label="Rotation Y"
+          value={euler.yaw}
+          step={0.1}
+          onChange={(v) => setRotation(v, euler.pitch, euler.roll)}
+        />
+        <NumInput
+          label="Rotation Z"
+          value={euler.roll}
+          step={0.1}
+          onChange={(v) => setRotation(euler.yaw, euler.pitch, v)}
+        />
       </div>
 
       {sceneObject && !projector && (

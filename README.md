@@ -44,7 +44,7 @@ Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection
 - **Handedness:** Right-handed, +Y up.
 - **Projector forward:** Local −Z (optical axis).
 - **Projector origin:** Lens optical center (projector body is a visual helper offset from this point).
-- **Rotation:** Stored as quaternions; inspector exposes yaw, pitch, and roll in degrees using **YXZ** Euler order (yaw around Y, pitch around X, roll around Z).
+- **Rotation:** Stored as quaternions; inspector exposes **Rotation X / Y / Z** in degrees (local axes, YXZ Euler order internally).
 - **Screen planes:** `PlaneGeometry` local +Z is the receiving face normal.
 - **Areas:** m². **Angles:** degrees. **Density:** px/m and mm/px.
 
