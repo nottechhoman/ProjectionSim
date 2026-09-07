@@ -11,7 +11,11 @@ export function BottomPanel() {
   const clearProjectMessage = useAppStore((s) => s.clearProjectMessage);
   const videoPlaying = useAppStore((s) => s.videoPlaying);
   const toggleVideoPlayback = useAppStore((s) => s.toggleVideoPlayback);
-  const projector = useAppStore((s) => s.projectors[0]);
+  const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
+  const projectorCount = useAppStore((s) => s.projectors.length);
+  const selectedProjectorId = useAppStore((s) => s.selectedProjectorId);
+  const projectors = useAppStore((s) => s.projectors);
+  const projector = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
 
   const webglStatus =
     webgl2Available === null
@@ -59,6 +63,11 @@ export function BottomPanel() {
       {shaderWarning && (
         <div className={styles.warningBanner} title={shaderWarning}>
           Shader: {shaderWarning}
+        </div>
+      )}
+      {projectionCompositeMode === 'unblended' && projectorCount > 1 && (
+        <div className={styles.warningBanner} title="Overlap regions appear brighter in raw additive mode">
+          Raw overlap: additive brightness
         </div>
       )}
       <button type="button" className={styles.collapseBtn} onClick={toggleBottomPanel} title="Hide status bar">

@@ -2,6 +2,7 @@ import type { ProjectSnapshot } from '../persistence/projectSchema';
 import type {
   DisplayUnit,
   MaterialPreviewMode,
+  ProjectionCompositeMode,
   MediaAssetRecord,
   ProjectorConfig,
   SceneObject,
@@ -17,6 +18,7 @@ export interface PersistedStateSlice {
   projectors: ProjectorConfig[];
   mediaAssets: MediaAssetRecord[];
   materialPreviewMode: MaterialPreviewMode;
+  projectionCompositeMode: ProjectionCompositeMode;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
@@ -44,6 +46,7 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     projectors: slice.projectors,
     mediaAssets: slice.mediaAssets,
     materialPreviewMode: slice.materialPreviewMode,
+    projectionCompositeMode: slice.projectionCompositeMode,
     selectedObjectId: slice.selectedObjectId,
     selectedProjectorId: slice.selectedProjectorId,
     displayUnit: slice.displayUnit,
@@ -62,6 +65,7 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
     projectors: snapshot.projectors,
     mediaAssets: snapshot.mediaAssets ?? [],
     materialPreviewMode: snapshot.materialPreviewMode ?? 'projectionPreview',
+    projectionCompositeMode: snapshot.projectionCompositeMode ?? 'unblended',
     selectedObjectId: snapshot.selectedObjectId,
     selectedProjectorId: snapshot.selectedProjectorId,
     displayUnit: snapshot.displayUnit,
@@ -80,6 +84,7 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     projectors: structuredClone(DEFAULT_PROJECTORS),
     mediaAssets: [],
     materialPreviewMode: 'projectionPreview',
+    projectionCompositeMode: 'unblended',
     selectedObjectId: 'proj-1',
     selectedProjectorId: 'proj-1',
     displayUnit: 'm',

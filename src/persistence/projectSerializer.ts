@@ -1,5 +1,6 @@
 import { validateOptics } from '../optics/validate';
-import type { MaterialPreviewMode, MediaAssetRecord, ProjectorConfig, SceneObject } from '../types';
+import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, SceneObject } from '../types';
+import { DEFAULT_BLEND_EDGES } from '../types';
 import {
   PROJECT_FILE_VERSION,
   PROJECT_FILE_VERSION_LEGACY,
@@ -58,6 +59,8 @@ function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
     mediaSource: raw.mediaSource ?? 'pattern',
     mediaAssetId: raw.mediaAssetId ?? null,
     mediaFit: raw.mediaFit ?? 'contain',
+    blendEdges: raw.blendEdges ?? { ...DEFAULT_BLEND_EDGES },
+    outerEdgeFade: raw.outerEdgeFade ?? false,
   };
 }
 
@@ -126,6 +129,10 @@ export function parseProjectJson(text: string): ProjectSnapshot {
 
   const materialPreviewMode: MaterialPreviewMode =
     data.materialPreviewMode === 'original' ? 'original' : 'projectionPreview';
+  const projectionCompositeMode: ProjectionCompositeMode =
+    data.projectionCompositeMode === 'heatmap' || data.projectionCompositeMode === 'blended'
+      ? data.projectionCompositeMode
+      : 'unblended';
 
   const snapshot: ProjectSnapshotV2 = {
     version: PROJECT_FILE_VERSION,
@@ -135,6 +142,7 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     projectors,
     mediaAssets,
     materialPreviewMode,
+    projectionCompositeMode,
     selectedObjectId,
     selectedProjectorId,
     displayUnit: data.displayUnit === 'cm' || data.displayUnit === 'mm' ? data.displayUnit : 'm',

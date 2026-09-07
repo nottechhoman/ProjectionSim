@@ -11,6 +11,7 @@ const sample: ProjectSnapshotV2 = {
   projectors: DEFAULT_PROJECTORS,
   mediaAssets: [],
   materialPreviewMode: 'projectionPreview',
+  projectionCompositeMode: 'unblended',
   selectedObjectId: 'proj-1',
   selectedProjectorId: 'proj-1',
   displayUnit: 'm',

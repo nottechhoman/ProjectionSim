@@ -1,6 +1,7 @@
 import { useRef, type ChangeEvent } from 'react';
 import { useAppStore } from '../../store';
-import type { DisplayUnit, ViewPreset } from '../../types';
+import type { DisplayUnit, ProjectionCompositeMode, ViewPreset } from '../../types';
+import { MAX_PROJECTORS } from '../../types';
 import styles from './Toolbar.module.css';
 
 const UNITS: DisplayUnit[] = ['m', 'cm', 'mm'];
@@ -18,11 +19,15 @@ export function Toolbar() {
   const viewPreset = useAppStore((s) => s.viewPreset);
   const transformMode = useAppStore((s) => s.transformMode);
   const materialPreviewMode = useAppStore((s) => s.materialPreviewMode);
+  const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
+  const projectorCount = useAppStore((s) => s.projectors.length);
   const projectName = useAppStore((s) => s.projectName);
   const setDisplayUnit = useAppStore((s) => s.setDisplayUnit);
   const setViewPreset = useAppStore((s) => s.setViewPreset);
   const setTransformMode = useAppStore((s) => s.setTransformMode);
   const setMaterialPreviewMode = useAppStore((s) => s.setMaterialPreviewMode);
+  const setProjectionCompositeMode = useAppStore((s) => s.setProjectionCompositeMode);
+  const addProjector = useAppStore((s) => s.addProjector);
   const addBox = useAppStore((s) => s.addBox);
   const addCurvedScreen = useAppStore((s) => s.addCurvedScreen);
   const importFile = useAppStore((s) => s.importFile);
@@ -118,6 +123,32 @@ export function Toolbar() {
         <button type="button" onClick={addBox}>Add Box</button>
         <button type="button" onClick={addCurvedScreen}>Curved Screen</button>
         <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
+      </div>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <button type="button" onClick={addProjector} disabled={projectorCount >= MAX_PROJECTORS}>
+          + Projector
+        </button>
+      </div>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <span className={styles.label}>Composite</span>
+        {(['unblended', 'blended', 'heatmap'] as ProjectionCompositeMode[]).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            className={projectionCompositeMode === mode ? styles.active : undefined}
+            onClick={() => setProjectionCompositeMode(mode)}
+            disabled={projectorCount < 2 && mode !== 'unblended'}
+            title={projectorCount < 2 ? 'Add a second projector' : undefined}
+          >
+            {mode === 'unblended' ? 'Raw' : mode === 'blended' ? 'Blend' : 'Heatmap'}
+          </button>
+        ))}
       </div>
 
       <div className={styles.separator} />

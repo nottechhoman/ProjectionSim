@@ -17,6 +17,7 @@ export interface ProjectSnapshotV2 {
   projectors: ProjectorConfig[];
   mediaAssets: import('../types').MediaAssetRecord[];
   materialPreviewMode: import('../types').MaterialPreviewMode;
+  projectionCompositeMode: import('../types').ProjectionCompositeMode;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;

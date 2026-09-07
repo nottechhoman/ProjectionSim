@@ -1,6 +1,6 @@
 # ProjectionLab
 
-Browser-based 3D projection planning simulator. Milestone 1 delivers a single-projector scene with throw-ratio optics, projective test-pattern rendering, planar footprint calculations, and occlusion shadows. Milestone 2 adds image/video media on projectors, GLB/GLTF import, curved screens, material preview modes, and versioned project save/load with IndexedDB asset storage.
+Browser-based 3D projection planning simulator. Milestone 1 delivers a single-projector scene with throw-ratio optics, projective test-pattern rendering, planar footprint calculations, and occlusion shadows. Milestone 2 adds image/video media on projectors, GLB/GLTF/OBJ import, curved screens, material preview modes, and versioned project save/load with IndexedDB asset storage. Milestone 3 adds up to four projectors with overlap calculations, edge blending, and composite preview modes (raw additive, blended, heatmap).
 
 ## Installation
 
@@ -33,6 +33,8 @@ Select objects in the left panel or click them in the viewport. Edit position, r
 **Import** accepts images, videos, and GLB/GLTF models. **Curved Screen** adds a cylindrical receiving surface. Assign media to a projector in the inspector (Media source section). Toggle **Projection / Original** preview in the toolbar to see projected texture vs. base materials.
 
 **New / Open / Save** writes `.projectionlab.json` project files. Media blobs are stored in IndexedDB and rehydrated on load. The app also autosaves to browser localStorage every 2 seconds.
+
+Use **+ Projector** to add up to four projectors. Offset them horizontally and use **Raw / Blend / Heatmap** composite modes when two or more are enabled. Per-projector blend edge feathering is in the inspector.
 
 Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection at 6 m throw distance.
 
@@ -93,7 +95,7 @@ This is a **planning and visualization tool**, not a calibrated photometric or h
 ## Test Commands
 
 ```bash
-npm test              # Vitest — Acceptance Tests 1–3 (Test 4 skipped until M3)
+npm test              # Vitest — Acceptance Tests 1–5
 npm run test:watch    # Vitest watch mode
 npm run typecheck     # TypeScript project references
 npm run build         # Production build
@@ -106,4 +108,5 @@ npm run build         # Production build
 | 1 | `src/optics/optics.test.ts` | Nominal 4.0 × 2.25 m at D=6 m, density, invalid throw ratio |
 | 2 | `src/optics/optics.test.ts` | Lens shift moves image center |
 | 3 | `src/coverage/coverage.test.ts` | 20° yaw footprint matches ray–plane math |
-| 4 | `src/coverage/overlap.test.ts` | Skipped — overlap (M3) |
+| 4 | `src/coverage/overlap.test.ts` | Pairwise overlap, union, triple-region math |
+| 5 | `src/blending/blendWeights.test.ts` | Blend weights sum to 1; no double brightness |

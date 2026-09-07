@@ -4,8 +4,20 @@ import { TransformControls } from 'three/examples/jsm/controls/TransformControls
 import type { useAppStore } from '../store';
 import { buildProjectorCamera, getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { createProjectiveMaterial, fitModeToInt, patternToInt } from '../projection/ProjectiveMaterial';
+import {
+  createMultiProjectiveMaterial,
+  updateMultiProjectiveMaterial,
+} from '../projection/MultiProjectiveMaterial';
 import { DepthPass } from '../visibility/DepthPass';
-import type { MaterialPreviewMode, ProjectorConfig, SceneObject, Transform, TransformMode, ViewPreset } from '../types';
+import type {
+  MaterialPreviewMode,
+  ProjectionCompositeMode,
+  ProjectorConfig,
+  SceneObject,
+  Transform,
+  TransformMode,
+  ViewPreset,
+} from '../types';
 import { createScreen } from './objects/createScreen';
 import { createFloor } from './objects/createFloor';
 import { createBox } from './objects/createBox';
@@ -86,12 +98,14 @@ export class SceneEngine {
   private controls: OrbitControls | null = null;
   private transformControls: TransformControls | null = null;
   private depthPass: DepthPass | null = null;
+  private readonly depthPassByProjector = new Map<string, DepthPass>();
   private readonly projectiveMaterial = createProjectiveMaterial();
-  private readonly frustumHelper = new FrustumHelper();
-  private readonly projectorBody: THREE.Mesh;
+  private readonly multiProjectiveMaterial = createMultiProjectiveMaterial();
+  private readonly projectorVisuals = new Map<string, { body: THREE.Mesh; frustum: FrustumHelper }>();
   private readonly objectMeshes = new Map<string, THREE.Object3D>();
-  private activeProjector: ProjectorConfig | null = null;
+  private activeProjectors: ProjectorConfig[] = [];
   private materialPreviewMode: MaterialPreviewMode = 'projectionPreview';
+  private projectionCompositeMode: ProjectionCompositeMode = 'unblended';
   private animationId: number | null = null;
   private disposed = false;
   private currentViewPreset: ViewPreset = 'persp';
@@ -100,7 +114,6 @@ export class SceneEngine {
   private readonly pointer = new THREE.Vector2();
   private readonly raycaster = new THREE.Raycaster();
   private gizmoDragging = false;
-  private selectedProjectorId: string | null = null;
   private currentTransformMode: TransformMode = 'translate';
 
   constructor(canvas: HTMLCanvasElement) {
@@ -117,7 +130,7 @@ export class SceneEngine {
           'display:flex;align-items:center;justify-content:center;width:100%;height:100%;padding:24px;text-align:center;color:#e0e0e0;background:#1a1a1a;font-family:system-ui,sans-serif;font-size:14px;';
         parent.replaceChildren(message);
       }
-      this.projectorBody = new THREE.Mesh();
+      this.projectorVisuals.clear();
       return;
     }
 
@@ -140,12 +153,7 @@ export class SceneEngine {
 
     const grid = new THREE.GridHelper(20, 20, 0x555555, 0x333333);
     const axes = new THREE.AxesHelper(2);
-    this.helpersGroup.add(grid, axes, this.frustumHelper);
-
-    const bodyGeo = new THREE.BoxGeometry(0.35, 0.18, 0.45);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
-    this.projectorBody = new THREE.Mesh(bodyGeo, bodyMat);
-    this.helpersGroup.add(this.projectorBody);
+    this.helpersGroup.add(grid, axes);
 
     this.editorCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 500);
     this.editorCamera.position.set(8, 6, 12);
@@ -240,8 +248,9 @@ export class SceneEngine {
     }
 
     this.syncSceneObjects(state.sceneObjects);
-    this.syncProjector(state.projectors);
+    this.syncProjectors(state.projectors);
     this.materialPreviewMode = state.materialPreviewMode;
+    this.projectionCompositeMode = state.projectionCompositeMode;
     this.syncSelectionGizmo(state.selectedObjectId, state.projectors);
   }
 
@@ -263,9 +272,10 @@ export class SceneEngine {
     }
 
     const projector = projectors.find((p) => p.id === selectedId);
-    if (projector && this.selectedProjectorId === projector.id) {
-      if (this.transformControls.object !== this.projectorBody) {
-        this.transformControls.attach(this.projectorBody);
+    if (projector) {
+      const visual = this.projectorVisuals.get(projector.id);
+      if (visual && this.transformControls.object !== visual.body) {
+        this.transformControls.attach(visual.body);
       }
       this.transformControls.setMode(this.currentTransformMode);
       return;
@@ -278,15 +288,20 @@ export class SceneEngine {
     const obj = this.transformControls?.object;
     if (!obj) return;
 
-    let id: string | undefined;
-    if (obj === this.projectorBody) {
-      id = this.selectedProjectorId ?? undefined;
-    } else {
-      id = obj.userData.id as string | undefined;
+    const q = obj.quaternion;
+    for (const [projId, visual] of this.projectorVisuals) {
+      if (visual.body === obj) {
+        this.callbacks.onTransformChange?.(projId, {
+          position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+          quaternion: [q.x, q.y, q.z, q.w],
+        });
+        return;
+      }
     }
+
+    const id = obj.userData.id as string | undefined;
     if (!id) return;
 
-    const q = obj.quaternion;
     this.callbacks.onTransformChange?.(id, {
       position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
       quaternion: [q.x, q.y, q.z, q.w],
@@ -306,16 +321,25 @@ export class SceneEngine {
     for (const mesh of this.objectMeshes.values()) {
       if (mesh.visible) pickables.push(mesh);
     }
-    if (this.projectorBody.visible) pickables.push(this.projectorBody);
+    for (const visual of this.projectorVisuals.values()) {
+      if (visual.body.visible) pickables.push(visual.body);
+    }
 
-    const hits = this.raycaster.intersectObjects(pickables, false);
+    const hits = this.raycaster.intersectObjects(pickables, true);
     if (hits.length === 0) return;
 
     const hit = hits[0].object;
-    const id =
-      hit === this.projectorBody
-        ? (this.projectorBody.userData.pickId as string | undefined)
-        : (hit.userData.id as string | undefined);
+    let id = hit.userData.pickId as string | undefined;
+    if (!id) {
+      let current: THREE.Object3D | null = hit;
+      while (current) {
+        id = current.userData.pickId as string | undefined;
+        if (id) break;
+        id = current.userData.id as string | undefined;
+        if (id) break;
+        current = current.parent;
+      }
+    }
     if (id) this.callbacks.onSelect?.(id);
   };
 
@@ -358,63 +382,93 @@ export class SceneEngine {
     }
   }
 
-  private syncProjector(projectors: ProjectorConfig[]): void {
-    const projector = projectors.find((p) => p.enabled) ?? null;
-    this.activeProjector = projector;
-    this.selectedProjectorId = projector?.id ?? null;
+  private ensureProjectorVisual(id: string): { body: THREE.Mesh; frustum: FrustumHelper } {
+    let visual = this.projectorVisuals.get(id);
+    if (visual) return visual;
 
-    if (!projector) {
-      this.frustumHelper.visible = false;
-      this.projectorBody.visible = false;
-      this.projectorBody.userData.pickId = null;
-      return;
+    const bodyGeo = new THREE.BoxGeometry(0.35, 0.18, 0.45);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x888888 });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    const frustum = new FrustumHelper();
+    this.helpersGroup.add(body, frustum);
+    visual = { body, frustum };
+    this.projectorVisuals.set(id, visual);
+    return visual;
+  }
+
+  private syncProjectors(projectors: ProjectorConfig[]): void {
+    const enabled = projectors.filter((p) => p.enabled);
+    this.activeProjectors = enabled;
+
+    const nextIds = new Set(projectors.map((p) => p.id));
+    for (const [id, visual] of this.projectorVisuals) {
+      if (!nextIds.has(id)) {
+        this.helpersGroup.remove(visual.body, visual.frustum);
+        visual.body.geometry.dispose();
+        (visual.body.material as THREE.Material).dispose();
+        visual.frustum.dispose();
+        this.projectorVisuals.delete(id);
+        this.depthPassByProjector.get(id)?.dispose();
+        this.depthPassByProjector.delete(id);
+      }
     }
 
-    this.projectorBody.userData.pickId = projector.id;
+    for (const projector of projectors) {
+      const visual = this.ensureProjectorVisual(projector.id);
+      visual.body.userData.pickId = projector.id;
+      visual.body.visible = projector.enabled;
 
-    const worldMatrix = projectorWorldMatrix(projector);
-    const position = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
-    const quaternion = new THREE.Quaternion().setFromRotationMatrix(worldMatrix);
+      if (!projector.enabled) {
+        visual.frustum.visible = false;
+        continue;
+      }
 
-    this.projectorBody.position.copy(position);
-    this.projectorBody.quaternion.copy(quaternion);
-    this.projectorBody.visible = true;
+      const worldMatrix = projectorWorldMatrix(projector);
+      const position = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
+      const quaternion = new THREE.Quaternion().setFromRotationMatrix(worldMatrix);
+      visual.body.position.copy(position);
+      visual.body.quaternion.copy(quaternion);
 
-    const throwDistance = Math.max(
-      2,
-      Math.hypot(
-        projector.transform.position.x,
-        projector.transform.position.y,
-        projector.transform.position.z,
-      ),
-    );
-    this.frustumHelper.updateFromProjector(projector.optics, worldMatrix, throwDistance);
-    this.frustumHelper.visible = true;
-    (this.frustumHelper.material as THREE.LineBasicMaterial).color.set(projector.color);
+      const throwDistance = Math.max(
+        2,
+        Math.hypot(
+          projector.transform.position.x,
+          projector.transform.position.y,
+          projector.transform.position.z,
+        ),
+      );
+      visual.frustum.updateFromProjector(projector.optics, worldMatrix, throwDistance);
+      visual.frustum.visible = true;
+      (visual.frustum.material as THREE.LineBasicMaterial).color.set(projector.color);
+    }
 
-    this.projectiveMaterial.uniforms.projectorMatrix.value.copy(
-      getProjectorViewProjectionMatrix(projector.optics, worldMatrix),
-    );
-    this.projectiveMaterial.uniforms.patternType.value = patternToInt(projector.testPattern);
-    this.projectiveMaterial.uniforms.brightness.value = projector.brightness;
-    this.projectiveMaterial.uniforms.rasterAspect.value = projector.optics.aspectRatio;
-    (this.projectiveMaterial.uniforms.projectorColor.value as THREE.Color).set(projector.color);
+    if (enabled.length === 1) {
+      const projector = enabled[0];
+      const worldMatrix = projectorWorldMatrix(projector);
+      this.projectiveMaterial.uniforms.projectorMatrix.value.copy(
+        getProjectorViewProjectionMatrix(projector.optics, worldMatrix),
+      );
+      this.projectiveMaterial.uniforms.patternType.value = patternToInt(projector.testPattern);
+      this.projectiveMaterial.uniforms.brightness.value = projector.brightness;
+      this.projectiveMaterial.uniforms.rasterAspect.value = projector.optics.aspectRatio;
+      (this.projectiveMaterial.uniforms.projectorColor.value as THREE.Color).set(projector.color);
 
-    const useMedia =
-      (projector.mediaSource === 'image' || projector.mediaSource === 'video') &&
-      projector.mediaAssetId;
-    if (useMedia) {
-      const entry = mediaTextureCache.get(projector.mediaAssetId!);
-      if (entry) {
-        this.projectiveMaterial.uniforms.useMediaTexture.value = 1;
-        this.projectiveMaterial.uniforms.mediaMap.value = entry.texture;
-        this.projectiveMaterial.uniforms.mediaAspect.value = entry.aspect;
-        this.projectiveMaterial.uniforms.fitMode.value = fitModeToInt(projector.mediaFit);
+      const useMedia =
+        (projector.mediaSource === 'image' || projector.mediaSource === 'video') &&
+        projector.mediaAssetId;
+      if (useMedia) {
+        const entry = mediaTextureCache.get(projector.mediaAssetId!);
+        if (entry) {
+          this.projectiveMaterial.uniforms.useMediaTexture.value = 1;
+          this.projectiveMaterial.uniforms.mediaMap.value = entry.texture;
+          this.projectiveMaterial.uniforms.mediaAspect.value = entry.aspect;
+          this.projectiveMaterial.uniforms.fitMode.value = fitModeToInt(projector.mediaFit);
+        } else {
+          this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
+        }
       } else {
         this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
       }
-    } else {
-      this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
     }
   }
 
@@ -440,27 +494,58 @@ export class SceneEngine {
 
     const depthMeshes = this.getDepthMeshes();
     const receivers = this.getReceiverRoots();
-
-    if (this.activeProjector && depthMeshes.length > 0) {
-      const worldMatrix = projectorWorldMatrix(this.activeProjector);
-      const projectorCamera = buildProjectorCamera(this.activeProjector.optics, worldMatrix);
-      const depthMap = this.depthPass.render(
-        this.renderer,
-        this.editorScene,
-        projectorCamera,
-        depthMeshes,
-      );
-      this.projectiveMaterial.uniforms.depthMap.value = depthMap;
-    } else {
-      this.projectiveMaterial.uniforms.depthMap.value = null;
-    }
+    const enabled = this.activeProjectors;
 
     const savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
-    if (this.materialPreviewMode === 'projectionPreview') {
-      for (const root of receivers) {
-        for (const mesh of collectMeshes(root)) {
-          savedMaterials.set(mesh, mesh.material);
-          mesh.material = this.projectiveMaterial;
+
+    if (this.materialPreviewMode === 'projectionPreview' && enabled.length > 0 && depthMeshes.length > 0) {
+      if (enabled.length === 1) {
+        const projector = enabled[0];
+        const worldMatrix = projectorWorldMatrix(projector);
+        const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
+        const depthMap = this.depthPass.render(
+          this.renderer,
+          this.editorScene,
+          projectorCamera,
+          depthMeshes,
+        );
+        this.projectiveMaterial.uniforms.depthMap.value = depthMap;
+
+        for (const root of receivers) {
+          for (const mesh of collectMeshes(root)) {
+            savedMaterials.set(mesh, mesh.material);
+            mesh.material = this.projectiveMaterial;
+          }
+        }
+      } else {
+        const depthTextures: THREE.Texture[] = [];
+        for (const projector of enabled.slice(0, 4)) {
+          let pass = this.depthPassByProjector.get(projector.id);
+          if (!pass) {
+            pass = new DepthPass();
+            this.depthPassByProjector.set(projector.id, pass);
+          }
+          const worldMatrix = projectorWorldMatrix(projector);
+          const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
+          depthTextures.push(pass.render(this.renderer, this.editorScene, projectorCamera, depthMeshes));
+        }
+
+        updateMultiProjectiveMaterial(
+          this.multiProjectiveMaterial,
+          enabled.slice(0, 4),
+          depthTextures,
+          this.projectionCompositeMode,
+        );
+        this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(
+          this.depthPass.target.width,
+          this.depthPass.target.height,
+        );
+
+        for (const root of receivers) {
+          for (const mesh of collectMeshes(root)) {
+            savedMaterials.set(mesh, mesh.material);
+            mesh.material = this.multiProjectiveMaterial;
+          }
         }
       }
     }
@@ -510,10 +595,16 @@ export class SceneEngine {
     }
     this.objectMeshes.clear();
 
-    this.frustumHelper.dispose();
-    this.projectorBody.geometry.dispose();
-    (this.projectorBody.material as THREE.Material).dispose();
+    for (const visual of this.projectorVisuals.values()) {
+      visual.body.geometry.dispose();
+      (visual.body.material as THREE.Material).dispose();
+      visual.frustum.dispose();
+    }
+    this.projectorVisuals.clear();
+    for (const pass of this.depthPassByProjector.values()) pass.dispose();
+    this.depthPassByProjector.clear();
     this.projectiveMaterial.dispose();
+    this.multiProjectiveMaterial.dispose();
     this.depthPass?.dispose();
     this.transformControls?.dispose();
     this.controls?.dispose();

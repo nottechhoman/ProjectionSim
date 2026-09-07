@@ -23,6 +23,7 @@ export function Inspector() {
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
   const updateProjector = useAppStore((s) => s.updateProjector);
   const updateProjectorOptics = useAppStore((s) => s.updateProjectorOptics);
+  const removeProjector = useAppStore((s) => s.removeProjector);
   const updateSceneObjectTransform = useAppStore((s) => s.updateSceneObjectTransform);
   const updateSceneObjectFlags = useAppStore((s) => s.updateSceneObjectFlags);
   const mediaAssets = useAppStore((s) => s.mediaAssets);
@@ -135,6 +136,80 @@ export function Inspector() {
 
       {projector && (
         <>
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Projector</div>
+            <label className={styles.checkRow}>
+              <input
+                type="checkbox"
+                checked={projector.enabled}
+                onChange={(e) => updateProjector(projector.id, { enabled: e.target.checked })}
+              />
+              Enabled
+            </label>
+            <NumInput
+              label="Brightness"
+              value={projector.brightness}
+              step={0.05}
+              onChange={(v) => updateProjector(projector.id, { brightness: Math.max(0, v) })}
+            />
+            <button type="button" onClick={() => removeProjector(projector.id)}>
+              Remove projector
+            </button>
+          </div>
+
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Blend edges</div>
+            <p className={styles.hint}>Feather width as fraction of image (0–0.5)</p>
+            <NumInput
+              label="Left"
+              value={projector.blendEdges.left}
+              step={0.01}
+              onChange={(v) =>
+                updateProjector(projector.id, {
+                  blendEdges: { ...projector.blendEdges, left: Math.min(0.5, Math.max(0, v)) },
+                })
+              }
+            />
+            <NumInput
+              label="Right"
+              value={projector.blendEdges.right}
+              step={0.01}
+              onChange={(v) =>
+                updateProjector(projector.id, {
+                  blendEdges: { ...projector.blendEdges, right: Math.min(0.5, Math.max(0, v)) },
+                })
+              }
+            />
+            <NumInput
+              label="Top"
+              value={projector.blendEdges.top}
+              step={0.01}
+              onChange={(v) =>
+                updateProjector(projector.id, {
+                  blendEdges: { ...projector.blendEdges, top: Math.min(0.5, Math.max(0, v)) },
+                })
+              }
+            />
+            <NumInput
+              label="Bottom"
+              value={projector.blendEdges.bottom}
+              step={0.01}
+              onChange={(v) =>
+                updateProjector(projector.id, {
+                  blendEdges: { ...projector.blendEdges, bottom: Math.min(0.5, Math.max(0, v)) },
+                })
+              }
+            />
+            <label className={styles.checkRow}>
+              <input
+                type="checkbox"
+                checked={projector.outerEdgeFade}
+                onChange={(e) => updateProjector(projector.id, { outerEdgeFade: e.target.checked })}
+              />
+              Outer edge fade
+            </label>
+          </div>
+
           <div className={styles.section}>
             <div className={styles.sectionTitle}>Media Source</div>
             <div className={styles.row}>

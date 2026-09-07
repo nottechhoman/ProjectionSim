@@ -15,6 +15,7 @@ import type {
   MediaAssetRecord,
   MediaFitMode,
   MediaSourceKind,
+  ProjectionCompositeMode,
   ProjectorConfig,
   SceneObject,
   Transform,
@@ -23,7 +24,8 @@ import type {
 } from '../types';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
-import { computePlanarFootprint } from '../coverage';
+import { computePlanarFootprint, computeAlignedOverlap } from '../coverage';
+import { DEFAULT_BLEND_EDGES, MAX_PROJECTORS, PROJECTOR_PALETTE } from '../types';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import {
   buildInitialPersistedState,
@@ -56,6 +58,9 @@ interface AppState extends PersistedStateSlice {
   setDisplayUnit: (u: DisplayUnit) => void;
   setViewPreset: (preset: ViewPreset) => void;
   setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
+  setProjectionCompositeMode: (mode: ProjectionCompositeMode) => void;
+  addProjector: () => void;
+  removeProjector: (id: string) => void;
   setMeasureMode: (enabled: boolean) => void;
   setFrameTimeMs: (ms: number) => void;
   setWebgl2Available: (available: boolean) => void;
@@ -110,6 +115,7 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     projectors: state.projectors,
     mediaAssets: state.mediaAssets,
     materialPreviewMode: state.materialPreviewMode,
+    projectionCompositeMode: state.projectionCompositeMode,
     selectedObjectId: state.selectedObjectId,
     selectedProjectorId: state.selectedProjectorId,
     displayUnit: state.displayUnit,
@@ -130,6 +136,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   projectors: initial.projectors,
   mediaAssets: initial.mediaAssets,
   materialPreviewMode: initial.materialPreviewMode,
+  projectionCompositeMode: initial.projectionCompositeMode,
   selectedObjectId: initial.selectedObjectId,
   selectedProjectorId: initial.selectedProjectorId,
   displayUnit: initial.displayUnit,
@@ -137,7 +144,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   measureMode: false,
   frameTimeMs: 0,
   webgl2Available: null,
-  calculationResults: { nominal: null, footprint: null, opticsError: null },
+  calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
   shaderWarning: null,
   leftPanelVisible: initial.leftPanelVisible,
   rightPanelVisible: initial.rightPanelVisible,
@@ -192,6 +199,69 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDisplayUnit: (u) => set({ displayUnit: u }),
   setViewPreset: (preset) => set({ viewPreset: preset }),
   setMaterialPreviewMode: (mode) => set({ materialPreviewMode: mode }),
+  setProjectionCompositeMode: (mode) => set({ projectionCompositeMode: mode }),
+  addProjector: () => {
+    const state = get();
+    if (state.projectors.length >= MAX_PROJECTORS) {
+      set({ projectMessage: `Maximum ${MAX_PROJECTORS} projectors` });
+      return;
+    }
+    const index = state.projectors.length;
+    const id = `proj-${Date.now()}`;
+    const offsetX = index * 1.6;
+    const newProjector: ProjectorConfig = {
+      id,
+      name: `Projector ${index + 1}`,
+      enabled: true,
+      color: PROJECTOR_PALETTE[index % PROJECTOR_PALETTE.length],
+      transform: {
+        position: { x: offsetX, y: 1.5, z: 6 },
+        quaternion: eulerYXZToQuaternion(0, 0, 0),
+      },
+      optics: {
+        throwRatio: 1.5,
+        resolution: { width: 1920, height: 1080 },
+        aspectRatio: 16 / 9,
+        lensShiftH: 0,
+        lensShiftV: 0,
+        nearLimit: 0.1,
+        farLimit: 100,
+      },
+      testPattern: 'projectorId',
+      brightness: 1,
+      mediaSource: 'pattern',
+      mediaAssetId: null,
+      mediaFit: 'contain',
+      blendEdges: { ...DEFAULT_BLEND_EDGES },
+      outerEdgeFade: false,
+    };
+    set((s) => ({
+      projectors: [...s.projectors, newProjector],
+      selectedObjectId: id,
+      selectedProjectorId: id,
+      projectMessage: `Added ${newProjector.name}`,
+    }));
+    get().recomputeCalculations();
+  },
+  removeProjector: (id) => {
+    const state = get();
+    if (state.projectors.length <= 1) {
+      set({ projectMessage: 'At least one projector is required' });
+      return;
+    }
+    const next = state.projectors.filter((p) => p.id !== id);
+    const selectedProjectorId =
+      state.selectedProjectorId === id ? next[0].id : state.selectedProjectorId;
+    const selectedObjectId =
+      state.selectedObjectId === id ? selectedProjectorId : state.selectedObjectId;
+    set({
+      projectors: next,
+      selectedProjectorId,
+      selectedObjectId,
+      projectMessage: 'Projector removed',
+    });
+    get().recomputeCalculations();
+  },
   setMeasureMode: (enabled) => set({ measureMode: enabled }),
   setFrameTimeMs: (ms) => set({ frameTimeMs: ms }),
   setWebgl2Available: (available) => set({ webgl2Available: available }),
@@ -204,8 +274,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleBottomPanel: () => set((s) => ({ bottomPanelVisible: !s.bottomPanelVisible })),
   setTransformMode: (mode) => set({ transformMode: mode }),
   recomputeCalculations: () => {
-    const { projectors, sceneObjects } = get();
-    const proj = projectors[0];
+    const { projectors, sceneObjects, selectedProjectorId } = get();
+    const proj = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
     if (!proj) return;
     const v = validateOptics(proj.optics);
     if (!v.valid) return;
@@ -213,6 +283,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const worldMatrix = buildWorldMatrix(proj.transform);
     const screen = findProjectionScreen(sceneObjects);
     let footprint = null;
+    let overlap = null;
 
     if (screen && screen.type === 'screen') {
       const screenMatrix = buildWorldMatrix(screen.transform);
@@ -226,11 +297,18 @@ export const useAppStore = create<AppState>((set, get) => ({
         width: screen.dimensions.width,
         height: screen.dimensions.height,
       });
+      overlap = computeAlignedOverlap(projectors, {
+        center,
+        normal,
+        width: screen.dimensions.width,
+        height: screen.dimensions.height,
+        matrix: screenMatrix,
+      });
     }
 
     const distance = footprint?.axialDistance ?? 6;
     const nominal = computeNominalProjection(proj.optics, distance);
-    set({ calculationResults: { nominal, footprint, opticsError: null } });
+    set({ calculationResults: { nominal, footprint, opticsError: null, overlap } });
   },
   addBox: () => {
     const id = `box-${Date.now()}`;
@@ -312,7 +390,8 @@ export const useAppStore = create<AppState>((set, get) => ({
           projectMessage: `Imported model "${file.name}" at scale ${modelScale}`,
         }));
       } else {
-        const proj = get().projectors[0];
+        const proj =
+          get().projectors.find((p) => p.id === get().selectedProjectorId) ?? get().projectors[0];
         if (proj) {
           get().setProjectorMedia(proj.id, kind, record.id);
         }
@@ -337,7 +416,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
   toggleVideoPlayback: () => {
-    const proj = get().projectors[0];
+    const projId = get().selectedProjectorId;
+    const proj = get().projectors.find((p) => p.id === projId);
     if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
     const entry = mediaTextureCache.get(proj.mediaAssetId);
     if (!entry?.video) return;
@@ -355,7 +435,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       ...defaults,
       projectMessage: 'New project created',
-      calculationResults: { nominal: null, footprint: null, opticsError: null },
+      calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
       videoPlaying: false,
     });
     clearAutosave();
@@ -378,7 +458,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           missing.length > 0
             ? `Loaded "${snapshot.name}" — missing assets: ${missing.join(', ')}`
             : `Loaded "${snapshot.name}"`,
-        calculationResults: { nominal: null, footprint: null, opticsError: null },
+        calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
         videoPlaying: false,
       });
       writeAutosave(snapshot);

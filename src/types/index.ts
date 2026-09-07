@@ -19,6 +19,27 @@ export type TestPattern =
   | 'white'
   | 'projectorId';
 
+export type ProjectionCompositeMode = 'unblended' | 'heatmap' | 'blended';
+
+export interface BlendEdges {
+  /** Feather width as fraction of image width/height (0–0.5). */
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+}
+
+export const DEFAULT_BLEND_EDGES: BlendEdges = {
+  left: 0,
+  right: 0,
+  top: 0,
+  bottom: 0,
+};
+
+export const PROJECTOR_PALETTE = ['#4fc3f7', '#ff7043', '#66bb6a', '#ab47bc'] as const;
+
+export const MAX_PROJECTORS = 4;
+
 export interface Vec3 {
   x: number;
   y: number;
@@ -80,6 +101,8 @@ export interface ProjectorConfig {
   mediaSource: MediaSourceKind;
   mediaAssetId: string | null;
   mediaFit: MediaFitMode;
+  blendEdges: BlendEdges;
+  outerEdgeFade: boolean;
 }
 
 export interface NominalProjection {
@@ -102,8 +125,31 @@ export interface FootprintResult {
   axialDistance: number | null;
 }
 
+export interface PairwiseOverlap {
+  projectorAId: string;
+  projectorBId: string;
+  areaM2: number;
+  overlapWidthM: number | null;
+  overlapHeightM: number | null;
+  overlapPixelsA: number | null;
+  overlapPixelsB: number | null;
+  percentOfA: number;
+  percentOfB: number;
+}
+
+export interface OverlapResults {
+  perProjectorAreaM2: Record<string, number>;
+  pairwise: PairwiseOverlap[];
+  unionAreaM2: number;
+  multiCoverageAreaM2: number;
+  uncoveredAreaM2: number;
+  combinedWidthM: number | null;
+  horizontalOverlapM: number | null;
+}
+
 export interface CalculationResults {
   nominal: NominalProjection | null;
   footprint: FootprintResult | null;
   opticsError: string | null;
+  overlap: OverlapResults | null;
 }
