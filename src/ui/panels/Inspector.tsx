@@ -24,6 +24,7 @@ export function Inspector() {
   const updateProjector = useAppStore((s) => s.updateProjector);
   const updateProjectorOptics = useAppStore((s) => s.updateProjectorOptics);
   const removeProjector = useAppStore((s) => s.removeProjector);
+  const removeSceneObject = useAppStore((s) => s.removeSceneObject);
   const updateSceneObjectTransform = useAppStore((s) => s.updateSceneObjectTransform);
   const updateSceneObjectFlags = useAppStore((s) => s.updateSceneObjectFlags);
   const mediaAssets = useAppStore((s) => s.mediaAssets);
@@ -131,6 +132,9 @@ export function Inspector() {
             />
             Blocks projection
           </label>
+          <button type="button" className={styles.dangerBtn} onClick={() => removeSceneObject(sceneObject.id)}>
+            Delete object
+          </button>
         </div>
       )}
 

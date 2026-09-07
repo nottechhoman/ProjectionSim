@@ -8,6 +8,7 @@ export function LeftPanel() {
   const setSelectedObject = useAppStore((s) => s.setSelectedObject);
   const setSelectedProjector = useAppStore((s) => s.setSelectedProjector);
   const removeProjector = useAppStore((s) => s.removeProjector);
+  const removeSceneObject = useAppStore((s) => s.removeSceneObject);
   const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
 
   return (
@@ -30,6 +31,18 @@ export function LeftPanel() {
             >
               <span className={styles.name}>{obj.name}</span>
               <span className={styles.type}>{obj.type}</span>
+              <button
+                type="button"
+                className={styles.deleteBtn}
+                title={sceneObjects.length <= 1 ? 'At least one object required' : `Delete ${obj.name}`}
+                disabled={sceneObjects.length <= 1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  removeSceneObject(obj.id);
+                }}
+              >
+                ×
+              </button>
             </li>
           ))}
         </ul>

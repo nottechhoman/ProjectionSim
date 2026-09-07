@@ -55,6 +55,7 @@ interface AppState extends PersistedStateSlice {
     id: string,
     patch: Partial<Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'blocksProjection'>>,
   ) => void;
+  removeSceneObject: (id: string) => void;
   setDisplayUnit: (u: DisplayUnit) => void;
   setViewPreset: (preset: ViewPreset) => void;
   setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
@@ -194,6 +195,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       sceneObjects: s.sceneObjects.map((obj) => (obj.id === id ? { ...obj, ...patch } : obj)),
     }));
+    get().recomputeCalculations();
+  },
+  removeSceneObject: (id) => {
+    const state = get();
+    if (state.sceneObjects.length <= 1) {
+      set({ projectMessage: 'At least one scene object is required' });
+      return;
+    }
+    const target = state.sceneObjects.find((o) => o.id === id);
+    if (!target) return;
+    if (!window.confirm(`Delete "${target.name}"?`)) return;
+
+    const next = state.sceneObjects.filter((o) => o.id !== id);
+    let selectedObjectId = state.selectedObjectId;
+    if (selectedObjectId === id) {
+      selectedObjectId = next[0]?.id ?? null;
+    }
+
+    set({
+      sceneObjects: next,
+      selectedObjectId,
+      projectMessage: `Deleted ${target.name}`,
+    });
     get().recomputeCalculations();
   },
   setDisplayUnit: (u) => set({ displayUnit: u }),
