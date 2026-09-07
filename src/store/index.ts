@@ -34,6 +34,7 @@ import {
   snapshotToSlice,
   type PersistedStateSlice,
 } from './persistenceHelpers';
+import { clampPanelWidth, clampFloatPosition, FLOATING_PANEL_HEIGHT } from '../ui/panelLayout';
 
 interface AppState extends PersistedStateSlice {
   projectMessage: string | null;
@@ -72,6 +73,14 @@ interface AppState extends PersistedStateSlice {
   toggleLeftPanel: () => void;
   toggleRightPanel: () => void;
   toggleBottomPanel: () => void;
+  resizeLeftPanelBy: (delta: number) => void;
+  resizeRightPanelBy: (delta: number) => void;
+  popOutLeftPanel: () => void;
+  popOutRightPanel: () => void;
+  dockLeftPanel: () => void;
+  dockRightPanel: () => void;
+  moveLeftPanelFloat: (x: number, y: number) => void;
+  moveRightPanelFloat: (x: number, y: number) => void;
   setTransformMode: (mode: TransformMode) => void;
   recomputeCalculations: () => void;
   addBox: () => void;
@@ -125,6 +134,12 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     leftPanelVisible: state.leftPanelVisible,
     rightPanelVisible: state.rightPanelVisible,
     bottomPanelVisible: state.bottomPanelVisible,
+    leftPanelWidth: state.leftPanelWidth,
+    rightPanelWidth: state.rightPanelWidth,
+    leftPanelPoppedOut: state.leftPanelPoppedOut,
+    rightPanelPoppedOut: state.rightPanelPoppedOut,
+    leftPanelFloat: state.leftPanelFloat,
+    rightPanelFloat: state.rightPanelFloat,
   };
 }
 
@@ -150,6 +165,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   leftPanelVisible: initial.leftPanelVisible,
   rightPanelVisible: initial.rightPanelVisible,
   bottomPanelVisible: initial.bottomPanelVisible,
+  leftPanelWidth: initial.leftPanelWidth,
+  rightPanelWidth: initial.rightPanelWidth,
+  leftPanelPoppedOut: initial.leftPanelPoppedOut,
+  rightPanelPoppedOut: initial.rightPanelPoppedOut,
+  leftPanelFloat: initial.leftPanelFloat,
+  rightPanelFloat: initial.rightPanelFloat,
   transformMode: initial.transformMode,
   videoPlaying: false,
   setSelectedObject: (id) => set({ selectedObjectId: id }),
@@ -299,6 +320,42 @@ export const useAppStore = create<AppState>((set, get) => ({
   toggleLeftPanel: () => set((s) => ({ leftPanelVisible: !s.leftPanelVisible })),
   toggleRightPanel: () => set((s) => ({ rightPanelVisible: !s.rightPanelVisible })),
   toggleBottomPanel: () => set((s) => ({ bottomPanelVisible: !s.bottomPanelVisible })),
+  resizeLeftPanelBy: (delta) =>
+    set((s) => ({ leftPanelWidth: clampPanelWidth(s.leftPanelWidth + delta) })),
+  resizeRightPanelBy: (delta) =>
+    set((s) => ({ rightPanelWidth: clampPanelWidth(s.rightPanelWidth + delta) })),
+  popOutLeftPanel: () =>
+    set((s) => ({
+      leftPanelVisible: true,
+      leftPanelPoppedOut: true,
+      leftPanelFloat: clampFloatPosition(
+        s.leftPanelFloat.x,
+        s.leftPanelFloat.y,
+        s.leftPanelWidth,
+        FLOATING_PANEL_HEIGHT,
+      ),
+    })),
+  popOutRightPanel: () =>
+    set((s) => ({
+      rightPanelVisible: true,
+      rightPanelPoppedOut: true,
+      rightPanelFloat: clampFloatPosition(
+        s.rightPanelFloat.x,
+        s.rightPanelFloat.y,
+        s.rightPanelWidth,
+        FLOATING_PANEL_HEIGHT,
+      ),
+    })),
+  dockLeftPanel: () => set({ leftPanelPoppedOut: false }),
+  dockRightPanel: () => set({ rightPanelPoppedOut: false }),
+  moveLeftPanelFloat: (x, y) =>
+    set((s) => ({
+      leftPanelFloat: clampFloatPosition(x, y, s.leftPanelWidth, FLOATING_PANEL_HEIGHT),
+    })),
+  moveRightPanelFloat: (x, y) =>
+    set((s) => ({
+      rightPanelFloat: clampFloatPosition(x, y, s.rightPanelWidth, FLOATING_PANEL_HEIGHT),
+    })),
   setTransformMode: (mode) => set({ transformMode: mode }),
   recomputeCalculations: () => {
     const { projectors, sceneObjects, selectedProjectorId } = get();

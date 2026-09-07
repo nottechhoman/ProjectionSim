@@ -21,6 +21,9 @@ export function Inspector() {
   const displayUnit = useAppStore((s) => s.displayUnit);
   const opticsError = useAppStore((s) => s.calculationResults.opticsError);
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
+  const rightPanelPoppedOut = useAppStore((s) => s.rightPanelPoppedOut);
+  const popOutRightPanel = useAppStore((s) => s.popOutRightPanel);
+  const dockRightPanel = useAppStore((s) => s.dockRightPanel);
   const updateProjector = useAppStore((s) => s.updateProjector);
   const updateProjectorOptics = useAppStore((s) => s.updateProjectorOptics);
   const removeProjector = useAppStore((s) => s.removeProjector);
@@ -33,15 +36,30 @@ export function Inspector() {
   const projector = projectors.find((p) => p.id === selectedObjectId);
   const sceneObject = sceneObjects.find((o) => o.id === selectedObjectId);
 
+  const header = (
+    <div className={styles.header} data-panel-header>
+      <span>Inspector</span>
+      <div className={styles.headerActions}>
+        {rightPanelPoppedOut ? (
+          <button type="button" className={styles.actionBtn} onClick={dockRightPanel} title="Dock panel">
+            ⊟
+          </button>
+        ) : (
+          <button type="button" className={styles.actionBtn} onClick={popOutRightPanel} title="Pop out panel">
+            ⧉
+          </button>
+        )}
+        <button type="button" className={styles.collapseBtn} onClick={toggleRightPanel} title="Hide inspector">
+          ×
+        </button>
+      </div>
+    </div>
+  );
+
   if (!selectedObjectId || (!projector && !sceneObject)) {
     return (
       <div className={styles.panel}>
-        <div className={styles.header}>
-          <span>Inspector</span>
-          <button type="button" className={styles.collapseBtn} onClick={toggleRightPanel} title="Hide inspector">
-            ×
-          </button>
-        </div>
+        {header}
         <div className={styles.empty}>Select an object or projector</div>
       </div>
     );
@@ -71,12 +89,7 @@ export function Inspector() {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
-        <span>Inspector</span>
-        <button type="button" className={styles.collapseBtn} onClick={toggleRightPanel} title="Hide inspector">
-          ×
-        </button>
-      </div>
+      {header}
 
       {opticsError && projector && (
         <div className={styles.error}>{opticsError}</div>

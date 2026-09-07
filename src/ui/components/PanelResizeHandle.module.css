@@ -1,0 +1,34 @@
+.handle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  z-index: 20;
+  cursor: col-resize;
+  touch-action: none;
+  background: transparent;
+}
+
+.handle::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 2px;
+  width: 2px;
+  background: transparent;
+  transition: background 0.15s;
+}
+
+.handle:hover::after,
+.handle:active::after {
+  background: #4fc3f7;
+}
+
+.onLeftPanel {
+  right: -3px;
+}
+
+.onRightPanel {
+  left: -3px;
+}

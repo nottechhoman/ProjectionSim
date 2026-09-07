@@ -10,14 +10,28 @@ export function LeftPanel() {
   const removeProjector = useAppStore((s) => s.removeProjector);
   const removeSceneObject = useAppStore((s) => s.removeSceneObject);
   const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
+  const leftPanelPoppedOut = useAppStore((s) => s.leftPanelPoppedOut);
+  const popOutLeftPanel = useAppStore((s) => s.popOutLeftPanel);
+  const dockLeftPanel = useAppStore((s) => s.dockLeftPanel);
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>
+      <div className={styles.header} data-panel-header>
         <span>Scene</span>
-        <button type="button" className={styles.collapseBtn} onClick={toggleLeftPanel} title="Hide scene panel">
-          ×
-        </button>
+        <div className={styles.headerActions}>
+          {leftPanelPoppedOut ? (
+            <button type="button" className={styles.actionBtn} onClick={dockLeftPanel} title="Dock panel">
+              ⊟
+            </button>
+          ) : (
+            <button type="button" className={styles.actionBtn} onClick={popOutLeftPanel} title="Pop out panel">
+              ⧉
+            </button>
+          )}
+          <button type="button" className={styles.collapseBtn} onClick={toggleLeftPanel} title="Hide scene panel">
+            ×
+          </button>
+        </div>
       </div>
 
       <div className={styles.section}>

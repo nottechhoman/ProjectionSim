@@ -2,6 +2,15 @@ import { validateOptics } from '../optics/validate';
 import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, SceneObject } from '../types';
 import { DEFAULT_BLEND_EDGES } from '../types';
 import {
+  clampPanelWidth,
+  clampFloatPosition,
+  DEFAULT_LEFT_PANEL_WIDTH,
+  DEFAULT_RIGHT_PANEL_WIDTH,
+  defaultLeftPanelFloat,
+  defaultRightPanelFloat,
+  FLOATING_PANEL_HEIGHT,
+} from '../ui/panelLayout';
+import {
   PROJECT_FILE_VERSION,
   PROJECT_FILE_VERSION_LEGACY,
   type ProjectSnapshot,
@@ -160,6 +169,48 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     leftPanelVisible: data.leftPanelVisible !== false,
     rightPanelVisible: data.rightPanelVisible !== false,
     bottomPanelVisible: data.bottomPanelVisible !== false,
+    leftPanelWidth: clampPanelWidth(
+      typeof data.leftPanelWidth === 'number' ? data.leftPanelWidth : DEFAULT_LEFT_PANEL_WIDTH,
+    ),
+    rightPanelWidth: clampPanelWidth(
+      typeof data.rightPanelWidth === 'number' ? data.rightPanelWidth : DEFAULT_RIGHT_PANEL_WIDTH,
+    ),
+    leftPanelPoppedOut: data.leftPanelPoppedOut === true,
+    rightPanelPoppedOut: data.rightPanelPoppedOut === true,
+    leftPanelFloat:
+      isObject(data.leftPanelFloat) &&
+      typeof data.leftPanelFloat.x === 'number' &&
+      typeof data.leftPanelFloat.y === 'number'
+        ? clampFloatPosition(
+            data.leftPanelFloat.x,
+            data.leftPanelFloat.y,
+            clampPanelWidth(
+              typeof data.leftPanelWidth === 'number' ? data.leftPanelWidth : DEFAULT_LEFT_PANEL_WIDTH,
+            ),
+            FLOATING_PANEL_HEIGHT,
+          )
+        : defaultLeftPanelFloat(
+            clampPanelWidth(
+              typeof data.leftPanelWidth === 'number' ? data.leftPanelWidth : DEFAULT_LEFT_PANEL_WIDTH,
+            ),
+          ),
+    rightPanelFloat:
+      isObject(data.rightPanelFloat) &&
+      typeof data.rightPanelFloat.x === 'number' &&
+      typeof data.rightPanelFloat.y === 'number'
+        ? clampFloatPosition(
+            data.rightPanelFloat.x,
+            data.rightPanelFloat.y,
+            clampPanelWidth(
+              typeof data.rightPanelWidth === 'number' ? data.rightPanelWidth : DEFAULT_RIGHT_PANEL_WIDTH,
+            ),
+            FLOATING_PANEL_HEIGHT,
+          )
+        : defaultRightPanelFloat(
+            clampPanelWidth(
+              typeof data.rightPanelWidth === 'number' ? data.rightPanelWidth : DEFAULT_RIGHT_PANEL_WIDTH,
+            ),
+          ),
   };
 
   return snapshot;

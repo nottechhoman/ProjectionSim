@@ -26,6 +26,12 @@ export interface ProjectSnapshotV2 {
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
   bottomPanelVisible: boolean;
+  leftPanelWidth?: number;
+  rightPanelWidth?: number;
+  leftPanelPoppedOut?: boolean;
+  rightPanelPoppedOut?: boolean;
+  leftPanelFloat?: { x: number; y: number };
+  rightPanelFloat?: { x: number; y: number };
 }
 
 export interface ProjectSnapshotV1 {

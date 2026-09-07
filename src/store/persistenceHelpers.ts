@@ -10,6 +10,16 @@ import type {
   ViewPreset,
 } from '../types';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
+import {
+  clampPanelWidth,
+  clampFloatPosition,
+  DEFAULT_LEFT_PANEL_WIDTH,
+  DEFAULT_RIGHT_PANEL_WIDTH,
+  defaultLeftPanelFloat,
+  defaultRightPanelFloat,
+  FLOATING_PANEL_HEIGHT,
+  type PanelFloatPosition,
+} from '../ui/panelLayout';
 import { readAutosave } from '../persistence/autosave';
 
 export interface PersistedStateSlice {
@@ -27,6 +37,12 @@ export interface PersistedStateSlice {
   leftPanelVisible: boolean;
   rightPanelVisible: boolean;
   bottomPanelVisible: boolean;
+  leftPanelWidth: number;
+  rightPanelWidth: number;
+  leftPanelPoppedOut: boolean;
+  rightPanelPoppedOut: boolean;
+  leftPanelFloat: PanelFloatPosition;
+  rightPanelFloat: PanelFloatPosition;
 }
 
 export function buildInitialPersistedState(): PersistedStateSlice {
@@ -55,6 +71,12 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     leftPanelVisible: slice.leftPanelVisible,
     rightPanelVisible: slice.rightPanelVisible,
     bottomPanelVisible: slice.bottomPanelVisible,
+    leftPanelWidth: slice.leftPanelWidth,
+    rightPanelWidth: slice.rightPanelWidth,
+    leftPanelPoppedOut: slice.leftPanelPoppedOut,
+    rightPanelPoppedOut: slice.rightPanelPoppedOut,
+    leftPanelFloat: slice.leftPanelFloat,
+    rightPanelFloat: slice.rightPanelFloat,
   };
 }
 
@@ -74,7 +96,31 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
     leftPanelVisible: snapshot.leftPanelVisible,
     rightPanelVisible: snapshot.rightPanelVisible,
     bottomPanelVisible: snapshot.bottomPanelVisible,
+    leftPanelWidth: clampPanelWidth(snapshot.leftPanelWidth ?? DEFAULT_LEFT_PANEL_WIDTH),
+    rightPanelWidth: clampPanelWidth(snapshot.rightPanelWidth ?? DEFAULT_RIGHT_PANEL_WIDTH),
+    leftPanelPoppedOut: snapshot.leftPanelPoppedOut ?? false,
+    rightPanelPoppedOut: snapshot.rightPanelPoppedOut ?? false,
+    leftPanelFloat: normalizePanelFloat(
+      snapshot.leftPanelFloat,
+      clampPanelWidth(snapshot.leftPanelWidth ?? DEFAULT_LEFT_PANEL_WIDTH),
+      'left',
+    ),
+    rightPanelFloat: normalizePanelFloat(
+      snapshot.rightPanelFloat,
+      clampPanelWidth(snapshot.rightPanelWidth ?? DEFAULT_RIGHT_PANEL_WIDTH),
+      'right',
+    ),
   };
+}
+
+function normalizePanelFloat(
+  raw: { x?: number; y?: number } | undefined,
+  width: number,
+  side: 'left' | 'right',
+): PanelFloatPosition {
+  const fallback = side === 'left' ? defaultLeftPanelFloat(width) : defaultRightPanelFloat(width);
+  if (typeof raw?.x !== 'number' || typeof raw?.y !== 'number') return fallback;
+  return clampFloatPosition(raw.x, raw.y, width, FLOATING_PANEL_HEIGHT);
 }
 
 export function defaultPersistedSlice(): PersistedStateSlice {
@@ -93,5 +139,11 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     leftPanelVisible: true,
     rightPanelVisible: true,
     bottomPanelVisible: true,
+    leftPanelWidth: DEFAULT_LEFT_PANEL_WIDTH,
+    rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,
+    leftPanelPoppedOut: false,
+    rightPanelPoppedOut: false,
+    leftPanelFloat: defaultLeftPanelFloat(DEFAULT_LEFT_PANEL_WIDTH),
+    rightPanelFloat: defaultRightPanelFloat(DEFAULT_RIGHT_PANEL_WIDTH),
   };
 }

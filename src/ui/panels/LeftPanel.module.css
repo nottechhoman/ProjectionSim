@@ -34,6 +34,27 @@
   color: #ccc;
 }
 
+.headerActions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.actionBtn {
+  font: inherit;
+  font-size: 13px;
+  line-height: 1;
+  color: #888;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.actionBtn:hover {
+  color: #ccc;
+}
+
 .section {
   padding: 6px 0;
 }

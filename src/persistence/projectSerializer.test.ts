@@ -32,6 +32,33 @@ describe('projectSerializer', () => {
     expect(loaded.version).toBe(2);
   });
 
+  it('loads custom panel widths and clamps invalid values', () => {
+    const withWidths = { ...sample, leftPanelWidth: 320, rightPanelWidth: 400 };
+    const loaded = parseProjectJson(JSON.stringify(withWidths));
+    expect(loaded.leftPanelWidth).toBe(320);
+    expect(loaded.rightPanelWidth).toBe(400);
+
+    const clamped = { ...sample, leftPanelWidth: 50, rightPanelWidth: 900 };
+    const clampedLoaded = parseProjectJson(JSON.stringify(clamped));
+    expect(clampedLoaded.leftPanelWidth).toBe(160);
+    expect(clampedLoaded.rightPanelWidth).toBe(560);
+  });
+
+  it('loads popped-out panel state', () => {
+    const popped = {
+      ...sample,
+      leftPanelPoppedOut: true,
+      rightPanelPoppedOut: true,
+      leftPanelFloat: { x: 24, y: 52 },
+      rightPanelFloat: { x: 900, y: 80 },
+    };
+    const loaded = parseProjectJson(JSON.stringify(popped));
+    expect(loaded.leftPanelPoppedOut).toBe(true);
+    expect(loaded.rightPanelPoppedOut).toBe(true);
+    expect(loaded.leftPanelFloat).toEqual({ x: 24, y: 52 });
+    expect(loaded.rightPanelFloat?.x).toBeGreaterThan(0);
+  });
+
   it('loads legacy v1 projects', () => {
     const v1 = { ...sample, version: 1, mediaAssets: undefined, materialPreviewMode: undefined };
     const loaded = parseProjectJson(JSON.stringify(v1));
