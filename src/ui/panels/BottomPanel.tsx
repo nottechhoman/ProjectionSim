@@ -1,6 +1,7 @@
 import { useAppStore } from '../../store';
 import { distance3 } from '../../utils/distance';
 import { formatLength } from '../../utils/units';
+import { VideoTransport } from './VideoTransport';
 import styles from './BottomPanel.module.css';
 
 export function BottomPanel() {
@@ -15,8 +16,6 @@ export function BottomPanel() {
   const clearMeasurePoints = useAppStore((s) => s.clearMeasurePoints);
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
   const clearProjectMessage = useAppStore((s) => s.clearProjectMessage);
-  const videoPlaying = useAppStore((s) => s.videoPlaying);
-  const toggleVideoPlayback = useAppStore((s) => s.toggleVideoPlayback);
   const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
   const projectorCount = useAppStore((s) => s.projectors.length);
   const selectedProjectorId = useAppStore((s) => s.selectedProjectorId);
@@ -55,9 +54,7 @@ export function BottomPanel() {
         <span>{frameTimeMs > 0 ? `${frameTimeMs.toFixed(1)} ms` : '—'}</span>
       </div>
       {projector?.mediaSource === 'video' && projector.mediaAssetId && (
-        <button type="button" className={styles.videoBtn} onClick={toggleVideoPlayback}>
-          {videoPlaying ? 'Pause' : 'Play'} video
-        </button>
+        <VideoTransport assetId={projector.mediaAssetId} />
       )}
       {measureMode && (
         <div className={styles.item}>

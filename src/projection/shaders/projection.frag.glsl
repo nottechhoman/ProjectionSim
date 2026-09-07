@@ -10,6 +10,7 @@ uniform float mediaAspect;
 uniform float rasterAspect;
 uniform vec3 projectorColor;
 uniform int forceUvPreview;
+uniform vec3 surfaceBaseColor;
 
 varying vec3 vWorldPos;
 
@@ -34,16 +35,25 @@ vec2 applyFit(vec2 uv) {
 
 void main() {
   vec4 projClip = projectorMatrix * vec4(vWorldPos, 1.0);
-  if (projClip.w <= 0.0) discard;
+  if (projClip.w <= 0.0) {
+    gl_FragColor = vec4(surfaceBaseColor, 1.0);
+    return;
+  }
 
   vec3 projNDC = projClip.xyz / projClip.w;
-  if (abs(projNDC.x) > 1.0 || abs(projNDC.y) > 1.0 || abs(projNDC.z) > 1.0) discard;
+  if (abs(projNDC.x) > 1.0 || abs(projNDC.y) > 1.0 || abs(projNDC.z) > 1.0) {
+    gl_FragColor = vec4(surfaceBaseColor, 1.0);
+    return;
+  }
 
   vec2 uv = projNDC.xy * 0.5 + 0.5;
 
   float sceneDepth = texture2D(depthMap, uv).r;
   float fragDepth = projNDC.z * 0.5 + 0.5;
-  if (fragDepth > sceneDepth + depthBias) discard;
+  if (fragDepth > sceneDepth + depthBias) {
+    gl_FragColor = vec4(surfaceBaseColor * 0.45, 1.0);
+    return;
+  }
 
   vec3 color;
   if (forceUvPreview == 1) {
@@ -65,5 +75,5 @@ void main() {
     color = vec3(1.0);
   }
 
-  gl_FragColor = vec4(color * brightness, 1.0);
+  gl_FragColor = vec4(mix(surfaceBaseColor * 0.3, color, 1.0) * brightness, 1.0);
 }

@@ -1,7 +1,7 @@
 export const PANEL_WIDTH_MIN = 160;
 export const PANEL_WIDTH_MAX = 560;
 export const DEFAULT_LEFT_PANEL_WIDTH = 220;
-export const DEFAULT_RIGHT_PANEL_WIDTH = 280;
+export const DEFAULT_RIGHT_PANEL_WIDTH = 320;
 
 export const PANEL_FLOAT_MARGIN = 8;
 export const TOOLBAR_HEIGHT = 40;

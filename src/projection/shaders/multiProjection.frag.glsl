@@ -17,6 +17,7 @@ uniform vec2 depthMapSize;
 uniform int projectorCount;
 uniform int compositeMode;
 uniform int forceUvPreview;
+uniform vec3 surfaceBaseColor;
 
 varying vec3 vWorldPos;
 
@@ -131,16 +132,19 @@ void main() {
   }
 
   if (compositeMode == 2) {
-    if (hitCount == 0) discard;
+    if (hitCount == 0) {
+      gl_FragColor = vec4(surfaceBaseColor, 1.0);
+      return;
+    }
     gl_FragColor = vec4(heatmapColor(hitCount), 1.0);
     return;
   }
 
-  if (sumWeight <= 0.0) discard;
-
-  if (compositeMode == 1) {
-    gl_FragColor = vec4(sumColor / sumWeight, 1.0);
-  } else {
-    gl_FragColor = vec4(sumColor, 1.0);
+  if (sumWeight <= 0.0) {
+    gl_FragColor = vec4(surfaceBaseColor, 1.0);
+    return;
   }
+
+  vec3 projected = compositeMode == 1 ? sumColor / sumWeight : sumColor;
+  gl_FragColor = vec4(mix(surfaceBaseColor * 0.3, projected, 1.0), 1.0);
 }

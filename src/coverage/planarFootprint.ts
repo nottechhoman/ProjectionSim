@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import type { ProjectorOptics, FootprintResult } from '../types';
 import { unprojectRasterRay } from '../optics/rays';
 import { intersectRayPlane } from './planeIntersection';
+import { clipFootprintAreaToScreen } from './clipFootprint';
 
 const CORNER_UV = [
   [0, 0], [1, 0], [1, 1], [0, 1],
@@ -28,7 +29,15 @@ export function computePlanarFootprint(
   );
 
   const unclippedArea = polygonArea3D(corners);
-  const clippedArea = unclippedArea; // M1: large screen — clip stub returns same
+  const clippedArea =
+    corners.length >= 3
+      ? clipFootprintAreaToScreen(corners, {
+          center: { x: screen.center.x, y: screen.center.y, z: screen.center.z },
+          normal: { x: screen.normal.x, y: screen.normal.y, z: screen.normal.z },
+          width: screen.width,
+          height: screen.height,
+        })
+      : 0;
 
   const axialDistance = centerHit
     ? centerRay.origin.distanceTo(new THREE.Vector3(centerHit.x, centerHit.y, centerHit.z))

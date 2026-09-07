@@ -78,6 +78,14 @@ function collectMeshes(root: THREE.Object3D): THREE.Mesh[] {
   return meshes;
 }
 
+function meshBaseColor(mesh: THREE.Mesh): THREE.Color {
+  const material = mesh.material;
+  if (!Array.isArray(material) && (material as THREE.MeshStandardMaterial).color) {
+    return (material as THREE.MeshStandardMaterial).color.clone();
+  }
+  return new THREE.Color(0.55, 0.55, 0.55);
+}
+
 function projectorWorldMatrix(projector: ProjectorConfig): THREE.Matrix4 {
   const matrix = new THREE.Matrix4();
   const position = new THREE.Vector3(
@@ -125,6 +133,8 @@ export class SceneEngine {
   private gizmoRotateStartEuler: { yaw: number; pitch: number; roll: number } | null = null;
   private gizmoRotateStartQuat: THREE.Quaternion | null = null;
   private currentTransformMode: TransformMode = 'translate';
+  private showProjectionBeam = false;
+  private projectionBeamDistance: number | null = null;
   private measureMode = false;
   private readonly measureGroup = new THREE.Group();
   private measureLine: THREE.Line | null = null;
@@ -288,6 +298,8 @@ export class SceneEngine {
     this.syncSceneObjects(state.sceneObjects, this.gizmoDragging);
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
+    this.showProjectionBeam = state.showProjectionBeam;
+    this.projectionBeamDistance = state.calculationResults.footprint?.axialDistance ?? null;
     this.syncProjectors(state.projectors, state.selectedProjectorId, this.gizmoDragging);
     if (state.measureMode) {
       this.transformControls?.detach();
@@ -601,15 +613,23 @@ export class SceneEngine {
         visual.body.quaternion.copy(quaternion);
       }
 
-      const throwDistance = Math.max(
-        2,
-        Math.hypot(
-          projector.transform.position.x,
-          projector.transform.position.y,
-          projector.transform.position.z,
-        ),
+      const throwDistance =
+        this.showProjectionBeam && this.projectionBeamDistance != null
+          ? this.projectionBeamDistance
+          : Math.max(
+              2,
+              Math.hypot(
+                projector.transform.position.x,
+                projector.transform.position.y,
+                projector.transform.position.z,
+              ),
+            );
+      visual.frustum.updateFromProjector(
+        projector.optics,
+        worldMatrix,
+        throwDistance,
+        this.showProjectionBeam && this.projectionBeamDistance != null,
       );
-      visual.frustum.updateFromProjector(projector.optics, worldMatrix, throwDistance);
       visual.frustum.visible = true;
       (visual.frustum.material as THREE.LineBasicMaterial).color.set(projector.color);
     }
@@ -706,7 +726,13 @@ export class SceneEngine {
         this.projectiveMaterial.uniforms.depthMap.value = depthMap;
 
         for (const root of receivers) {
-          for (const mesh of collectMeshes(root)) {
+          const meshes = collectMeshes(root);
+          if (meshes.length > 0) {
+            (this.projectiveMaterial.uniforms.surfaceBaseColor.value as THREE.Color).copy(
+              meshBaseColor(meshes[0]),
+            );
+          }
+          for (const mesh of meshes) {
             savedMaterials.set(mesh, mesh.material);
             mesh.material = this.projectiveMaterial;
           }
@@ -737,7 +763,13 @@ export class SceneEngine {
         );
 
         for (const root of receivers) {
-          for (const mesh of collectMeshes(root)) {
+          const meshes = collectMeshes(root);
+          if (meshes.length > 0) {
+            (this.multiProjectiveMaterial.uniforms.surfaceBaseColor.value as THREE.Color).copy(
+              meshBaseColor(meshes[0]),
+            );
+          }
+          for (const mesh of meshes) {
             savedMaterials.set(mesh, mesh.material);
             mesh.material = this.multiProjectiveMaterial;
           }
@@ -757,7 +789,7 @@ export class SceneEngine {
   private getDepthMeshes(): THREE.Mesh[] {
     const meshes: THREE.Mesh[] = [];
     for (const root of this.objectMeshes.values()) {
-      if (root.userData.blocksProjection || root.userData.receivesProjection) {
+      if (root.userData.blocksProjection) {
         meshes.push(...collectMeshes(root));
       }
     }

@@ -3,3 +3,5 @@ dist
 .netlify
 *.local
 .DS_Store
+test-results
+playwright-report

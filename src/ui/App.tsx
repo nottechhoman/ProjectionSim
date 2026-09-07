@@ -25,13 +25,19 @@ export default function App() {
   const resizeRightPanelBy = useAppStore((s) => s.resizeRightPanelBy);
   const moveLeftPanelFloat = useAppStore((s) => s.moveLeftPanelFloat);
   const moveRightPanelFloat = useAppStore((s) => s.moveRightPanelFloat);
+  const selectedProjectorId = useAppStore((s) => s.selectedProjectorId);
+  const projectors = useAppStore((s) => s.projectors);
+  const selectedProjector =
+    projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
+  const hasVideoTimeline =
+    selectedProjector?.mediaSource === 'video' && !!selectedProjector.mediaAssetId;
 
   const leftDocked = leftPanelVisible && !leftPanelPoppedOut;
   const rightDocked = rightPanelVisible && !rightPanelPoppedOut;
 
   const style = {
     gridTemplateColumns: `${leftDocked ? `${leftPanelWidth}px` : '0px'} 1fr ${rightDocked ? `${rightPanelWidth}px` : '0px'}`,
-    gridTemplateRows: `40px 1fr ${bottomPanelVisible ? '28px' : '0px'}`,
+    gridTemplateRows: `40px 1fr ${bottomPanelVisible ? (hasVideoTimeline ? '56px' : '28px') : '0px'}`,
   } as const;
 
   return (

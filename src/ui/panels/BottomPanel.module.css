@@ -1,13 +1,14 @@
 .panel {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   height: 100%;
   padding: 0 10px;
   background: #252525;
   border-top: 1px solid #333;
   font-size: 11px;
   color: #999;
+  overflow-x: auto;
 }
 
 .item {
@@ -74,4 +75,21 @@
 
 .videoBtn:hover {
   background: #3a3a3a;
+}
+
+.videoTransport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 280px;
+}
+
+.videoSeek {
+  width: 140px;
+  accent-color: #4fc3f7;
+}
+
+.videoTime {
+  color: #bbb;
+  white-space: nowrap;
 }

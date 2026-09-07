@@ -10,6 +10,12 @@
   overflow: hidden;
 }
 
+.floating > :first-child {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .floating [data-panel-header] {
   cursor: grab;
 }

@@ -58,6 +58,7 @@ interface AppState extends PersistedStateSlice {
   calculationResults: CalculationResults;
   shaderWarning: string | null;
   videoPlaying: boolean;
+  showProjectionBeam: boolean;
   setSelectedObject: (id: string | null) => void;
   setSelectedProjector: (id: string) => void;
   updateProjector: (id: string, patch: Partial<ProjectorConfig>) => void;
@@ -75,6 +76,8 @@ interface AppState extends PersistedStateSlice {
   setDisplayUnit: (u: DisplayUnit) => void;
   setViewPreset: (preset: ViewPreset) => void;
   setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
+  setShowProjectionBeam: (show: boolean) => void;
+  toggleProjectionBeam: () => void;
   setProjectionCompositeMode: (mode: ProjectionCompositeMode) => void;
   addProjector: () => void;
   removeProjector: (id: string) => void;
@@ -114,6 +117,9 @@ interface AppState extends PersistedStateSlice {
     fit?: MediaFitMode,
   ) => void;
   toggleVideoPlayback: () => void;
+  seekVideo: (seconds: number) => void;
+  setVideoMuted: (muted: boolean) => void;
+  setVideoLoop: (loop: boolean) => void;
   getSnapshot: () => ProjectSnapshot;
   newProject: () => void;
   saveProjectToFile: () => void;
@@ -222,6 +228,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   rightPanelFloat: initial.rightPanelFloat,
   transformMode: initial.transformMode,
   videoPlaying: false,
+  showProjectionBeam: false,
   setSelectedObject: (id) => set({ selectedObjectId: id }),
   setSelectedProjector: (id) => set({ selectedProjectorId: id, selectedObjectId: id }),
   updateProjector: (id, patch) => {
@@ -297,6 +304,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDisplayUnit: (u) => set({ displayUnit: u }),
   setViewPreset: (preset) => set({ viewPreset: preset }),
   setMaterialPreviewMode: (mode) => set({ materialPreviewMode: mode }),
+  setShowProjectionBeam: (show) => set({ showProjectionBeam: show }),
+  toggleProjectionBeam: () => set((s) => ({ showProjectionBeam: !s.showProjectionBeam })),
   setProjectionCompositeMode: (mode) => set({ projectionCompositeMode: mode }),
   addProjector: () => {
     const state = get();
@@ -623,6 +632,30 @@ export const useAppStore = create<AppState>((set, get) => ({
       entry.video.pause();
       set({ videoPlaying: false });
     }
+  },
+  seekVideo: (seconds) => {
+    const projId = get().selectedProjectorId;
+    const proj = get().projectors.find((p) => p.id === projId);
+    if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
+    const video = mediaTextureCache.get(proj.mediaAssetId)?.video;
+    if (!video || !Number.isFinite(seconds)) return;
+    video.currentTime = Math.max(0, Math.min(video.duration || 0, seconds));
+  },
+  setVideoMuted: (muted) => {
+    const projId = get().selectedProjectorId;
+    const proj = get().projectors.find((p) => p.id === projId);
+    if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
+    const video = mediaTextureCache.get(proj.mediaAssetId)?.video;
+    if (!video) return;
+    video.muted = muted;
+  },
+  setVideoLoop: (loop) => {
+    const projId = get().selectedProjectorId;
+    const proj = get().projectors.find((p) => p.id === projId);
+    if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
+    const video = mediaTextureCache.get(proj.mediaAssetId)?.video;
+    if (!video) return;
+    video.loop = loop;
   },
   getSnapshot: () => sliceToSnapshot(pickPersistedFields(get())),
   newProject: () => {

@@ -42,6 +42,8 @@ export function Toolbar() {
   const redo = useAppStore((s) => s.redo);
   const exportCalculationCsv = useAppStore((s) => s.exportCalculationCsv);
   const exportCalculationHtml = useAppStore((s) => s.exportCalculationHtml);
+  const showProjectionBeam = useAppStore((s) => s.showProjectionBeam);
+  const toggleProjectionBeam = useAppStore((s) => s.toggleProjectionBeam);
 
   const handleOpenFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -122,6 +124,20 @@ export function Toolbar() {
           title="Rotate (E)"
         >
           Rotate
+        </button>
+      </div>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <span className={styles.label}>Helpers</span>
+        <button
+          type="button"
+          className={showProjectionBeam ? styles.active : undefined}
+          onClick={toggleProjectionBeam}
+          title="Show projector frustum to calculated image size"
+        >
+          Beam
         </button>
       </div>
 

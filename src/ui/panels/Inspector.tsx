@@ -202,6 +202,83 @@ export function Inspector() {
           </div>
 
           <div className={styles.section}>
+            <div className={styles.sectionTitle}>Media Source</div>
+            <div className={styles.row}>
+              <label>Source</label>
+              <select
+                value={projector.mediaSource}
+                onChange={(e) =>
+                  setProjectorMedia(
+                    projector.id,
+                    e.target.value as 'pattern' | 'image' | 'video',
+                    e.target.value === 'pattern' ? null : projector.mediaAssetId,
+                  )
+                }
+              >
+                <option value="pattern">Test pattern</option>
+                <option value="image">Image</option>
+                <option value="video">Video</option>
+              </select>
+            </div>
+            {projector.mediaSource === 'pattern' && (
+              <div className={styles.row}>
+                <label>Pattern</label>
+                <select
+                  value={projector.testPattern}
+                  onChange={(e) =>
+                    patchProjector({ testPattern: e.target.value as TestPattern })
+                  }
+                >
+                  {PATTERNS.map((p) => (
+                    <option key={p.value} value={p.value}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+            {(projector.mediaSource === 'image' || projector.mediaSource === 'video') && (
+              <>
+                <div className={styles.row}>
+                  <label>Asset</label>
+                  <select
+                    value={projector.mediaAssetId ?? ''}
+                    onChange={(e) =>
+                      setProjectorMedia(projector.id, projector.mediaSource, e.target.value || null)
+                    }
+                  >
+                    <option value="">— select —</option>
+                    {mediaAssets
+                      .filter((a) => a.kind === projector.mediaSource)
+                      .map((a) => (
+                        <option key={a.id} value={a.id}>{a.name}</option>
+                      ))}
+                  </select>
+                </div>
+                {mediaAssets.filter((a) => a.kind === projector.mediaSource).length === 0 && (
+                  <p className={styles.hint}>No {projector.mediaSource} imported yet — use toolbar Import.</p>
+                )}
+                <div className={styles.row}>
+                  <label>Fit</label>
+                  <select
+                    value={projector.mediaFit}
+                    onChange={(e) =>
+                      setProjectorMedia(
+                        projector.id,
+                        projector.mediaSource,
+                        projector.mediaAssetId,
+                        e.target.value as 'contain' | 'cover' | 'stretch',
+                      )
+                    }
+                  >
+                    <option value="contain">Contain</option>
+                    <option value="cover">Cover</option>
+                    <option value="stretch">Stretch</option>
+                  </select>
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className={styles.section}>
             <div className={styles.sectionTitle}>Blend edges</div>
             <p className={styles.hint}>Feather width as fraction of image (0–0.5)</p>
             <NumInput
@@ -255,65 +332,6 @@ export function Inspector() {
           </div>
 
           <div className={styles.section}>
-            <div className={styles.sectionTitle}>Media Source</div>
-            <div className={styles.row}>
-              <label>Source</label>
-              <select
-                value={projector.mediaSource}
-                onChange={(e) =>
-                  setProjectorMedia(
-                    projector.id,
-                    e.target.value as 'pattern' | 'image' | 'video',
-                    e.target.value === 'pattern' ? null : projector.mediaAssetId,
-                  )
-                }
-              >
-                <option value="pattern">Test pattern</option>
-                <option value="image">Image</option>
-                <option value="video">Video</option>
-              </select>
-            </div>
-            {(projector.mediaSource === 'image' || projector.mediaSource === 'video') && (
-              <div className={styles.row}>
-                <label>Asset</label>
-                <select
-                  value={projector.mediaAssetId ?? ''}
-                  onChange={(e) =>
-                    setProjectorMedia(projector.id, projector.mediaSource, e.target.value || null)
-                  }
-                >
-                  <option value="">— select —</option>
-                  {mediaAssets
-                    .filter((a) => a.kind === projector.mediaSource)
-                    .map((a) => (
-                      <option key={a.id} value={a.id}>{a.name}</option>
-                    ))}
-                </select>
-              </div>
-            )}
-            {projector.mediaSource !== 'pattern' && (
-              <div className={styles.row}>
-                <label>Fit</label>
-                <select
-                  value={projector.mediaFit}
-                  onChange={(e) =>
-                    setProjectorMedia(
-                      projector.id,
-                      projector.mediaSource,
-                      projector.mediaAssetId,
-                      e.target.value as 'contain' | 'cover' | 'stretch',
-                    )
-                  }
-                >
-                  <option value="contain">Contain</option>
-                  <option value="cover">Cover</option>
-                  <option value="stretch">Stretch</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          <div className={styles.section}>
             <div className={styles.sectionTitle}>Optics</div>
             <NumInput
               label="Throw"
@@ -353,19 +371,6 @@ export function Inspector() {
               step={0.01}
               onChange={(v) => updateProjectorOptics(projector.id, { lensShiftV: v })}
             />
-            <div className={styles.row}>
-              <label>Pattern</label>
-              <select
-                value={projector.testPattern}
-                onChange={(e) =>
-                  patchProjector({ testPattern: e.target.value as TestPattern })
-                }
-              >
-                {PATTERNS.map((p) => (
-                  <option key={p.value} value={p.value}>{p.label}</option>
-                ))}
-              </select>
-            </div>
           </div>
 
           <CalcResults />
