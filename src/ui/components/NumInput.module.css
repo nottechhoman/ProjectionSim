@@ -1,0 +1,40 @@
+.row {
+  display: grid;
+  grid-template-columns: 48px 1fr;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.row label {
+  color: #999;
+  font-size: 11px;
+}
+
+.input,
+.display {
+  font: inherit;
+  font-size: 12px;
+  color: #e0e0e0;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 3px 6px;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
+}
+
+.display {
+  cursor: text;
+}
+
+.display:hover {
+  border-color: #555;
+  background: #383838;
+}
+
+.input:focus {
+  outline: none;
+  border-color: #4a6fa5;
+}

@@ -35,3 +35,19 @@
   white-space: nowrap;
   color: #e0a060;
 }
+
+.collapseBtn {
+  margin-left: auto;
+  font: inherit;
+  font-size: 14px;
+  line-height: 1;
+  color: #888;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 4px;
+}
+
+.collapseBtn:hover {
+  color: #ccc;
+}

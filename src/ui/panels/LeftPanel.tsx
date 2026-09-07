@@ -7,10 +7,16 @@ export function LeftPanel() {
   const selectedObjectId = useAppStore((s) => s.selectedObjectId);
   const setSelectedObject = useAppStore((s) => s.setSelectedObject);
   const setSelectedProjector = useAppStore((s) => s.setSelectedProjector);
+  const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>Scene</div>
+      <div className={styles.header}>
+        <span>Scene</span>
+        <button type="button" className={styles.collapseBtn} onClick={toggleLeftPanel} title="Hide scene panel">
+          ×
+        </button>
+      </div>
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Objects</div>

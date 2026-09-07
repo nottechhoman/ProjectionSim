@@ -2,6 +2,7 @@ import { useAppStore } from '../../store';
 import type { TestPattern } from '../../types';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../../utils/euler';
 import { fromDisplayUnit, toDisplayUnit } from '../../utils/units';
+import { NumInput } from '../components/NumInput';
 import { CalcResults } from './CalcResults';
 import styles from './Inspector.module.css';
 
@@ -13,36 +14,13 @@ const PATTERNS: { value: TestPattern; label: string }[] = [
   { value: 'projectorId', label: 'Projector ID' },
 ];
 
-function NumInput({
-  label,
-  value,
-  step = 0.01,
-  onChange,
-}: {
-  label: string;
-  value: number;
-  step?: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <div className={styles.row}>
-      <label>{label}</label>
-      <input
-        type="number"
-        step={step}
-        value={Number.isFinite(value) ? value : 0}
-        onChange={(e) => onChange(parseFloat(e.target.value) || 0)}
-      />
-    </div>
-  );
-}
-
 export function Inspector() {
   const selectedObjectId = useAppStore((s) => s.selectedObjectId);
   const sceneObjects = useAppStore((s) => s.sceneObjects);
   const projectors = useAppStore((s) => s.projectors);
   const displayUnit = useAppStore((s) => s.displayUnit);
   const opticsError = useAppStore((s) => s.calculationResults.opticsError);
+  const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
   const updateProjector = useAppStore((s) => s.updateProjector);
   const updateProjectorOptics = useAppStore((s) => s.updateProjectorOptics);
   const updateSceneObjectTransform = useAppStore((s) => s.updateSceneObjectTransform);
@@ -53,7 +31,12 @@ export function Inspector() {
   if (!selectedObjectId || (!projector && !sceneObject)) {
     return (
       <div className={styles.panel}>
-        <div className={styles.header}>Inspector</div>
+        <div className={styles.header}>
+          <span>Inspector</span>
+          <button type="button" className={styles.collapseBtn} onClick={toggleRightPanel} title="Hide inspector">
+            ×
+          </button>
+        </div>
         <div className={styles.empty}>Select an object or projector</div>
       </div>
     );
@@ -83,7 +66,12 @@ export function Inspector() {
 
   return (
     <div className={styles.panel}>
-      <div className={styles.header}>Inspector</div>
+      <div className={styles.header}>
+        <span>Inspector</span>
+        <button type="button" className={styles.collapseBtn} onClick={toggleRightPanel} title="Hide inspector">
+          ×
+        </button>
+      </div>
 
       {opticsError && projector && (
         <div className={styles.error}>{opticsError}</div>
@@ -91,6 +79,7 @@ export function Inspector() {
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Transform</div>
+        <p className={styles.hint}>Click a value to type · drag gizmo in viewport</p>
         <NumInput
           label="Pos X"
           value={toDisplayUnit(transform.position.x, displayUnit)}

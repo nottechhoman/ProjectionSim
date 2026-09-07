@@ -6,6 +6,7 @@ import type {
   ProjectorConfig,
   SceneObject,
   Transform,
+  TransformMode,
   ViewPreset,
 } from '../types';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
@@ -25,6 +26,10 @@ interface AppState {
   webgl2Available: boolean | null;
   calculationResults: CalculationResults;
   shaderWarning: string | null;
+  leftPanelVisible: boolean;
+  rightPanelVisible: boolean;
+  bottomPanelVisible: boolean;
+  transformMode: TransformMode;
   setSelectedObject: (id: string | null) => void;
   setSelectedProjector: (id: string) => void;
   updateProjector: (id: string, patch: Partial<ProjectorConfig>) => void;
@@ -39,6 +44,13 @@ interface AppState {
   setFrameTimeMs: (ms: number) => void;
   setWebgl2Available: (available: boolean) => void;
   setShaderWarning: (warning: string | null) => void;
+  setLeftPanelVisible: (visible: boolean) => void;
+  setRightPanelVisible: (visible: boolean) => void;
+  setBottomPanelVisible: (visible: boolean) => void;
+  toggleLeftPanel: () => void;
+  toggleRightPanel: () => void;
+  toggleBottomPanel: () => void;
+  setTransformMode: (mode: TransformMode) => void;
   recomputeCalculations: () => void;
   addBox: () => void;
 }
@@ -71,6 +83,10 @@ export const useAppStore = create<AppState>((set, get) => ({
   webgl2Available: null,
   calculationResults: { nominal: null, footprint: null, opticsError: null },
   shaderWarning: null,
+  leftPanelVisible: true,
+  rightPanelVisible: true,
+  bottomPanelVisible: true,
+  transformMode: 'translate',
   setSelectedObject: (id) => set({ selectedObjectId: id }),
   setSelectedProjector: (id) => set({ selectedProjectorId: id, selectedObjectId: id }),
   updateProjector: (id, patch) => {
@@ -116,6 +132,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   setFrameTimeMs: (ms) => set({ frameTimeMs: ms }),
   setWebgl2Available: (available) => set({ webgl2Available: available }),
   setShaderWarning: (warning) => set({ shaderWarning: warning }),
+  setLeftPanelVisible: (visible) => set({ leftPanelVisible: visible }),
+  setRightPanelVisible: (visible) => set({ rightPanelVisible: visible }),
+  setBottomPanelVisible: (visible) => set({ bottomPanelVisible: visible }),
+  toggleLeftPanel: () => set((s) => ({ leftPanelVisible: !s.leftPanelVisible })),
+  toggleRightPanel: () => set((s) => ({ rightPanelVisible: !s.rightPanelVisible })),
+  toggleBottomPanel: () => set((s) => ({ bottomPanelVisible: !s.bottomPanelVisible })),
+  setTransformMode: (mode) => set({ transformMode: mode }),
   recomputeCalculations: () => {
     const { projectors, sceneObjects } = get();
     const proj = projectors[0];

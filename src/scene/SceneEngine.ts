@@ -1,10 +1,11 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { useAppStore } from '../store';
 import { buildProjectorCamera, getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { createProjectiveMaterial, patternToInt } from '../projection/ProjectiveMaterial';
 import { DepthPass } from '../visibility/DepthPass';
-import type { ProjectorConfig, SceneObject, ViewPreset } from '../types';
+import type { ProjectorConfig, SceneObject, Transform, TransformMode, ViewPreset } from '../types';
 import { createScreen } from './objects/createScreen';
 import { createFloor } from './objects/createFloor';
 import { createBox } from './objects/createBox';
@@ -15,6 +16,8 @@ type AppState = ReturnType<typeof useAppStore.getState>;
 export interface SceneEngineCallbacks {
   onFrameTime?: (ms: number) => void;
   onWebglStatus?: (available: boolean) => void;
+  onSelect?: (id: string) => void;
+  onTransformChange?: (id: string, patch: { position?: Transform['position']; quaternion?: Transform['quaternion'] }) => void;
 }
 
 function dimensionsKey(obj: SceneObject): string {
@@ -56,6 +59,7 @@ export class SceneEngine {
   private readonly helpersGroup = new THREE.Group();
   private editorCamera: THREE.PerspectiveCamera | null = null;
   private controls: OrbitControls | null = null;
+  private transformControls: TransformControls | null = null;
   private depthPass: DepthPass | null = null;
   private readonly projectiveMaterial = createProjectiveMaterial();
   private readonly frustumHelper = new FrustumHelper();
@@ -67,6 +71,11 @@ export class SceneEngine {
   private currentViewPreset: ViewPreset = 'persp';
   private callbacks: SceneEngineCallbacks = {};
   private readonly viewTarget = new THREE.Vector3(0, 1.5, 0);
+  private readonly pointer = new THREE.Vector2();
+  private readonly raycaster = new THREE.Raycaster();
+  private gizmoDragging = false;
+  private selectedProjectorId: string | null = null;
+  private currentTransformMode: TransformMode = 'translate';
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -119,6 +128,18 @@ export class SceneEngine {
     this.controls = new OrbitControls(this.editorCamera, canvas);
     this.controls.target.set(0, 1.5, 0);
     this.controls.update();
+
+    this.transformControls = new TransformControls(this.editorCamera, canvas);
+    this.transformControls.addEventListener('dragging-changed', (event) => {
+      this.gizmoDragging = event.value as boolean;
+      if (this.controls) this.controls.enabled = !this.gizmoDragging;
+    });
+    this.transformControls.addEventListener('change', () => {
+      this.handleGizmoChange();
+    });
+    this.helpersGroup.add(this.transformControls.getHelper());
+
+    canvas.addEventListener('pointerdown', this.onPointerDown);
 
     this.depthPass = new DepthPass();
     this.projectiveMaterial.uniforms.depthMapSize.value.set(
@@ -187,9 +208,89 @@ export class SceneEngine {
       this.setViewPreset(state.viewPreset);
     }
 
+    if (state.transformMode !== this.currentTransformMode) {
+      this.currentTransformMode = state.transformMode;
+      this.transformControls?.setMode(state.transformMode);
+    }
+
     this.syncSceneObjects(state.sceneObjects);
     this.syncProjector(state.projectors);
+    this.syncSelectionGizmo(state.selectedObjectId, state.projectors);
   }
+
+  private syncSelectionGizmo(selectedId: string | null, projectors: ProjectorConfig[]): void {
+    if (!this.transformControls) return;
+
+    if (!selectedId) {
+      this.transformControls.detach();
+      return;
+    }
+
+    const mesh = this.objectMeshes.get(selectedId);
+    if (mesh) {
+      if (this.transformControls.object !== mesh) {
+        this.transformControls.attach(mesh);
+      }
+      this.transformControls.setMode(this.currentTransformMode);
+      return;
+    }
+
+    const projector = projectors.find((p) => p.id === selectedId);
+    if (projector && this.selectedProjectorId === projector.id) {
+      if (this.transformControls.object !== this.projectorBody) {
+        this.transformControls.attach(this.projectorBody);
+      }
+      this.transformControls.setMode(this.currentTransformMode);
+      return;
+    }
+
+    this.transformControls.detach();
+  }
+
+  private handleGizmoChange(): void {
+    const obj = this.transformControls?.object;
+    if (!obj) return;
+
+    let id: string | undefined;
+    if (obj === this.projectorBody) {
+      id = this.selectedProjectorId ?? undefined;
+    } else {
+      id = obj.userData.id as string | undefined;
+    }
+    if (!id) return;
+
+    const q = obj.quaternion;
+    this.callbacks.onTransformChange?.(id, {
+      position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+      quaternion: [q.x, q.y, q.z, q.w],
+    });
+  }
+
+  private onPointerDown = (event: PointerEvent): void => {
+    if (!this.editorCamera || this.gizmoDragging || event.button !== 0) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+    this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+    this.raycaster.setFromCamera(this.pointer, this.editorCamera);
+
+    const pickables: THREE.Object3D[] = [];
+    for (const mesh of this.objectMeshes.values()) {
+      if (mesh.visible) pickables.push(mesh);
+    }
+    if (this.projectorBody.visible) pickables.push(this.projectorBody);
+
+    const hits = this.raycaster.intersectObjects(pickables, false);
+    if (hits.length === 0) return;
+
+    const hit = hits[0].object;
+    const id =
+      hit === this.projectorBody
+        ? (this.projectorBody.userData.pickId as string | undefined)
+        : (hit.userData.id as string | undefined);
+    if (id) this.callbacks.onSelect?.(id);
+  };
 
   private syncSceneObjects(sceneObjects: SceneObject[]): void {
     const nextIds = new Set(sceneObjects.map((obj) => obj.id));
@@ -231,12 +332,16 @@ export class SceneEngine {
   private syncProjector(projectors: ProjectorConfig[]): void {
     const projector = projectors.find((p) => p.enabled) ?? null;
     this.activeProjector = projector;
+    this.selectedProjectorId = projector?.id ?? null;
 
     if (!projector) {
       this.frustumHelper.visible = false;
       this.projectorBody.visible = false;
+      this.projectorBody.userData.pickId = null;
       return;
     }
+
+    this.projectorBody.userData.pickId = projector.id;
 
     const worldMatrix = projectorWorldMatrix(projector);
     const position = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
@@ -342,6 +447,7 @@ export class SceneEngine {
     this.disposed = true;
 
     window.removeEventListener('resize', this.onResize);
+    this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
@@ -358,12 +464,14 @@ export class SceneEngine {
     (this.projectorBody.material as THREE.Material).dispose();
     this.projectiveMaterial.dispose();
     this.depthPass?.dispose();
+    this.transformControls?.dispose();
     this.controls?.dispose();
     this.renderer?.dispose();
 
     this.renderer = null;
     this.editorCamera = null;
     this.controls = null;
+    this.transformControls = null;
     this.depthPass = null;
   }
 }

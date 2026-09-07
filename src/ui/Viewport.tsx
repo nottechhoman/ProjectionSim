@@ -16,6 +16,29 @@ export function Viewport() {
     engine.setCallbacks({
       onFrameTime: (ms) => useAppStore.getState().setFrameTimeMs(ms),
       onWebglStatus: (available) => useAppStore.getState().setWebgl2Available(available),
+      onSelect: (id) => {
+        const state = useAppStore.getState();
+        if (state.projectors.some((p) => p.id === id)) {
+          state.setSelectedProjector(id);
+        } else {
+          state.setSelectedObject(id);
+        }
+      },
+      onTransformChange: (id, patch) => {
+        const state = useAppStore.getState();
+        if (state.projectors.some((p) => p.id === id)) {
+          const proj = state.projectors.find((p) => p.id === id);
+          if (!proj) return;
+          state.updateProjector(id, {
+            transform: {
+              position: patch.position ?? proj.transform.position,
+              quaternion: patch.quaternion ?? proj.transform.quaternion,
+            },
+          });
+        } else {
+          state.updateSceneObjectTransform(id, patch);
+        }
+      },
     });
 
     const unsub = useAppStore.subscribe((state) => {
@@ -24,7 +47,15 @@ export function Viewport() {
     engine.sync(useAppStore.getState());
     engine.start();
 
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      if (e.key === 'w' || e.key === 'W') useAppStore.getState().setTransformMode('translate');
+      if (e.key === 'e' || e.key === 'E') useAppStore.getState().setTransformMode('rotate');
+    };
+    window.addEventListener('keydown', onKeyDown);
+
     return () => {
+      window.removeEventListener('keydown', onKeyDown);
       unsub();
       engine.dispose();
       engineRef.current = null;

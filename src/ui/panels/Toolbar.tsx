@@ -13,8 +13,10 @@ const VIEW_PRESETS: { id: ViewPreset; label: string }[] = [
 export function Toolbar() {
   const displayUnit = useAppStore((s) => s.displayUnit);
   const viewPreset = useAppStore((s) => s.viewPreset);
+  const transformMode = useAppStore((s) => s.transformMode);
   const setDisplayUnit = useAppStore((s) => s.setDisplayUnit);
   const setViewPreset = useAppStore((s) => s.setViewPreset);
+  const setTransformMode = useAppStore((s) => s.setTransformMode);
   const addBox = useAppStore((s) => s.addBox);
 
   return (
@@ -46,6 +48,28 @@ export function Toolbar() {
             {label}
           </button>
         ))}
+      </div>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <span className={styles.label}>Gizmo</span>
+        <button
+          type="button"
+          className={transformMode === 'translate' ? styles.active : undefined}
+          onClick={() => setTransformMode('translate')}
+          title="Move selected object (W)"
+        >
+          Move
+        </button>
+        <button
+          type="button"
+          className={transformMode === 'rotate' ? styles.active : undefined}
+          onClick={() => setTransformMode('rotate')}
+          title="Rotate selected object (E)"
+        >
+          Rotate
+        </button>
       </div>
 
       <div className={styles.separator} />

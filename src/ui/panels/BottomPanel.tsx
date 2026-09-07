@@ -5,6 +5,7 @@ export function BottomPanel() {
   const webgl2Available = useAppStore((s) => s.webgl2Available);
   const frameTimeMs = useAppStore((s) => s.frameTimeMs);
   const shaderWarning = useAppStore((s) => s.shaderWarning);
+  const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
 
   const webglStatus =
     webgl2Available === null
@@ -35,6 +36,9 @@ export function BottomPanel() {
           Shader: {shaderWarning}
         </div>
       )}
+      <button type="button" className={styles.collapseBtn} onClick={toggleBottomPanel} title="Hide status bar">
+        ×
+      </button>
     </div>
   );
 }
