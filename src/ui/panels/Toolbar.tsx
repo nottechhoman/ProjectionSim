@@ -43,7 +43,7 @@ export function Toolbar() {
   const exportCalculationCsv = useAppStore((s) => s.exportCalculationCsv);
   const exportCalculationHtml = useAppStore((s) => s.exportCalculationHtml);
   const showProjectionBeam = useAppStore((s) => s.showProjectionBeam);
-  const toggleProjectionBeam = useAppStore((s) => s.toggleProjectionBeam);
+  const footprint = useAppStore((s) => s.calculationResults.footprint);
 
   const handleOpenFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -134,8 +134,12 @@ export function Toolbar() {
         <button
           type="button"
           className={showProjectionBeam ? styles.active : undefined}
-          onClick={toggleProjectionBeam}
-          title="Show projector frustum to calculated image size"
+          onClick={() => useAppStore.getState().toggleProjectionBeam()}
+          title={
+            footprint?.corners?.length === 4
+              ? 'Show projector beam to image footprint on screen'
+              : 'Show sized beam (select projector aimed at flat screen)'
+          }
         >
           Beam
         </button>

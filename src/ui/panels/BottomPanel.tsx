@@ -17,6 +17,8 @@ export function BottomPanel() {
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
   const clearProjectMessage = useAppStore((s) => s.clearProjectMessage);
   const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
+  const showProjectionBeam = useAppStore((s) => s.showProjectionBeam);
+  const footprint = useAppStore((s) => s.calculationResults.footprint);
   const projectorCount = useAppStore((s) => s.projectors.length);
   const selectedProjectorId = useAppStore((s) => s.selectedProjectorId);
   const projectors = useAppStore((s) => s.projectors);
@@ -86,6 +88,11 @@ export function BottomPanel() {
       {shaderWarning && (
         <div className={styles.warningBanner} title={shaderWarning}>
           Shader: {shaderWarning}
+        </div>
+      )}
+      {showProjectionBeam && (!footprint?.corners || footprint.corners.length < 4) && (
+        <div className={styles.warningBanner} title="Sized beam needs a flat screen receiving projection">
+          Beam: aim selected projector at flat screen
         </div>
       )}
       {projectionCompositeMode === 'solo' && (

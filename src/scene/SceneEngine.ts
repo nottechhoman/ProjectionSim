@@ -26,6 +26,14 @@ import { FrustumHelper } from './helpers/FrustumHelper';
 import { mediaTextureCache, modelCache } from '../media';
 import { cloneModelGroup } from './ModelLoader';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../utils/euler';
+import { unprojectRasterRay } from '../optics/rays';
+
+const CORNER_UV = [
+  [0, 0],
+  [1, 0],
+  [1, 1],
+  [0, 1],
+] as const;
 
 type AppState = ReturnType<typeof useAppStore.getState>;
 
@@ -134,7 +142,7 @@ export class SceneEngine {
   private gizmoRotateStartQuat: THREE.Quaternion | null = null;
   private currentTransformMode: TransformMode = 'translate';
   private showProjectionBeam = false;
-  private projectionBeamDistance: number | null = null;
+  private footprintCorners: { x: number; y: number; z: number }[] | null = null;
   private measureMode = false;
   private readonly measureGroup = new THREE.Group();
   private measureLine: THREE.Line | null = null;
@@ -299,7 +307,7 @@ export class SceneEngine {
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
     this.showProjectionBeam = state.showProjectionBeam;
-    this.projectionBeamDistance = state.calculationResults.footprint?.axialDistance ?? null;
+    this.footprintCorners = state.calculationResults.footprint?.corners ?? null;
     this.syncProjectors(state.projectors, state.selectedProjectorId, this.gizmoDragging);
     if (state.measureMode) {
       this.transformControls?.detach();
@@ -613,23 +621,28 @@ export class SceneEngine {
         visual.body.quaternion.copy(quaternion);
       }
 
-      const throwDistance =
-        this.showProjectionBeam && this.projectionBeamDistance != null
-          ? this.projectionBeamDistance
-          : Math.max(
-              2,
-              Math.hypot(
-                projector.transform.position.x,
-                projector.transform.position.y,
-                projector.transform.position.z,
-              ),
-            );
-      visual.frustum.updateFromProjector(
-        projector.optics,
-        worldMatrix,
-        throwDistance,
-        this.showProjectionBeam && this.projectionBeamDistance != null,
-      );
+      const cornerRays = CORNER_UV.map(([u, v]) => unprojectRasterRay(projector.optics, u, v, worldMatrix));
+      const sizedBeam =
+        this.showProjectionBeam &&
+        projector.id === selectedProjectorId &&
+        this.footprintCorners &&
+        this.footprintCorners.length === 4;
+
+      if (sizedBeam) {
+        const origin = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
+        visual.frustum.updateSizedBeam(origin, this.footprintCorners!);
+      } else {
+        const previewLength = Math.max(
+          2,
+          Math.hypot(
+            projector.transform.position.x,
+            projector.transform.position.y,
+            projector.transform.position.z,
+          ) * 0.5,
+        );
+        visual.frustum.updateShortFrustum(previewLength, cornerRays);
+      }
+
       visual.frustum.visible = true;
       (visual.frustum.material as THREE.LineBasicMaterial).color.set(projector.color);
     }
