@@ -60,3 +60,18 @@
 .collapseBtn:hover {
   color: #ccc;
 }
+
+.videoBtn {
+  font: inherit;
+  font-size: 11px;
+  color: #ccc;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.videoBtn:hover {
+  background: #3a3a3a;
+}

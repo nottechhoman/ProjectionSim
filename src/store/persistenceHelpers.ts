@@ -1,6 +1,8 @@
 import type { ProjectSnapshot } from '../persistence/projectSchema';
 import type {
   DisplayUnit,
+  MaterialPreviewMode,
+  MediaAssetRecord,
   ProjectorConfig,
   SceneObject,
   TransformMode,
@@ -13,6 +15,8 @@ export interface PersistedStateSlice {
   projectName: string;
   sceneObjects: SceneObject[];
   projectors: ProjectorConfig[];
+  mediaAssets: MediaAssetRecord[];
+  materialPreviewMode: MaterialPreviewMode;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
@@ -28,28 +32,18 @@ export function buildInitialPersistedState(): PersistedStateSlice {
   if (autosave) {
     return snapshotToSlice(autosave);
   }
-  return {
-    projectName: 'Default Scene',
-    sceneObjects: DEFAULT_SCENE_OBJECTS,
-    projectors: DEFAULT_PROJECTORS,
-    selectedObjectId: 'proj-1',
-    selectedProjectorId: 'proj-1',
-    displayUnit: 'm',
-    viewPreset: 'persp',
-    transformMode: 'translate',
-    leftPanelVisible: true,
-    rightPanelVisible: true,
-    bottomPanelVisible: true,
-  };
+  return defaultPersistedSlice();
 }
 
 export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
   return {
-    version: 1,
+    version: 2,
     savedAt: new Date().toISOString(),
     name: slice.projectName,
     sceneObjects: slice.sceneObjects,
     projectors: slice.projectors,
+    mediaAssets: slice.mediaAssets,
+    materialPreviewMode: slice.materialPreviewMode,
     selectedObjectId: slice.selectedObjectId,
     selectedProjectorId: slice.selectedProjectorId,
     displayUnit: slice.displayUnit,
@@ -66,6 +60,8 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
     projectName: snapshot.name,
     sceneObjects: snapshot.sceneObjects,
     projectors: snapshot.projectors,
+    mediaAssets: snapshot.mediaAssets ?? [],
+    materialPreviewMode: snapshot.materialPreviewMode ?? 'projectionPreview',
     selectedObjectId: snapshot.selectedObjectId,
     selectedProjectorId: snapshot.selectedProjectorId,
     displayUnit: snapshot.displayUnit,
@@ -82,6 +78,8 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     projectName: 'Default Scene',
     sceneObjects: structuredClone(DEFAULT_SCENE_OBJECTS),
     projectors: structuredClone(DEFAULT_PROJECTORS),
+    mediaAssets: [],
+    materialPreviewMode: 'projectionPreview',
     selectedObjectId: 'proj-1',
     selectedProjectorId: 'proj-1',
     displayUnit: 'm',

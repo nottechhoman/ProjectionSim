@@ -24,6 +24,9 @@ export function Inspector() {
   const updateProjector = useAppStore((s) => s.updateProjector);
   const updateProjectorOptics = useAppStore((s) => s.updateProjectorOptics);
   const updateSceneObjectTransform = useAppStore((s) => s.updateSceneObjectTransform);
+  const updateSceneObjectFlags = useAppStore((s) => s.updateSceneObjectFlags);
+  const mediaAssets = useAppStore((s) => s.mediaAssets);
+  const setProjectorMedia = useAppStore((s) => s.setProjectorMedia);
 
   const projector = projectors.find((p) => p.id === selectedObjectId);
   const sceneObject = sceneObjects.find((o) => o.id === selectedObjectId);
@@ -100,8 +103,97 @@ export function Inspector() {
         <NumInput label="Roll" value={euler.roll} step={0.1} onChange={(v) => setRotation(euler.yaw, euler.pitch, v)} />
       </div>
 
+      {sceneObject && !projector && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Surface</div>
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={sceneObject.visibleInEditor}
+              onChange={(e) => updateSceneObjectFlags(sceneObject.id, { visibleInEditor: e.target.checked })}
+            />
+            Visible
+          </label>
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={sceneObject.receivesProjection}
+              onChange={(e) => updateSceneObjectFlags(sceneObject.id, { receivesProjection: e.target.checked })}
+            />
+            Receives projection
+          </label>
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={sceneObject.blocksProjection}
+              onChange={(e) => updateSceneObjectFlags(sceneObject.id, { blocksProjection: e.target.checked })}
+            />
+            Blocks projection
+          </label>
+        </div>
+      )}
+
       {projector && (
         <>
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Media Source</div>
+            <div className={styles.row}>
+              <label>Source</label>
+              <select
+                value={projector.mediaSource}
+                onChange={(e) =>
+                  setProjectorMedia(
+                    projector.id,
+                    e.target.value as 'pattern' | 'image' | 'video',
+                    e.target.value === 'pattern' ? null : projector.mediaAssetId,
+                  )
+                }
+              >
+                <option value="pattern">Test pattern</option>
+                <option value="image">Image</option>
+                <option value="video">Video</option>
+              </select>
+            </div>
+            {(projector.mediaSource === 'image' || projector.mediaSource === 'video') && (
+              <div className={styles.row}>
+                <label>Asset</label>
+                <select
+                  value={projector.mediaAssetId ?? ''}
+                  onChange={(e) =>
+                    setProjectorMedia(projector.id, projector.mediaSource, e.target.value || null)
+                  }
+                >
+                  <option value="">— select —</option>
+                  {mediaAssets
+                    .filter((a) => a.kind === projector.mediaSource)
+                    .map((a) => (
+                      <option key={a.id} value={a.id}>{a.name}</option>
+                    ))}
+                </select>
+              </div>
+            )}
+            {projector.mediaSource !== 'pattern' && (
+              <div className={styles.row}>
+                <label>Fit</label>
+                <select
+                  value={projector.mediaFit}
+                  onChange={(e) =>
+                    setProjectorMedia(
+                      projector.id,
+                      projector.mediaSource,
+                      projector.mediaAssetId,
+                      e.target.value as 'contain' | 'cover' | 'stretch',
+                    )
+                  }
+                >
+                  <option value="contain">Contain</option>
+                  <option value="cover">Cover</option>
+                  <option value="stretch">Stretch</option>
+                </select>
+              </div>
+            )}
+          </div>
+
           <div className={styles.section}>
             <div className={styles.sectionTitle}>Optics</div>
             <NumInput

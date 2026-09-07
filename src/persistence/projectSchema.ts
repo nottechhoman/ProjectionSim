@@ -6,10 +6,29 @@ import type {
   ViewPreset,
 } from '../types';
 
-export const PROJECT_FILE_VERSION = 1 as const;
+export const PROJECT_FILE_VERSION = 2 as const;
+export const PROJECT_FILE_VERSION_LEGACY = 1 as const;
+
+export interface ProjectSnapshotV2 {
+  version: typeof PROJECT_FILE_VERSION;
+  savedAt: string;
+  name: string;
+  sceneObjects: SceneObject[];
+  projectors: ProjectorConfig[];
+  mediaAssets: import('../types').MediaAssetRecord[];
+  materialPreviewMode: import('../types').MaterialPreviewMode;
+  selectedObjectId: string | null;
+  selectedProjectorId: string;
+  displayUnit: DisplayUnit;
+  viewPreset: ViewPreset;
+  transformMode: TransformMode;
+  leftPanelVisible: boolean;
+  rightPanelVisible: boolean;
+  bottomPanelVisible: boolean;
+}
 
 export interface ProjectSnapshotV1 {
-  version: typeof PROJECT_FILE_VERSION;
+  version: typeof PROJECT_FILE_VERSION_LEGACY;
   savedAt: string;
   name: string;
   sceneObjects: SceneObject[];
@@ -24,4 +43,4 @@ export interface ProjectSnapshotV1 {
   bottomPanelVisible: boolean;
 }
 
-export type ProjectSnapshot = ProjectSnapshotV1;
+export type ProjectSnapshot = ProjectSnapshotV2;

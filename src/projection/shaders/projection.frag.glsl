@@ -1,8 +1,13 @@
 uniform mat4 projectorMatrix;
 uniform sampler2D depthMap;
+uniform sampler2D mediaMap;
 uniform float depthBias;
 uniform float brightness;
-uniform int patternType; // 0 checker, 1 uv, 2 bars, 3 white, 4 id
+uniform int patternType;
+uniform int useMediaTexture;
+uniform int fitMode;
+uniform float mediaAspect;
+uniform float rasterAspect;
 uniform vec3 projectorColor;
 uniform vec2 depthMapSize;
 
@@ -11,6 +16,20 @@ varying vec3 vWorldPos;
 float checker(vec2 uv) {
   vec2 c = floor(uv * 16.0);
   return mod(c.x + c.y, 2.0);
+}
+
+vec2 applyFit(vec2 uv) {
+  if (fitMode == 2 || mediaAspect <= 0.0) return uv;
+  float scaleX = 1.0;
+  float scaleY = 1.0;
+  if (fitMode == 0) {
+    if (mediaAspect > rasterAspect) scaleY = rasterAspect / mediaAspect;
+    else scaleX = mediaAspect / rasterAspect;
+  } else {
+    if (mediaAspect > rasterAspect) scaleX = mediaAspect / rasterAspect;
+    else scaleY = rasterAspect / mediaAspect;
+  }
+  return vec2((uv.x - 0.5) / scaleX + 0.5, (uv.y - 0.5) / scaleY + 0.5);
 }
 
 void main() {
@@ -22,14 +41,16 @@ void main() {
 
   vec2 uv = projNDC.xy * 0.5 + 0.5;
 
-  // Depth occlusion test
-  vec2 depthUV = uv;
-  float sceneDepth = texture2D(depthMap, depthUV).r;
+  float sceneDepth = texture2D(depthMap, uv).r;
   float fragDepth = projNDC.z * 0.5 + 0.5;
   if (fragDepth > sceneDepth + depthBias) discard;
 
   vec3 color;
-  if (patternType == 0) {
+  if (useMediaTexture == 1) {
+    vec2 mediaUv = applyFit(uv);
+    if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) discard;
+    color = texture2D(mediaMap, mediaUv).rgb;
+  } else if (patternType == 0) {
     float v = checker(uv);
     color = mix(vec3(0.1), vec3(0.9), v);
   } else if (patternType == 1) {

@@ -51,5 +51,8 @@ export const DEFAULT_PROJECTORS: ProjectorConfig[] = [
     },
     testPattern: 'checkerboard',
     brightness: 1,
+    mediaSource: 'pattern',
+    mediaAssetId: null,
+    mediaFit: 'contain',
   },
 ];

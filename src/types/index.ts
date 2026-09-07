@@ -4,7 +4,13 @@ export type ViewPreset = 'persp' | 'top' | 'front' | 'side';
 
 export type TransformMode = 'translate' | 'rotate';
 
-export type SceneObjectType = 'screen' | 'floor' | 'wall' | 'box';
+export type SceneObjectType = 'screen' | 'floor' | 'wall' | 'box' | 'curvedScreen' | 'model';
+
+export type MaterialPreviewMode = 'original' | 'projectionPreview';
+
+export type MediaSourceKind = 'pattern' | 'image' | 'video';
+
+export type MediaFitMode = 'contain' | 'cover' | 'stretch';
 
 export type TestPattern =
   | 'checkerboard'
@@ -35,6 +41,19 @@ export interface SceneObject {
   blocksProjection: boolean;
   /** Width, height, depth in meters (depth optional for planes) */
   dimensions: { width: number; height: number; depth?: number };
+  /** Curved screen: radius (m), arc angle (degrees), height (m) */
+  curved?: { radius: number; arcAngleDeg: number; height: number };
+  /** Imported GLB root reference */
+  modelAssetId?: string;
+  /** Scale factor applied to imported models (1 = file units as meters) */
+  modelScale?: number;
+}
+
+export interface MediaAssetRecord {
+  id: string;
+  name: string;
+  kind: 'image' | 'video' | 'model';
+  mimeType: string;
 }
 
 export interface ProjectorOptics {
@@ -58,6 +77,9 @@ export interface ProjectorConfig {
   optics: ProjectorOptics;
   testPattern: TestPattern;
   brightness: number;
+  mediaSource: MediaSourceKind;
+  mediaAssetId: string | null;
+  mediaFit: MediaFitMode;
 }
 
 export interface NominalProjection {

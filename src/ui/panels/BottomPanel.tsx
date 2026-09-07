@@ -9,6 +9,9 @@ export function BottomPanel() {
   const projectName = useAppStore((s) => s.projectName);
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
   const clearProjectMessage = useAppStore((s) => s.clearProjectMessage);
+  const videoPlaying = useAppStore((s) => s.videoPlaying);
+  const toggleVideoPlayback = useAppStore((s) => s.toggleVideoPlayback);
+  const projector = useAppStore((s) => s.projectors[0]);
 
   const webglStatus =
     webgl2Available === null
@@ -38,6 +41,11 @@ export function BottomPanel() {
         <span>Frame:</span>
         <span>{frameTimeMs > 0 ? `${frameTimeMs.toFixed(1)} ms` : '—'}</span>
       </div>
+      {projector?.mediaSource === 'video' && projector.mediaAssetId && (
+        <button type="button" className={styles.videoBtn} onClick={toggleVideoPlayback}>
+          {videoPlaying ? 'Pause' : 'Play'} video
+        </button>
+      )}
       {projectMessage && (
         <div
           className={styles.projectMessage}

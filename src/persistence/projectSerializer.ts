@@ -1,9 +1,10 @@
 import { validateOptics } from '../optics/validate';
-import type { ProjectorConfig, SceneObject } from '../types';
+import type { MaterialPreviewMode, MediaAssetRecord, ProjectorConfig, SceneObject } from '../types';
 import {
   PROJECT_FILE_VERSION,
+  PROJECT_FILE_VERSION_LEGACY,
   type ProjectSnapshot,
-  type ProjectSnapshotV1,
+  type ProjectSnapshotV2,
 } from './projectSchema';
 
 export class ProjectValidationError extends Error {
@@ -32,12 +33,14 @@ function validateTransform(raw: unknown): void {
   }
 }
 
+const OBJECT_TYPES = ['screen', 'floor', 'wall', 'box', 'curvedScreen', 'model'] as const;
+
 function validateSceneObject(raw: unknown): SceneObject {
   if (!isObject(raw)) throw new ProjectValidationError('Invalid scene object');
   if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
     throw new ProjectValidationError('Scene object missing id or name');
   }
-  if (!['screen', 'floor', 'wall', 'box'].includes(String(raw.type))) {
+  if (!OBJECT_TYPES.includes(String(raw.type) as (typeof OBJECT_TYPES)[number])) {
     throw new ProjectValidationError(`Unknown scene object type: ${String(raw.type)}`);
   }
   validateTransform(raw.transform);
@@ -47,6 +50,15 @@ function validateSceneObject(raw: unknown): SceneObject {
     throw new ProjectValidationError('Invalid scene object dimensions');
   }
   return raw as unknown as SceneObject;
+}
+
+function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
+  return {
+    ...raw,
+    mediaSource: raw.mediaSource ?? 'pattern',
+    mediaAssetId: raw.mediaAssetId ?? null,
+    mediaFit: raw.mediaFit ?? 'contain',
+  };
 }
 
 function validateProjector(raw: unknown): ProjectorConfig {
@@ -59,7 +71,19 @@ function validateProjector(raw: unknown): ProjectorConfig {
   const optics = raw.optics as unknown as ProjectorConfig['optics'];
   const v = validateOptics(optics);
   if (!v.valid) throw new ProjectValidationError(v.error ?? 'Invalid projector optics');
-  return raw as unknown as ProjectorConfig;
+  return normalizeProjector(raw as unknown as ProjectorConfig);
+}
+
+function validateMediaAssets(raw: unknown): MediaAssetRecord[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (item): item is MediaAssetRecord =>
+      isObject(item) &&
+      typeof item.id === 'string' &&
+      typeof item.name === 'string' &&
+      (item.kind === 'image' || item.kind === 'video' || item.kind === 'model') &&
+      typeof item.mimeType === 'string',
+  );
 }
 
 export function serializeProject(snapshot: ProjectSnapshot): string {
@@ -75,9 +99,10 @@ export function parseProjectJson(text: string): ProjectSnapshot {
   }
 
   if (!isObject(data)) throw new ProjectValidationError('Project root must be an object');
-  if (data.version !== PROJECT_FILE_VERSION) {
+  const version = data.version;
+  if (version !== PROJECT_FILE_VERSION && version !== PROJECT_FILE_VERSION_LEGACY) {
     throw new ProjectValidationError(
-      `Unsupported project version: ${String(data.version)} (expected ${PROJECT_FILE_VERSION})`,
+      `Unsupported project version: ${String(version)} (expected ${PROJECT_FILE_VERSION} or ${PROJECT_FILE_VERSION_LEGACY})`,
     );
   }
 
@@ -90,6 +115,7 @@ export function parseProjectJson(text: string): ProjectSnapshot {
 
   const sceneObjects = data.sceneObjects.map(validateSceneObject);
   const projectors = data.projectors.map(validateProjector);
+  const mediaAssets = version === PROJECT_FILE_VERSION ? validateMediaAssets(data.mediaAssets) : [];
 
   const selectedObjectId =
     data.selectedObjectId === null || typeof data.selectedObjectId === 'string'
@@ -98,12 +124,17 @@ export function parseProjectJson(text: string): ProjectSnapshot {
   const selectedProjectorId =
     typeof data.selectedProjectorId === 'string' ? data.selectedProjectorId : projectors[0].id;
 
-  const snapshot: ProjectSnapshotV1 = {
+  const materialPreviewMode: MaterialPreviewMode =
+    data.materialPreviewMode === 'original' ? 'original' : 'projectionPreview';
+
+  const snapshot: ProjectSnapshotV2 = {
     version: PROJECT_FILE_VERSION,
     savedAt: typeof data.savedAt === 'string' ? data.savedAt : new Date().toISOString(),
     name: typeof data.name === 'string' ? data.name : 'Untitled',
     sceneObjects,
     projectors,
+    mediaAssets,
+    materialPreviewMode,
     selectedObjectId,
     selectedProjectorId,
     displayUnit: data.displayUnit === 'cm' || data.displayUnit === 'mm' ? data.displayUnit : 'm',

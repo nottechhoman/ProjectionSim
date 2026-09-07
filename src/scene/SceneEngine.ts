@@ -3,13 +3,16 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { useAppStore } from '../store';
 import { buildProjectorCamera, getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
-import { createProjectiveMaterial, patternToInt } from '../projection/ProjectiveMaterial';
+import { createProjectiveMaterial, fitModeToInt, patternToInt } from '../projection/ProjectiveMaterial';
 import { DepthPass } from '../visibility/DepthPass';
-import type { ProjectorConfig, SceneObject, Transform, TransformMode, ViewPreset } from '../types';
+import type { MaterialPreviewMode, ProjectorConfig, SceneObject, Transform, TransformMode, ViewPreset } from '../types';
 import { createScreen } from './objects/createScreen';
 import { createFloor } from './objects/createFloor';
 import { createBox } from './objects/createBox';
+import { createCurvedScreen } from './objects/createCurvedScreen';
 import { FrustumHelper } from './helpers/FrustumHelper';
+import { mediaTextureCache, modelCache } from '../media';
+import { cloneModelGroup } from './ModelLoader';
 
 type AppState = ReturnType<typeof useAppStore.getState>;
 
@@ -22,10 +25,14 @@ export interface SceneEngineCallbacks {
 
 function dimensionsKey(obj: SceneObject): string {
   const depth = obj.dimensions.depth ?? 0;
-  return `${obj.type}:${obj.dimensions.width}:${obj.dimensions.height}:${depth}`;
+  const curved = obj.curved
+    ? `${obj.curved.radius}:${obj.curved.arcAngleDeg}:${obj.curved.height}`
+    : '';
+  const model = obj.modelAssetId ? `${obj.modelAssetId}:${obj.modelScale ?? 1}` : '';
+  return `${obj.type}:${obj.dimensions.width}:${obj.dimensions.height}:${depth}:${curved}:${model}`;
 }
 
-function createObjectMesh(obj: SceneObject): THREE.Mesh {
+function createObjectMesh(obj: SceneObject): THREE.Object3D {
   switch (obj.type) {
     case 'screen':
       return createScreen(obj);
@@ -33,9 +40,27 @@ function createObjectMesh(obj: SceneObject): THREE.Mesh {
       return createFloor(obj);
     case 'box':
       return createBox(obj);
+    case 'curvedScreen':
+      return createCurvedScreen(obj);
+    case 'model': {
+      if (!obj.modelAssetId) return createBox(obj);
+      const prototype = modelCache.get(obj.modelAssetId);
+      if (!prototype) return createBox(obj);
+      const group = cloneModelGroup(prototype);
+      group.userData.isModel = true;
+      return group;
+    }
     default:
       return createScreen(obj);
   }
+}
+
+function collectMeshes(root: THREE.Object3D): THREE.Mesh[] {
+  const meshes: THREE.Mesh[] = [];
+  root.traverse((child) => {
+    if ((child as THREE.Mesh).isMesh) meshes.push(child as THREE.Mesh);
+  });
+  return meshes;
 }
 
 function projectorWorldMatrix(projector: ProjectorConfig): THREE.Matrix4 {
@@ -64,8 +89,9 @@ export class SceneEngine {
   private readonly projectiveMaterial = createProjectiveMaterial();
   private readonly frustumHelper = new FrustumHelper();
   private readonly projectorBody: THREE.Mesh;
-  private readonly objectMeshes = new Map<string, THREE.Mesh>();
+  private readonly objectMeshes = new Map<string, THREE.Object3D>();
   private activeProjector: ProjectorConfig | null = null;
+  private materialPreviewMode: MaterialPreviewMode = 'projectionPreview';
   private animationId: number | null = null;
   private disposed = false;
   private currentViewPreset: ViewPreset = 'persp';
@@ -215,6 +241,7 @@ export class SceneEngine {
 
     this.syncSceneObjects(state.sceneObjects);
     this.syncProjector(state.projectors);
+    this.materialPreviewMode = state.materialPreviewMode;
     this.syncSelectionGizmo(state.selectedObjectId, state.projectors);
   }
 
@@ -226,10 +253,10 @@ export class SceneEngine {
       return;
     }
 
-    const mesh = this.objectMeshes.get(selectedId);
-    if (mesh) {
-      if (this.transformControls.object !== mesh) {
-        this.transformControls.attach(mesh);
+    const obj3d = this.objectMeshes.get(selectedId);
+    if (obj3d) {
+      if (this.transformControls.object !== obj3d) {
+        this.transformControls.attach(obj3d);
       }
       this.transformControls.setMode(this.currentTransformMode);
       return;
@@ -295,37 +322,39 @@ export class SceneEngine {
   private syncSceneObjects(sceneObjects: SceneObject[]): void {
     const nextIds = new Set(sceneObjects.map((obj) => obj.id));
 
-    for (const [id, mesh] of this.objectMeshes) {
+    for (const [id, obj3d] of this.objectMeshes) {
       if (!nextIds.has(id)) {
-        this.contentGroup.remove(mesh);
-        mesh.geometry.dispose();
-        (mesh.material as THREE.Material).dispose();
+        this.contentGroup.remove(obj3d);
+        disposeObject3D(obj3d);
         this.objectMeshes.delete(id);
       }
     }
 
     for (const obj of sceneObjects) {
       const dimKey = dimensionsKey(obj);
-      let mesh = this.objectMeshes.get(obj.id);
+      let obj3d = this.objectMeshes.get(obj.id);
 
-      if (!mesh || mesh.userData.dimKey !== dimKey) {
-        if (mesh) {
-          this.contentGroup.remove(mesh);
-          mesh.geometry.dispose();
-          (mesh.material as THREE.Material).dispose();
+      if (!obj3d || obj3d.userData.dimKey !== dimKey) {
+        if (obj3d) {
+          this.contentGroup.remove(obj3d);
+          disposeObject3D(obj3d);
         }
-        mesh = createObjectMesh(obj);
-        mesh.userData.dimKey = dimKey;
-        this.objectMeshes.set(obj.id, mesh);
-        this.contentGroup.add(mesh);
+        obj3d = createObjectMesh(obj);
+        obj3d.userData.dimKey = dimKey;
+        this.objectMeshes.set(obj.id, obj3d);
+        this.contentGroup.add(obj3d);
       }
 
-      mesh.position.set(obj.transform.position.x, obj.transform.position.y, obj.transform.position.z);
-      mesh.quaternion.set(...obj.transform.quaternion);
-      mesh.visible = obj.visibleInEditor;
-      mesh.userData.id = obj.id;
-      mesh.userData.receivesProjection = obj.receivesProjection;
-      mesh.userData.blocksProjection = obj.blocksProjection;
+      obj3d.position.set(obj.transform.position.x, obj.transform.position.y, obj.transform.position.z);
+      obj3d.quaternion.set(...obj.transform.quaternion);
+      if (obj.type === 'model') {
+        const scale = obj.modelScale ?? 1;
+        obj3d.scale.setScalar(scale);
+      }
+      obj3d.visible = obj.visibleInEditor;
+      obj3d.userData.id = obj.id;
+      obj3d.userData.receivesProjection = obj.receivesProjection;
+      obj3d.userData.blocksProjection = obj.blocksProjection;
     }
   }
 
@@ -368,7 +397,25 @@ export class SceneEngine {
     );
     this.projectiveMaterial.uniforms.patternType.value = patternToInt(projector.testPattern);
     this.projectiveMaterial.uniforms.brightness.value = projector.brightness;
+    this.projectiveMaterial.uniforms.rasterAspect.value = projector.optics.aspectRatio;
     (this.projectiveMaterial.uniforms.projectorColor.value as THREE.Color).set(projector.color);
+
+    const useMedia =
+      (projector.mediaSource === 'image' || projector.mediaSource === 'video') &&
+      projector.mediaAssetId;
+    if (useMedia) {
+      const entry = mediaTextureCache.get(projector.mediaAssetId!);
+      if (entry) {
+        this.projectiveMaterial.uniforms.useMediaTexture.value = 1;
+        this.projectiveMaterial.uniforms.mediaMap.value = entry.texture;
+        this.projectiveMaterial.uniforms.mediaAspect.value = entry.aspect;
+        this.projectiveMaterial.uniforms.fitMode.value = fitModeToInt(projector.mediaFit);
+      } else {
+        this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
+      }
+    } else {
+      this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
+    }
   }
 
   start(): void {
@@ -386,12 +433,13 @@ export class SceneEngine {
 
     const frameStart = performance.now();
 
+    mediaTextureCache.updateVideos();
     this.controls?.update();
     this.resize();
     this.editorScene.updateMatrixWorld(true);
 
     const depthMeshes = this.getDepthMeshes();
-    const receivers = this.getReceiverMeshes();
+    const receivers = this.getReceiverRoots();
 
     if (this.activeProjector && depthMeshes.length > 0) {
       const worldMatrix = projectorWorldMatrix(this.activeProjector);
@@ -408,9 +456,13 @@ export class SceneEngine {
     }
 
     const savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
-    for (const mesh of receivers) {
-      savedMaterials.set(mesh, mesh.material);
-      mesh.material = this.projectiveMaterial;
+    if (this.materialPreviewMode === 'projectionPreview') {
+      for (const root of receivers) {
+        for (const mesh of collectMeshes(root)) {
+          savedMaterials.set(mesh, mesh.material);
+          mesh.material = this.projectiveMaterial;
+        }
+      }
     }
 
     this.renderer.render(this.editorScene, this.editorCamera);
@@ -424,22 +476,22 @@ export class SceneEngine {
 
   private getDepthMeshes(): THREE.Mesh[] {
     const meshes: THREE.Mesh[] = [];
-    for (const mesh of this.objectMeshes.values()) {
-      if (mesh.userData.blocksProjection || mesh.userData.receivesProjection) {
-        meshes.push(mesh);
+    for (const root of this.objectMeshes.values()) {
+      if (root.userData.blocksProjection || root.userData.receivesProjection) {
+        meshes.push(...collectMeshes(root));
       }
     }
     return meshes;
   }
 
-  private getReceiverMeshes(): THREE.Mesh[] {
-    const meshes: THREE.Mesh[] = [];
-    for (const mesh of this.objectMeshes.values()) {
-      if (mesh.userData.receivesProjection && mesh.visible) {
-        meshes.push(mesh);
+  private getReceiverRoots(): THREE.Object3D[] {
+    const roots: THREE.Object3D[] = [];
+    for (const root of this.objectMeshes.values()) {
+      if (root.userData.receivesProjection && root.visible) {
+        roots.push(root);
       }
     }
-    return meshes;
+    return roots;
   }
 
   dispose(): void {
@@ -453,9 +505,8 @@ export class SceneEngine {
       this.animationId = null;
     }
 
-    for (const mesh of this.objectMeshes.values()) {
-      mesh.geometry.dispose();
-      (mesh.material as THREE.Material).dispose();
+    for (const obj3d of this.objectMeshes.values()) {
+      disposeObject3D(obj3d);
     }
     this.objectMeshes.clear();
 
@@ -473,5 +524,25 @@ export class SceneEngine {
     this.controls = null;
     this.transformControls = null;
     this.depthPass = null;
+  }
+}
+
+function disposeObject3D(obj: THREE.Object3D): void {
+  if (obj.userData.isModel) {
+    obj.traverse((child) => {
+      const mesh = child as THREE.Mesh;
+      if (mesh.isMesh) {
+        mesh.geometry?.dispose();
+        if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+        else mesh.material?.dispose();
+      }
+    });
+    return;
+  }
+  const mesh = obj as THREE.Mesh;
+  if (mesh.isMesh) {
+    mesh.geometry?.dispose();
+    if (Array.isArray(mesh.material)) mesh.material.forEach((m) => m.dispose());
+    else (mesh.material as THREE.Material)?.dispose();
   }
 }

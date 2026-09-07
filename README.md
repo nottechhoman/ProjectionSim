@@ -1,6 +1,6 @@
 # ProjectionLab
 
-Browser-based 3D projection planning simulator. Milestone 1 delivers a single-projector scene with throw-ratio optics, projective test-pattern rendering, planar footprint calculations, and occlusion shadows.
+Browser-based 3D projection planning simulator. Milestone 1 delivers a single-projector scene with throw-ratio optics, projective test-pattern rendering, planar footprint calculations, and occlusion shadows. Milestone 2 adds image/video media on projectors, GLB/GLTF import, curved screens, material preview modes, and versioned project save/load with IndexedDB asset storage.
 
 ## Installation
 
@@ -28,7 +28,11 @@ The app loads with:
 | Floor | Y = 0 | 20 × 20 m, blocks projection |
 | Projector | (0, 1.5, 6) | Throw ratio 1.5, 1920×1080, checkerboard pattern |
 
-Select objects in the left panel. Edit position, rotation, and optics in the inspector. Use toolbar buttons for units, view presets, and adding box occluders.
+Select objects in the left panel or click them in the viewport. Edit position, rotation, and optics in the inspector. Use the Move/Rotate gizmo (toolbar or W/E keys) to transform selected objects.
+
+**Import** accepts images, videos, and GLB/GLTF models. **Curved Screen** adds a cylindrical receiving surface. Assign media to a projector in the inspector (Media source section). Toggle **Projection / Original** preview in the toolbar to see projected texture vs. base materials.
+
+**New / Open / Save** writes `.projectionlab.json` project files. Media blobs are stored in IndexedDB and rehydrated on load. The app also autosaves to browser localStorage every 2 seconds.
 
 Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection at 6 m throw distance.
 
@@ -53,6 +57,19 @@ Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection
 - Nominal projection dimensions and pixel density in the inspector
 - Optics validation with inline inspector errors (invalid throw ratio rejected)
 - WebGL2 requirement check with full-screen fallback message
+- 3D transform gizmo (move/rotate), click-to-select, editable numeric inspector fields
+- Collapsible scene, inspector, and status panels
+
+## M2 Features
+
+- **Media on projectors** — assign imported images or videos; fit modes (contain, cover, stretch)
+- **GLB/GLTF import** — load 3D models with scale confirmation prompt
+- **Curved screens** — cylindrical receiving surfaces for projection preview
+- **Material preview modes** — Projection (projective overlay) vs. Original (base materials)
+- **Surface flags** — per-object receives projection / blocks projection toggles
+- **Video playback** — play/pause control in the status bar when a video is assigned
+- **Project persistence v2** — JSON project files + IndexedDB blob storage for media assets; v1 projects load with defaults
+- **Autosave** — localStorage snapshot every 2 seconds
 
 ## Known Limitations
 
@@ -60,14 +77,12 @@ Features deferred to later milestones are disabled in the UI or stubbed in code:
 
 | Feature | Milestone |
 |---------|-----------|
-| Image/video playback | M2 |
-| GLB/GLTF import | M2 |
-| Curved screens | M2 |
-| Save/load projects, CSV/HTML export | M2/M4 |
+| Curved screen footprint calculation | M2+ (preview only; planar math still used for calc panel) |
+| Video seek/loop/mute timeline | M2+ |
+| CSV/HTML export | M4 |
 | Multi-projector overlap and edge blending | M3 |
 | Raw vs shared-canvas mapping modes | M3 |
 | Undo/redo | M4 |
-| Visual transform gizmos | M4 |
 | Playwright smoke tests | M4 |
 | Two-point measure tool | M4 |
 | Footprint clipping to screen bounds (clipped area stub) | M2+ |

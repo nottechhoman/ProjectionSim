@@ -2,9 +2,19 @@ import { create } from 'zustand';
 import * as THREE from 'three';
 import { clearAutosave, downloadProjectFile, parseProjectJson, writeAutosave } from '../persistence';
 import type { ProjectSnapshot } from '../persistence/projectSchema';
+import {
+  detectFileKind,
+  hydrateAssetsFromRecords,
+  importMediaBlob,
+  mediaTextureCache,
+} from '../media/assetImport';
 import type {
   CalculationResults,
   DisplayUnit,
+  MaterialPreviewMode,
+  MediaAssetRecord,
+  MediaFitMode,
+  MediaSourceKind,
   ProjectorConfig,
   SceneObject,
   Transform,
@@ -14,31 +24,23 @@ import type {
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
 import { computePlanarFootprint } from '../coverage';
+import { eulerYXZToQuaternion } from '../utils/euler';
 import {
   buildInitialPersistedState,
   defaultPersistedSlice,
   sliceToSnapshot,
   snapshotToSlice,
+  type PersistedStateSlice,
 } from './persistenceHelpers';
 
-interface AppState {
-  projectName: string;
+interface AppState extends PersistedStateSlice {
   projectMessage: string | null;
-  sceneObjects: SceneObject[];
-  projectors: ProjectorConfig[];
-  selectedObjectId: string | null;
-  selectedProjectorId: string;
-  displayUnit: DisplayUnit;
-  viewPreset: ViewPreset;
   measureMode: boolean;
   frameTimeMs: number;
   webgl2Available: boolean | null;
   calculationResults: CalculationResults;
   shaderWarning: string | null;
-  leftPanelVisible: boolean;
-  rightPanelVisible: boolean;
-  bottomPanelVisible: boolean;
-  transformMode: TransformMode;
+  videoPlaying: boolean;
   setSelectedObject: (id: string | null) => void;
   setSelectedProjector: (id: string) => void;
   updateProjector: (id: string, patch: Partial<ProjectorConfig>) => void;
@@ -47,8 +49,13 @@ interface AppState {
     id: string,
     patch: { position?: SceneObject['transform']['position']; quaternion?: SceneObject['transform']['quaternion'] },
   ) => void;
+  updateSceneObjectFlags: (
+    id: string,
+    patch: Partial<Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'blocksProjection'>>,
+  ) => void;
   setDisplayUnit: (u: DisplayUnit) => void;
   setViewPreset: (preset: ViewPreset) => void;
+  setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
   setMeasureMode: (enabled: boolean) => void;
   setFrameTimeMs: (ms: number) => void;
   setWebgl2Available: (available: boolean) => void;
@@ -62,10 +69,19 @@ interface AppState {
   setTransformMode: (mode: TransformMode) => void;
   recomputeCalculations: () => void;
   addBox: () => void;
+  addCurvedScreen: () => void;
+  importFile: (file: File, modelScale?: number) => Promise<void>;
+  setProjectorMedia: (
+    projectorId: string,
+    source: MediaSourceKind,
+    assetId: string | null,
+    fit?: MediaFitMode,
+  ) => void;
+  toggleVideoPlayback: () => void;
   getSnapshot: () => ProjectSnapshot;
   newProject: () => void;
   saveProjectToFile: () => void;
-  loadProjectFromFile: (text: string) => void;
+  loadProjectFromFile: (text: string) => Promise<void>;
   clearProjectMessage: () => void;
 }
 
@@ -82,14 +98,18 @@ function buildWorldMatrix(transform: Transform): THREE.Matrix4 {
 }
 
 function findProjectionScreen(sceneObjects: SceneObject[]): SceneObject | undefined {
-  return sceneObjects.find((obj) => obj.type === 'screen' && obj.receivesProjection);
+  return sceneObjects.find(
+    (obj) => (obj.type === 'screen' || obj.type === 'curvedScreen') && obj.receivesProjection,
+  );
 }
 
-function pickPersistedFields(state: AppState) {
+function pickPersistedFields(state: AppState): PersistedStateSlice {
   return {
     projectName: state.projectName,
     sceneObjects: state.sceneObjects,
     projectors: state.projectors,
+    mediaAssets: state.mediaAssets,
+    materialPreviewMode: state.materialPreviewMode,
     selectedObjectId: state.selectedObjectId,
     selectedProjectorId: state.selectedProjectorId,
     displayUnit: state.displayUnit,
@@ -108,6 +128,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   projectMessage: initial.projectName !== 'Default Scene' ? 'Restored last autosaved project' : null,
   sceneObjects: initial.sceneObjects,
   projectors: initial.projectors,
+  mediaAssets: initial.mediaAssets,
+  materialPreviewMode: initial.materialPreviewMode,
   selectedObjectId: initial.selectedObjectId,
   selectedProjectorId: initial.selectedProjectorId,
   displayUnit: initial.displayUnit,
@@ -121,6 +143,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   rightPanelVisible: initial.rightPanelVisible,
   bottomPanelVisible: initial.bottomPanelVisible,
   transformMode: initial.transformMode,
+  videoPlaying: false,
   setSelectedObject: (id) => set({ selectedObjectId: id }),
   setSelectedProjector: (id) => set({ selectedProjectorId: id, selectedObjectId: id }),
   updateProjector: (id, patch) => {
@@ -160,8 +183,15 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     get().recomputeCalculations();
   },
+  updateSceneObjectFlags: (id, patch) => {
+    set((s) => ({
+      sceneObjects: s.sceneObjects.map((obj) => (obj.id === id ? { ...obj, ...patch } : obj)),
+    }));
+    get().recomputeCalculations();
+  },
   setDisplayUnit: (u) => set({ displayUnit: u }),
   setViewPreset: (preset) => set({ viewPreset: preset }),
+  setMaterialPreviewMode: (mode) => set({ materialPreviewMode: mode }),
   setMeasureMode: (enabled) => set({ measureMode: enabled }),
   setFrameTimeMs: (ms) => set({ frameTimeMs: ms }),
   setWebgl2Available: (available) => set({ webgl2Available: available }),
@@ -184,7 +214,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     const screen = findProjectionScreen(sceneObjects);
     let footprint = null;
 
-    if (screen) {
+    if (screen && screen.type === 'screen') {
       const screenMatrix = buildWorldMatrix(screen.transform);
       const center = new THREE.Vector3().setFromMatrixPosition(screenMatrix);
       const normal = new THREE.Vector3(0, 0, 1)
@@ -224,6 +254,101 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     get().recomputeCalculations();
   },
+  addCurvedScreen: () => {
+    const id = `curved-${Date.now()}`;
+    set((s) => ({
+      sceneObjects: [
+        ...s.sceneObjects,
+        {
+          id,
+          name: 'Curved Screen',
+          type: 'curvedScreen' as const,
+          transform: {
+            position: { x: 0, y: 1.5, z: 0 },
+            quaternion: eulerYXZToQuaternion(0, 0, 0),
+          },
+          visibleInEditor: true,
+          receivesProjection: true,
+          blocksProjection: false,
+          dimensions: { width: 6, height: 3.375 },
+          curved: { radius: 4, arcAngleDeg: 90, height: 3.375 },
+        },
+      ],
+    }));
+    get().recomputeCalculations();
+  },
+  importFile: async (file, modelScale = 1) => {
+    const kind = detectFileKind(file);
+    if (!kind) {
+      set({ projectMessage: `Unsupported file type: ${file.name}` });
+      return;
+    }
+
+    try {
+      const record = await importMediaBlob(file, file.name, kind, file.type || 'application/octet-stream');
+      set((s) => ({ mediaAssets: [...s.mediaAssets, record] }));
+
+      if (kind === 'model') {
+        const id = `model-${Date.now()}`;
+        set((s) => ({
+          sceneObjects: [
+            ...s.sceneObjects,
+            {
+              id,
+              name: file.name.replace(/\.(glb|gltf)$/i, ''),
+              type: 'model' as const,
+              transform: {
+                position: { x: 0, y: 0, z: 0 },
+                quaternion: eulerYXZToQuaternion(0, 0, 0),
+              },
+              visibleInEditor: true,
+              receivesProjection: true,
+              blocksProjection: true,
+              dimensions: { width: 1, height: 1, depth: 1 },
+              modelAssetId: record.id,
+              modelScale,
+            },
+          ],
+          projectMessage: `Imported model "${file.name}" at scale ${modelScale}`,
+        }));
+      } else {
+        const proj = get().projectors[0];
+        if (proj) {
+          get().setProjectorMedia(proj.id, kind, record.id);
+        }
+        set({ projectMessage: `Imported ${kind} "${file.name}"` });
+      }
+    } catch (err) {
+      set({ projectMessage: err instanceof Error ? err.message : 'Import failed' });
+    }
+  },
+  setProjectorMedia: (projectorId, source, assetId, fit) => {
+    set((s) => ({
+      projectors: s.projectors.map((p) =>
+        p.id === projectorId
+          ? {
+              ...p,
+              mediaSource: source,
+              mediaAssetId: assetId,
+              mediaFit: fit ?? p.mediaFit,
+            }
+          : p,
+      ),
+    }));
+  },
+  toggleVideoPlayback: () => {
+    const proj = get().projectors[0];
+    if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
+    const entry = mediaTextureCache.get(proj.mediaAssetId);
+    if (!entry?.video) return;
+    if (entry.video.paused) {
+      void entry.video.play();
+      set({ videoPlaying: true });
+    } else {
+      entry.video.pause();
+      set({ videoPlaying: false });
+    }
+  },
   getSnapshot: () => sliceToSnapshot(pickPersistedFields(get())),
   newProject: () => {
     const defaults = defaultPersistedSlice();
@@ -231,6 +356,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...defaults,
       projectMessage: 'New project created',
       calculationResults: { nominal: null, footprint: null, opticsError: null },
+      videoPlaying: false,
     });
     clearAutosave();
     get().recomputeCalculations();
@@ -241,14 +367,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     writeAutosave(snapshot);
     set({ projectMessage: `Saved "${snapshot.name}" to file` });
   },
-  loadProjectFromFile: (text) => {
+  loadProjectFromFile: async (text) => {
     try {
       const snapshot = parseProjectJson(text);
+      const missing = await hydrateAssetsFromRecords(snapshot.mediaAssets);
       const slice = snapshotToSlice(snapshot);
       set({
         ...slice,
-        projectMessage: `Loaded "${snapshot.name}"`,
+        projectMessage:
+          missing.length > 0
+            ? `Loaded "${snapshot.name}" — missing assets: ${missing.join(', ')}`
+            : `Loaded "${snapshot.name}"`,
         calculationResults: { nominal: null, footprint: null, opticsError: null },
+        videoPlaying: false,
       });
       writeAutosave(snapshot);
       get().recomputeCalculations();
@@ -259,6 +390,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   clearProjectMessage: () => set({ projectMessage: null }),
 }));
+
+void hydrateAssetsFromRecords(initial.mediaAssets);
 
 useAppStore.getState().recomputeCalculations();
 
@@ -273,3 +406,5 @@ useAppStore.subscribe((state) => {
 export function scheduleAutosaveNow(): void {
   writeAutosave(useAppStore.getState().getSnapshot());
 }
+
+export type { MediaAssetRecord };

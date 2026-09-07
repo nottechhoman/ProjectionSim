@@ -13,14 +13,19 @@ const VIEW_PRESETS: { id: ViewPreset; label: string }[] = [
 
 export function Toolbar() {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
   const displayUnit = useAppStore((s) => s.displayUnit);
   const viewPreset = useAppStore((s) => s.viewPreset);
   const transformMode = useAppStore((s) => s.transformMode);
+  const materialPreviewMode = useAppStore((s) => s.materialPreviewMode);
   const projectName = useAppStore((s) => s.projectName);
   const setDisplayUnit = useAppStore((s) => s.setDisplayUnit);
   const setViewPreset = useAppStore((s) => s.setViewPreset);
   const setTransformMode = useAppStore((s) => s.setTransformMode);
+  const setMaterialPreviewMode = useAppStore((s) => s.setMaterialPreviewMode);
   const addBox = useAppStore((s) => s.addBox);
+  const addCurvedScreen = useAppStore((s) => s.addCurvedScreen);
+  const importFile = useAppStore((s) => s.importFile);
   const newProject = useAppStore((s) => s.newProject);
   const saveProjectToFile = useAppStore((s) => s.saveProjectToFile);
   const loadProjectFromFile = useAppStore((s) => s.loadProjectFromFile);
@@ -31,10 +36,26 @@ export function Toolbar() {
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') {
-        loadProjectFromFile(reader.result);
+        void loadProjectFromFile(reader.result);
       }
     };
     reader.readAsText(file);
+    event.target.value = '';
+  };
+
+  const handleImport = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    let scale = 1;
+    if (file.name.endsWith('.glb') || file.name.endsWith('.gltf')) {
+      const input = window.prompt(
+        'Model scale factor (1 = file units treated as meters):',
+        '1',
+      );
+      scale = parseFloat(input ?? '1');
+      if (!Number.isFinite(scale) || scale <= 0) scale = 1;
+    }
+    await importFile(file, scale);
     event.target.value = '';
   };
 
@@ -77,7 +98,7 @@ export function Toolbar() {
           type="button"
           className={transformMode === 'translate' ? styles.active : undefined}
           onClick={() => setTransformMode('translate')}
-          title="Move selected object (W)"
+          title="Move (W)"
         >
           Move
         </button>
@@ -85,7 +106,7 @@ export function Toolbar() {
           type="button"
           className={transformMode === 'rotate' ? styles.active : undefined}
           onClick={() => setTransformMode('rotate')}
-          title="Rotate selected object (E)"
+          title="Rotate (E)"
         >
           Rotate
         </button>
@@ -93,7 +114,31 @@ export function Toolbar() {
 
       <div className={styles.separator} />
 
-      <button type="button" onClick={addBox}>Add Box</button>
+      <div className={styles.group}>
+        <button type="button" onClick={addBox}>Add Box</button>
+        <button type="button" onClick={addCurvedScreen}>Curved Screen</button>
+        <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
+      </div>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <span className={styles.label}>Preview</span>
+        <button
+          type="button"
+          className={materialPreviewMode === 'projectionPreview' ? styles.active : undefined}
+          onClick={() => setMaterialPreviewMode('projectionPreview')}
+        >
+          Projection
+        </button>
+        <button
+          type="button"
+          className={materialPreviewMode === 'original' ? styles.active : undefined}
+          onClick={() => setMaterialPreviewMode('original')}
+        >
+          Original
+        </button>
+      </div>
 
       <div className={styles.separator} />
 
@@ -107,27 +152,17 @@ export function Toolbar() {
         <button
           type="button"
           onClick={() => {
-            if (window.confirm('Start a new project? Unsaved changes are kept in browser autosave until overwritten.')) {
-              newProject();
-            }
+            if (window.confirm('Start a new project?')) newProject();
           }}
-          title="Reset to default sample scene"
         >
           New
         </button>
-        <button type="button" onClick={() => fileInputRef.current?.click()} title="Load .projectionlab.json file">
-          Open
-        </button>
-        <button type="button" onClick={saveProjectToFile} title={`Save "${projectName}" as JSON file`}>
+        <button type="button" onClick={() => fileInputRef.current?.click()}>Open</button>
+        <button type="button" onClick={saveProjectToFile} title={`Save "${projectName}"`}>
           Save
         </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".json,.projectionlab.json,application/json"
-          className={styles.hiddenFile}
-          onChange={handleOpenFile}
-        />
+        <input ref={fileInputRef} type="file" accept=".json,.projectionlab.json" className={styles.hiddenFile} onChange={handleOpenFile} />
+        <input ref={importInputRef} type="file" accept="image/*,video/*,.glb,.gltf" className={styles.hiddenFile} onChange={handleImport} />
       </div>
     </div>
   );
