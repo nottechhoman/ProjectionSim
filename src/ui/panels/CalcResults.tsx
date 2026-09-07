@@ -4,6 +4,7 @@ import styles from './Inspector.module.css';
 
 export function CalcResults() {
   const nominal = useAppStore((s) => s.calculationResults.nominal);
+  const footprint = useAppStore((s) => s.calculationResults.footprint);
   const displayUnit = useAppStore((s) => s.displayUnit);
 
   if (!nominal) {
@@ -36,6 +37,22 @@ export function CalcResults() {
           {nominal.pixelsPerMeterH.toFixed(1)} px/m · {nominal.mmPerPixelH.toFixed(3)} mm/px
         </span>
       </div>
+      {footprint && (
+        <>
+          <div className={styles.row}>
+            <label>Clipped area</label>
+            <span className={styles.readout}>{footprint.clippedArea.toFixed(2)} m²</span>
+          </div>
+          {footprint.axialDistance != null && (
+            <div className={styles.row}>
+              <label>Axial distance</label>
+              <span className={styles.readout}>
+                {formatLength(footprint.axialDistance, displayUnit)}
+              </span>
+            </div>
+          )}
+        </>
+      )}
     </div>
   );
 }

@@ -4,6 +4,13 @@ import { computePlanarFootprint } from './planarFootprint';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import type { ProjectorOptics } from '../types';
 
+function cornerDistance(
+  a: { x: number; y: number; z: number },
+  b: { x: number; y: number; z: number },
+): number {
+  return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+}
+
 const optics: ProjectorOptics = {
   throwRatio: 1.5,
   resolution: { width: 1920, height: 1080 },
@@ -35,5 +42,14 @@ describe('Acceptance Test 3: Rotation footprint', () => {
       expect(Number.isFinite(c.x)).toBe(true);
       expect(Number.isFinite(c.y)).toBe(true);
     });
+
+    const bottomEdgeWidth = cornerDistance(fp.corners[0], fp.corners[1]);
+    const topEdgeWidth = cornerDistance(fp.corners[3], fp.corners[2]);
+    const leftEdgeHeight = cornerDistance(fp.corners[0], fp.corners[3]);
+    const rightEdgeHeight = cornerDistance(fp.corners[1], fp.corners[2]);
+
+    const horizontalKeystone = Math.abs(topEdgeWidth - bottomEdgeWidth);
+    const verticalKeystone = Math.abs(leftEdgeHeight - rightEdgeHeight);
+    expect(Math.max(horizontalKeystone, verticalKeystone)).toBeGreaterThan(0.01);
   });
 });

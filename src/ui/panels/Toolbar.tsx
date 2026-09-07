@@ -13,10 +13,8 @@ const VIEW_PRESETS: { id: ViewPreset; label: string }[] = [
 export function Toolbar() {
   const displayUnit = useAppStore((s) => s.displayUnit);
   const viewPreset = useAppStore((s) => s.viewPreset);
-  const measureMode = useAppStore((s) => s.measureMode);
   const setDisplayUnit = useAppStore((s) => s.setDisplayUnit);
   const setViewPreset = useAppStore((s) => s.setViewPreset);
-  const setMeasureMode = useAppStore((s) => s.setMeasureMode);
   const addBox = useAppStore((s) => s.addBox);
 
   return (
@@ -56,13 +54,8 @@ export function Toolbar() {
 
       <div className={styles.separator} />
 
-      <button
-        type="button"
-        className={measureMode ? styles.active : undefined}
-        onClick={() => setMeasureMode(!measureMode)}
-        title="Measure tool (placeholder)"
-      >
-        Measure
+      <button type="button" disabled className={styles.disabled}>
+        Measure (M4)
       </button>
 
       <div className={styles.separator} />

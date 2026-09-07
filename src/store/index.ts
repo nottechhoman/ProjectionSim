@@ -108,6 +108,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         };
       }),
     }));
+    get().recomputeCalculations();
   },
   setDisplayUnit: (u) => set({ displayUnit: u }),
   setViewPreset: (preset) => set({ viewPreset: preset }),
@@ -164,6 +165,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       ],
     }));
+    get().recomputeCalculations();
   },
 }));
 
