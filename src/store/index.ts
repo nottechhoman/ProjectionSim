@@ -1,14 +1,17 @@
 import { create } from 'zustand';
+import * as THREE from 'three';
 import type {
   CalculationResults,
   DisplayUnit,
   ProjectorConfig,
   SceneObject,
+  Transform,
   ViewPreset,
 } from '../types';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
+import { computePlanarFootprint } from '../coverage';
 
 interface AppState {
   sceneObjects: SceneObject[];
@@ -38,6 +41,22 @@ interface AppState {
   setShaderWarning: (warning: string | null) => void;
   recomputeCalculations: () => void;
   addBox: () => void;
+}
+
+function buildWorldMatrix(transform: Transform): THREE.Matrix4 {
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3(
+    transform.position.x,
+    transform.position.y,
+    transform.position.z,
+  );
+  const quaternion = new THREE.Quaternion(...transform.quaternion);
+  matrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1));
+  return matrix;
+}
+
+function findProjectionScreen(sceneObjects: SceneObject[]): SceneObject | undefined {
+  return sceneObjects.find((obj) => obj.type === 'screen' && obj.receivesProjection);
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -97,13 +116,33 @@ export const useAppStore = create<AppState>((set, get) => ({
   setWebgl2Available: (available) => set({ webgl2Available: available }),
   setShaderWarning: (warning) => set({ shaderWarning: warning }),
   recomputeCalculations: () => {
-    const { projectors } = get();
+    const { projectors, sceneObjects } = get();
     const proj = projectors[0];
     if (!proj) return;
     const v = validateOptics(proj.optics);
     if (!v.valid) return;
-    const nominal = computeNominalProjection(proj.optics, 6);
-    set({ calculationResults: { nominal, footprint: null, opticsError: null } });
+
+    const worldMatrix = buildWorldMatrix(proj.transform);
+    const screen = findProjectionScreen(sceneObjects);
+    let footprint = null;
+
+    if (screen) {
+      const screenMatrix = buildWorldMatrix(screen.transform);
+      const center = new THREE.Vector3().setFromMatrixPosition(screenMatrix);
+      const normal = new THREE.Vector3(0, 0, 1)
+        .applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(screenMatrix))
+        .normalize();
+      footprint = computePlanarFootprint(proj.optics, worldMatrix, {
+        center,
+        normal,
+        width: screen.dimensions.width,
+        height: screen.dimensions.height,
+      });
+    }
+
+    const distance = footprint?.axialDistance ?? 6;
+    const nominal = computeNominalProjection(proj.optics, distance);
+    set({ calculationResults: { nominal, footprint, opticsError: null } });
   },
   addBox: () => {
     const id = `box-${Date.now()}`;
