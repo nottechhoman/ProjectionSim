@@ -60,3 +60,7 @@ button.active {
   color: #888;
   margin-left: 2px;
 }
+
+.hiddenFile {
+  display: none;
+}

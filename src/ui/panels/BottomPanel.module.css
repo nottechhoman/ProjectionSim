@@ -36,6 +36,15 @@
   color: #e0a060;
 }
 
+.projectMessage {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #9ec9e0;
+  cursor: pointer;
+}
+
 .collapseBtn {
   margin-left: auto;
   font: inherit;

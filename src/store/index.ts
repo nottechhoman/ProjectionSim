@@ -1,5 +1,7 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
+import { clearAutosave, downloadProjectFile, parseProjectJson, writeAutosave } from '../persistence';
+import type { ProjectSnapshot } from '../persistence/projectSchema';
 import type {
   CalculationResults,
   DisplayUnit,
@@ -9,12 +11,19 @@ import type {
   TransformMode,
   ViewPreset,
 } from '../types';
-import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
 import { computePlanarFootprint } from '../coverage';
+import {
+  buildInitialPersistedState,
+  defaultPersistedSlice,
+  sliceToSnapshot,
+  snapshotToSlice,
+} from './persistenceHelpers';
 
 interface AppState {
+  projectName: string;
+  projectMessage: string | null;
   sceneObjects: SceneObject[];
   projectors: ProjectorConfig[];
   selectedObjectId: string | null;
@@ -53,6 +62,11 @@ interface AppState {
   setTransformMode: (mode: TransformMode) => void;
   recomputeCalculations: () => void;
   addBox: () => void;
+  getSnapshot: () => ProjectSnapshot;
+  newProject: () => void;
+  saveProjectToFile: () => void;
+  loadProjectFromFile: (text: string) => void;
+  clearProjectMessage: () => void;
 }
 
 function buildWorldMatrix(transform: Transform): THREE.Matrix4 {
@@ -71,22 +85,42 @@ function findProjectionScreen(sceneObjects: SceneObject[]): SceneObject | undefi
   return sceneObjects.find((obj) => obj.type === 'screen' && obj.receivesProjection);
 }
 
+function pickPersistedFields(state: AppState) {
+  return {
+    projectName: state.projectName,
+    sceneObjects: state.sceneObjects,
+    projectors: state.projectors,
+    selectedObjectId: state.selectedObjectId,
+    selectedProjectorId: state.selectedProjectorId,
+    displayUnit: state.displayUnit,
+    viewPreset: state.viewPreset,
+    transformMode: state.transformMode,
+    leftPanelVisible: state.leftPanelVisible,
+    rightPanelVisible: state.rightPanelVisible,
+    bottomPanelVisible: state.bottomPanelVisible,
+  };
+}
+
+const initial = buildInitialPersistedState();
+
 export const useAppStore = create<AppState>((set, get) => ({
-  sceneObjects: DEFAULT_SCENE_OBJECTS,
-  projectors: DEFAULT_PROJECTORS,
-  selectedObjectId: 'proj-1',
-  selectedProjectorId: 'proj-1',
-  displayUnit: 'm',
-  viewPreset: 'persp',
+  projectName: initial.projectName,
+  projectMessage: initial.projectName !== 'Default Scene' ? 'Restored last autosaved project' : null,
+  sceneObjects: initial.sceneObjects,
+  projectors: initial.projectors,
+  selectedObjectId: initial.selectedObjectId,
+  selectedProjectorId: initial.selectedProjectorId,
+  displayUnit: initial.displayUnit,
+  viewPreset: initial.viewPreset,
   measureMode: false,
   frameTimeMs: 0,
   webgl2Available: null,
   calculationResults: { nominal: null, footprint: null, opticsError: null },
   shaderWarning: null,
-  leftPanelVisible: true,
-  rightPanelVisible: true,
-  bottomPanelVisible: true,
-  transformMode: 'translate',
+  leftPanelVisible: initial.leftPanelVisible,
+  rightPanelVisible: initial.rightPanelVisible,
+  bottomPanelVisible: initial.bottomPanelVisible,
+  transformMode: initial.transformMode,
   setSelectedObject: (id) => set({ selectedObjectId: id }),
   setSelectedProjector: (id) => set({ selectedProjectorId: id, selectedObjectId: id }),
   updateProjector: (id, patch) => {
@@ -190,6 +224,52 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     get().recomputeCalculations();
   },
+  getSnapshot: () => sliceToSnapshot(pickPersistedFields(get())),
+  newProject: () => {
+    const defaults = defaultPersistedSlice();
+    set({
+      ...defaults,
+      projectMessage: 'New project created',
+      calculationResults: { nominal: null, footprint: null, opticsError: null },
+    });
+    clearAutosave();
+    get().recomputeCalculations();
+  },
+  saveProjectToFile: () => {
+    const snapshot = get().getSnapshot();
+    downloadProjectFile(snapshot);
+    writeAutosave(snapshot);
+    set({ projectMessage: `Saved "${snapshot.name}" to file` });
+  },
+  loadProjectFromFile: (text) => {
+    try {
+      const snapshot = parseProjectJson(text);
+      const slice = snapshotToSlice(snapshot);
+      set({
+        ...slice,
+        projectMessage: `Loaded "${snapshot.name}"`,
+        calculationResults: { nominal: null, footprint: null, opticsError: null },
+      });
+      writeAutosave(snapshot);
+      get().recomputeCalculations();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to load project';
+      set({ projectMessage: message });
+    }
+  },
+  clearProjectMessage: () => set({ projectMessage: null }),
 }));
 
 useAppStore.getState().recomputeCalculations();
+
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
+useAppStore.subscribe((state) => {
+  if (autosaveTimer) clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(() => {
+    writeAutosave(state.getSnapshot());
+  }, 2000);
+});
+
+export function scheduleAutosaveNow(): void {
+  writeAutosave(useAppStore.getState().getSnapshot());
+}

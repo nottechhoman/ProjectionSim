@@ -1,3 +1,4 @@
+import { useRef, type ChangeEvent } from 'react';
 import { useAppStore } from '../../store';
 import type { DisplayUnit, ViewPreset } from '../../types';
 import styles from './Toolbar.module.css';
@@ -11,13 +12,31 @@ const VIEW_PRESETS: { id: ViewPreset; label: string }[] = [
 ];
 
 export function Toolbar() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const displayUnit = useAppStore((s) => s.displayUnit);
   const viewPreset = useAppStore((s) => s.viewPreset);
   const transformMode = useAppStore((s) => s.transformMode);
+  const projectName = useAppStore((s) => s.projectName);
   const setDisplayUnit = useAppStore((s) => s.setDisplayUnit);
   const setViewPreset = useAppStore((s) => s.setViewPreset);
   const setTransformMode = useAppStore((s) => s.setTransformMode);
   const addBox = useAppStore((s) => s.addBox);
+  const newProject = useAppStore((s) => s.newProject);
+  const saveProjectToFile = useAppStore((s) => s.saveProjectToFile);
+  const loadProjectFromFile = useAppStore((s) => s.loadProjectFromFile);
+
+  const handleOpenFile = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof reader.result === 'string') {
+        loadProjectFromFile(reader.result);
+      }
+    };
+    reader.readAsText(file);
+    event.target.value = '';
+  };
 
   return (
     <div className={styles.toolbar}>
@@ -85,15 +104,30 @@ export function Toolbar() {
       <div className={styles.separator} />
 
       <div className={styles.group}>
-        <button type="button" disabled className={styles.disabled}>
-          New<span className={styles.m2Label}>M2</span>
+        <button
+          type="button"
+          onClick={() => {
+            if (window.confirm('Start a new project? Unsaved changes are kept in browser autosave until overwritten.')) {
+              newProject();
+            }
+          }}
+          title="Reset to default sample scene"
+        >
+          New
         </button>
-        <button type="button" disabled className={styles.disabled}>
-          Open<span className={styles.m2Label}>M2</span>
+        <button type="button" onClick={() => fileInputRef.current?.click()} title="Load .projectionlab.json file">
+          Open
         </button>
-        <button type="button" disabled className={styles.disabled}>
-          Save<span className={styles.m2Label}>M2</span>
+        <button type="button" onClick={saveProjectToFile} title={`Save "${projectName}" as JSON file`}>
+          Save
         </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".json,.projectionlab.json,application/json"
+          className={styles.hiddenFile}
+          onChange={handleOpenFile}
+        />
       </div>
     </div>
   );
