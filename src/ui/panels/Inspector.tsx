@@ -84,7 +84,7 @@ export function Inspector() {
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Transform</div>
-        <p className={styles.hint}>Click a value to type · drag gizmo in viewport</p>
+        <p className={styles.hint}>Click a value to type · drag gizmo in viewport (local axes: Y=yaw, X=pitch, Z=roll)</p>
         <NumInput
           label="Pos X"
           value={toDisplayUnit(transform.position.x, displayUnit)}

@@ -25,6 +25,7 @@ import { createCurvedScreen } from './objects/createCurvedScreen';
 import { FrustumHelper } from './helpers/FrustumHelper';
 import { mediaTextureCache, modelCache } from '../media';
 import { cloneModelGroup } from './ModelLoader';
+import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../utils/euler';
 
 type AppState = ReturnType<typeof useAppStore.getState>;
 
@@ -88,6 +89,9 @@ function projectorWorldMatrix(projector: ProjectorConfig): THREE.Matrix4 {
 }
 
 export class SceneEngine {
+  /** Gizmo helper size in scene meters (scales with distance, not fixed screen pixels). */
+  private static readonly GIZMO_WORLD_SIZE = 1.25;
+
   private readonly canvas: HTMLCanvasElement;
   private readonly webglAvailable: boolean;
   private renderer: THREE.WebGLRenderer | null = null;
@@ -116,6 +120,8 @@ export class SceneEngine {
   private readonly pointer = new THREE.Vector2();
   private readonly raycaster = new THREE.Raycaster();
   private gizmoDragging = false;
+  private gizmoRotateStartEuler: { yaw: number; pitch: number; roll: number } | null = null;
+  private gizmoRotateStartQuat: THREE.Quaternion | null = null;
   private currentTransformMode: TransformMode = 'translate';
 
   constructor(canvas: HTMLCanvasElement) {
@@ -166,9 +172,26 @@ export class SceneEngine {
     this.controls.update();
 
     this.transformControls = new TransformControls(this.editorCamera, canvas);
+    this.transformControls.setSpace('local');
     this.transformControls.addEventListener('dragging-changed', (event) => {
       this.gizmoDragging = event.value as boolean;
       if (this.controls) this.controls.enabled = !this.gizmoDragging;
+
+      if (this.gizmoDragging && this.transformControls?.mode === 'rotate') {
+        const obj = this.transformControls.object;
+        if (obj) {
+          this.gizmoRotateStartQuat = obj.quaternion.clone();
+          this.gizmoRotateStartEuler = quaternionToEulerYXZ([
+            obj.quaternion.x,
+            obj.quaternion.y,
+            obj.quaternion.z,
+            obj.quaternion.w,
+          ]);
+        }
+      } else if (!this.gizmoDragging) {
+        this.gizmoRotateStartEuler = null;
+        this.gizmoRotateStartQuat = null;
+      }
     });
     this.transformControls.addEventListener('change', () => {
       this.handleGizmoChange();
@@ -287,16 +310,39 @@ export class SceneEngine {
   }
 
   private handleGizmoChange(): void {
-    const obj = this.transformControls?.object;
-    if (!obj) return;
+    const tc = this.transformControls;
+    const obj = tc?.object;
+    if (!obj || !tc) return;
 
-    const q = obj.quaternion;
+    let q = obj.quaternion;
+
+    // Map local X/Y/Z rings to pitch/yaw/roll so only one inspector field changes.
+    if (
+      this.currentTransformMode === 'rotate' &&
+      this.gizmoRotateStartEuler &&
+      this.gizmoRotateStartQuat &&
+      tc.axis &&
+      (tc.axis === 'X' || tc.axis === 'Y' || tc.axis === 'Z')
+    ) {
+      const qDelta = this.gizmoRotateStartQuat.clone().invert().multiply(q).normalize();
+      const angleDeg = deltaAngleDegreesForAxis(qDelta, tc.axis);
+      const start = this.gizmoRotateStartEuler;
+      const yaw = tc.axis === 'Y' ? start.yaw + angleDeg : start.yaw;
+      const pitch = tc.axis === 'X' ? start.pitch + angleDeg : start.pitch;
+      const roll = tc.axis === 'Z' ? start.roll + angleDeg : start.roll;
+      const quat = eulerYXZToQuaternion(yaw, pitch, roll);
+      obj.quaternion.set(quat[0], quat[1], quat[2], quat[3]);
+      q = obj.quaternion;
+    }
+
+    const payload = {
+      position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
+      quaternion: [q.x, q.y, q.z, q.w] as [number, number, number, number],
+    };
+
     for (const [projId, visual] of this.projectorVisuals) {
       if (visual.body === obj) {
-        this.callbacks.onTransformChange?.(projId, {
-          position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
-          quaternion: [q.x, q.y, q.z, q.w],
-        });
+        this.callbacks.onTransformChange?.(projId, payload);
         return;
       }
     }
@@ -304,10 +350,22 @@ export class SceneEngine {
     const id = obj.userData.id as string | undefined;
     if (!id) return;
 
-    this.callbacks.onTransformChange?.(id, {
-      position: { x: obj.position.x, y: obj.position.y, z: obj.position.z },
-      quaternion: [q.x, q.y, q.z, q.w],
-    });
+    this.callbacks.onTransformChange?.(id, payload);
+  }
+
+  private updateGizmoScale(): void {
+    if (!this.transformControls || !this.editorCamera || !this.transformControls.object) return;
+
+    const obj = this.transformControls.object;
+    obj.updateMatrixWorld(true);
+    const worldPos = new THREE.Vector3().setFromMatrixPosition(obj.matrixWorld);
+    const dist = this.editorCamera.position.distanceTo(worldPos);
+    const fovFactor = Math.min(
+      1.9 * Math.tan((Math.PI * this.editorCamera.fov) / 360),
+      7,
+    );
+    const raw = SceneEngine.GIZMO_WORLD_SIZE / Math.max(dist * fovFactor, 0.01);
+    this.transformControls.size = THREE.MathUtils.clamp(raw, 0.35, 2.5);
   }
 
   private onPointerDown = (event: PointerEvent): void => {
@@ -515,6 +573,7 @@ export class SceneEngine {
     mediaTextureCache.updateVideos();
     this.controls?.update();
     this.resize();
+    this.updateGizmoScale();
     this.editorScene.updateMatrixWorld(true);
 
     const depthMeshes = this.getDepthMeshes();
@@ -654,6 +713,11 @@ export class SceneEngine {
     this.transformControls = null;
     this.depthPass = null;
   }
+}
+
+function deltaAngleDegreesForAxis(qDelta: THREE.Quaternion, axis: 'X' | 'Y' | 'Z'): number {
+  const component = axis === 'X' ? qDelta.x : axis === 'Y' ? qDelta.y : qDelta.z;
+  return THREE.MathUtils.radToDeg(2 * Math.atan2(component, qDelta.w));
 }
 
 function disposeObject3D(obj: THREE.Object3D): void {
