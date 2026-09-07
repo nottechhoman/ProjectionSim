@@ -1,6 +1,6 @@
 # ProjectionLab
 
-Browser-based 3D projection planning simulator. Milestone 1 delivers a single-projector scene with throw-ratio optics, projective test-pattern rendering, planar footprint calculations, and occlusion shadows. Milestone 2 adds image/video media on projectors, GLB/GLTF/OBJ import, curved screens, material preview modes, and versioned project save/load with IndexedDB asset storage. Milestone 3 adds up to four projectors with overlap calculations, edge blending, and composite preview modes (raw additive, blended, heatmap).
+Browser-based 3D projection planning simulator. Milestone 1 delivers a single-projector scene with throw-ratio optics, projective test-pattern rendering, planar footprint calculations, and occlusion shadows. Milestone 2 adds image/video media on projectors, GLB/GLTF/OBJ import, curved screens, material preview modes, and versioned project save/load with IndexedDB asset storage. Milestone 3 adds up to four projectors with overlap calculations, edge blending, and composite preview modes (raw additive, blended, heatmap). Milestone 4 adds undo/redo, a two-point measure tool, CSV/HTML calculation reports, resizable and pop-out panels, and Playwright smoke tests.
 
 ## Installation
 
@@ -81,6 +81,15 @@ Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection
 - **Overlap calculations** — pairwise area, union, multi-coverage, horizontal overlap, overlap pixels (planar screens)
 - **Acceptance Tests 4 & 5** — overlap union math and blend weight normalization
 
+## M4 Features
+
+- **Undo/redo** — scene edit history for objects, projectors, and media assignments (`Ctrl+Z` / `Ctrl+Shift+Z`)
+- **Two-point measure tool** — click two points in the viewport to measure metric distance (`M` to toggle)
+- **Calculation reports** — export CSV or printable HTML from toolbar buttons
+- **Resizable panels** — drag Scene and Inspector edges (160–560 px)
+- **Pop-out panels** — float Scene or Inspector over the viewport in the same tab; drag header to move, dock to restore
+- **Playwright smoke tests** — basic load and panel visibility checks
+
 ## Known Limitations
 
 Features deferred to later milestones are disabled in the UI or stubbed in code:
@@ -90,10 +99,6 @@ Features deferred to later milestones are disabled in the UI or stubbed in code:
 | Curved screen footprint / overlap calculation | M3+ (preview works; calc panel planar only) |
 | Shared-canvas mapping mode | M3+ |
 | Video seek/loop/mute timeline | M2+ |
-| CSV/HTML export | M4 |
-| Undo/redo | M4 |
-| Playwright smoke tests | M4 |
-| Two-point measure tool | M4 |
 | Footprint clipping to screen bounds (clipped area stub) | M2+ |
 | Brightness/lux photometry estimates | Post-M1 |
 
@@ -102,8 +107,9 @@ This is a **planning and visualization tool**, not a calibrated photometric or h
 ## Test Commands
 
 ```bash
-npm test              # Vitest — Acceptance Tests 1–5
+npm test              # Vitest — Acceptance Tests 1–5 + M4 unit tests
 npm run test:watch    # Vitest watch mode
+npm run test:e2e      # Playwright smoke tests (starts dev server)
 npm run typecheck     # TypeScript project references
 npm run build         # Production build
 ```
