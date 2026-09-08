@@ -25,7 +25,7 @@ import type {
 } from '../types';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
-import { computePlanarFootprint, computeCurvedFootprint, computeAlignedOverlap } from '../coverage';
+import { computePlanarFootprint, computeCurvedFootprint, computeAlignedOverlap, computeCurvedOverlap } from '../coverage';
 import { DEFAULT_BLEND_EDGES, MAX_PROJECTORS, PROJECTOR_PALETTE } from '../types';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import {
@@ -140,9 +140,11 @@ function buildWorldMatrix(transform: Transform): THREE.Matrix4 {
 }
 
 function findProjectionScreen(sceneObjects: SceneObject[]): SceneObject | undefined {
-  return sceneObjects.find(
-    (obj) => (obj.type === 'screen' || obj.type === 'curvedScreen') && obj.receivesProjection,
+  const curved = sceneObjects.find(
+    (obj) => obj.type === 'curvedScreen' && obj.receivesProjection,
   );
+  if (curved) return curved;
+  return sceneObjects.find((obj) => obj.type === 'screen' && obj.receivesProjection);
 }
 
 function pushSceneHistory(get: () => AppState, set: (partial: Partial<AppState>) => void): void {
@@ -506,12 +508,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       });
     } else if (screen && screen.type === 'curvedScreen' && screen.curved) {
       const screenMatrix = buildWorldMatrix(screen.transform);
-      footprint = computeCurvedFootprint(proj.optics, worldMatrix, {
+      const curvedSurface = {
         worldMatrix: screenMatrix,
         radius: screen.curved.radius,
         arcAngleDeg: screen.curved.arcAngleDeg,
         height: screen.curved.height,
-      });
+      };
+      footprint = computeCurvedFootprint(proj.optics, worldMatrix, curvedSurface);
+      overlap = computeCurvedOverlap(projectors, curvedSurface);
     }
 
     const distance = footprint?.axialDistance ?? 6;
