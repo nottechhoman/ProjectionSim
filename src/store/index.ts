@@ -48,6 +48,11 @@ import {
   downloadTextFile,
 } from '../persistence/reportExport';
 import { resolveSharedCanvasSupport } from '../projection/sharedCanvasMapping';
+import {
+  getCalculationTargetInfo,
+  getCalculationTargetObject,
+  reconcileReliabilityIds,
+} from './reliabilitySettings';
 
 interface AppState extends PersistedStateSlice {
   projectMessage: string | null;
@@ -79,6 +84,8 @@ interface AppState extends PersistedStateSlice {
   setViewPreset: (preset: ViewPreset) => void;
   setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
   setMappingMode: (mode: MappingMode) => void;
+  setSharedContentSourceProjectorId: (id: string | null) => void;
+  setCalculationTargetId: (id: string | null) => void;
   getSharedCanvasSupport: () => { supported: boolean; reason: string | null };
   setShowProjectionBeam: (show: boolean) => void;
   toggleProjectionBeam: () => void;
@@ -143,14 +150,6 @@ function buildWorldMatrix(transform: Transform): THREE.Matrix4 {
   return matrix;
 }
 
-function findProjectionScreen(sceneObjects: SceneObject[]): SceneObject | undefined {
-  const curved = sceneObjects.find(
-    (obj) => obj.type === 'curvedScreen' && obj.receivesProjection,
-  );
-  if (curved) return curved;
-  return sceneObjects.find((obj) => obj.type === 'screen' && obj.receivesProjection);
-}
-
 function pushSceneHistory(get: () => AppState, set: (partial: Partial<AppState>) => void): void {
   const state = get();
   set({ historyPast: appendHistory(state.historyPast, captureSceneHistory(state)) });
@@ -164,7 +163,20 @@ function restoreSceneHistory(
     sceneObjects: snapshot.sceneObjects,
     projectors: snapshot.projectors,
     mediaAssets: snapshot.mediaAssets,
+    sharedContentSourceProjectorId: snapshot.sharedContentSourceProjectorId,
+    calculationTargetId: snapshot.calculationTargetId,
   });
+}
+
+function applyReliabilityReconcile(set: (partial: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void, get: () => AppState): void {
+  const state = get();
+  const next = reconcileReliabilityIds(state);
+  if (
+    next.sharedContentSourceProjectorId !== state.sharedContentSourceProjectorId ||
+    next.calculationTargetId !== state.calculationTargetId
+  ) {
+    set(next);
+  }
 }
 
 function buildReportContext(state: AppState) {
@@ -185,6 +197,8 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     materialPreviewMode: state.materialPreviewMode,
     projectionCompositeMode: state.projectionCompositeMode,
     mappingMode: state.mappingMode,
+    sharedContentSourceProjectorId: state.sharedContentSourceProjectorId,
+    calculationTargetId: state.calculationTargetId,
     selectedObjectId: state.selectedObjectId,
     selectedProjectorId: state.selectedProjectorId,
     displayUnit: state.displayUnit,
@@ -213,6 +227,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   materialPreviewMode: initial.materialPreviewMode,
   projectionCompositeMode: initial.projectionCompositeMode,
   mappingMode: initial.mappingMode,
+  sharedContentSourceProjectorId: initial.sharedContentSourceProjectorId,
+  calculationTargetId: initial.calculationTargetId,
   selectedObjectId: initial.selectedObjectId,
   selectedProjectorId: initial.selectedProjectorId,
   displayUnit: initial.displayUnit,
@@ -223,7 +239,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   historyFuture: [],
   frameTimeMs: 0,
   webgl2Available: null,
-  calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
+  calculationResults: {
+    nominal: null,
+    footprint: null,
+    opticsError: null,
+    overlap: null,
+    calculationTarget: null,
+  },
   shaderWarning: null,
   leftPanelVisible: initial.leftPanelVisible,
   rightPanelVisible: initial.rightPanelVisible,
@@ -282,6 +304,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       sceneObjects: s.sceneObjects.map((obj) => (obj.id === id ? { ...obj, ...patch } : obj)),
     }));
+    applyReliabilityReconcile(set, get);
     get().recomputeCalculations();
   },
   removeSceneObject: (id) => {
@@ -306,6 +329,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedObjectId,
       projectMessage: `Deleted ${target.name}`,
     });
+    applyReliabilityReconcile(set, get);
     get().recomputeCalculations();
   },
   pushSceneHistoryCheckpoint: () => pushSceneHistory(get, set),
@@ -318,6 +342,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (!support.supported) return;
     }
     set({ mappingMode: mode });
+  },
+  setSharedContentSourceProjectorId: (id) => {
+    pushSceneHistory(get, set);
+    set({ sharedContentSourceProjectorId: id });
+  },
+  setCalculationTargetId: (id) => {
+    pushSceneHistory(get, set);
+    set({ calculationTargetId: id });
+    get().recomputeCalculations();
   },
   getSharedCanvasSupport: () => {
     const support = resolveSharedCanvasSupport(get().sceneObjects);
@@ -391,6 +424,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedObjectId,
       projectMessage: `Deleted ${target.name}`,
     });
+    applyReliabilityReconcile(set, get);
     get().recomputeCalculations();
   },
   setMeasureMode: (enabled) =>
@@ -493,18 +527,44 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   setTransformMode: (mode) => set({ transformMode: mode }),
   recomputeCalculations: () => {
-    const { projectors, sceneObjects, selectedProjectorId } = get();
+    const { projectors, sceneObjects, selectedProjectorId, calculationTargetId } = get();
     const proj = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
-    if (!proj) return;
+    if (!proj) {
+      set({
+        calculationResults: {
+          nominal: null,
+          footprint: null,
+          opticsError: null,
+          overlap: null,
+          calculationTarget: null,
+        },
+      });
+      return;
+    }
     const v = validateOptics(proj.optics);
     if (!v.valid) return;
 
+    const screen = getCalculationTargetObject(sceneObjects, calculationTargetId);
+    const targetInfo = getCalculationTargetInfo(sceneObjects, calculationTargetId);
+
+    if (!screen || !targetInfo) {
+      set({
+        calculationResults: {
+          nominal: null,
+          footprint: null,
+          opticsError: null,
+          overlap: null,
+          calculationTarget: null,
+        },
+      });
+      return;
+    }
+
     const worldMatrix = buildWorldMatrix(proj.transform);
-    const screen = findProjectionScreen(sceneObjects);
     let footprint = null;
     let overlap = null;
 
-    if (screen && screen.type === 'screen') {
+    if (screen.type === 'screen') {
       const screenMatrix = buildWorldMatrix(screen.transform);
       const center = new THREE.Vector3().setFromMatrixPosition(screenMatrix);
       const normal = new THREE.Vector3(0, 0, 1)
@@ -523,7 +583,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         height: screen.dimensions.height,
         matrix: screenMatrix,
       });
-    } else if (screen && screen.type === 'curvedScreen' && screen.curved) {
+    } else if (screen.type === 'curvedScreen' && screen.curved) {
       const screenMatrix = buildWorldMatrix(screen.transform);
       const curvedSurface = {
         worldMatrix: screenMatrix,
@@ -537,7 +597,15 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const distance = footprint?.axialDistance ?? 6;
     const nominal = computeNominalProjection(proj.optics, distance);
-    set({ calculationResults: { nominal, footprint, opticsError: null, overlap } });
+    set({
+      calculationResults: {
+        nominal,
+        footprint,
+        opticsError: null,
+        overlap,
+        calculationTarget: targetInfo,
+      },
+    });
   },
   addBox: () => {
     pushSceneHistory(get, set);
@@ -692,7 +760,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({
       ...defaults,
       projectMessage: 'New project created',
-      calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
+      calculationResults: {
+        nominal: null,
+        footprint: null,
+        opticsError: null,
+        overlap: null,
+        calculationTarget: null,
+      },
       videoPlaying: false,
       measureMode: false,
       measurePoints: [null, null],
@@ -719,7 +793,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           missing.length > 0
             ? `Loaded "${snapshot.name}" — missing assets: ${missing.join(', ')}`
             : `Loaded "${snapshot.name}"`,
-        calculationResults: { nominal: null, footprint: null, opticsError: null, overlap: null },
+        calculationResults: {
+        nominal: null,
+        footprint: null,
+        opticsError: null,
+        overlap: null,
+        calculationTarget: null,
+      },
         videoPlaying: false,
         measureMode: false,
         measurePoints: [null, null],

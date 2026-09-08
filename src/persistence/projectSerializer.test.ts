@@ -23,6 +23,17 @@ const sample: ProjectSnapshotV2 = {
 };
 
 describe('projectSerializer', () => {
+  it('round-trips reliability settings', () => {
+    const withReliability = {
+      ...sample,
+      sharedContentSourceProjectorId: 'proj-1',
+      calculationTargetId: 'screen-1',
+    };
+    const loaded = parseProjectJson(JSON.stringify(withReliability));
+    expect(loaded.sharedContentSourceProjectorId).toBe('proj-1');
+    expect(loaded.calculationTargetId).toBe('screen-1');
+  });
+
   it('round-trips a valid project snapshot', () => {
     const json = serializeProject(sample);
     const loaded = parseProjectJson(json);

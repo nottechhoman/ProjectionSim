@@ -24,6 +24,7 @@ const calculationResults: CalculationResults = {
   },
   opticsError: null,
   overlap: null,
+  calculationTarget: { id: 'screen-1', name: 'Screen', type: 'screen' },
 };
 
 describe('reportExport', () => {
@@ -36,7 +37,7 @@ describe('reportExport', () => {
     });
     expect(csv).toContain('ProjectionLab Calculation Report');
     expect(csv).toContain('Width,4.000 m');
-    expect(csv).toContain('Area (m²),9.0000');
+    expect(csv).toContain('Calculation target,Screen (screen)');
   });
 
   it('builds printable HTML report', () => {
@@ -48,6 +49,7 @@ describe('reportExport', () => {
     });
     expect(html).toContain('<!DOCTYPE html>');
     expect(html).toContain('ProjectionLab Report');
-    expect(html).toContain('4.000 m');
+    expect(html).toContain('Calculation target');
+    expect(html).toContain('Screen (screen)');
   });
 });

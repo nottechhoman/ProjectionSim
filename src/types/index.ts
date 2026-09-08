@@ -156,4 +156,9 @@ export interface CalculationResults {
   footprint: FootprintResult | null;
   opticsError: string | null;
   overlap: OverlapResults | null;
+  calculationTarget: {
+    id: string;
+    name: string;
+    type: 'screen' | 'curvedScreen';
+  } | null;
 }

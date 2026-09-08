@@ -22,6 +22,12 @@ import {
   type PanelFloatPosition,
 } from '../ui/panelLayout';
 import { readAutosave } from '../persistence/autosave';
+import {
+  legacyDefaultCalculationTargetId,
+  legacyDefaultSharedContentSourceId,
+  resolveCalculationTargetId,
+  resolveSharedContentSourceId,
+} from './reliabilitySettings';
 
 export interface PersistedStateSlice {
   projectName: string;
@@ -31,6 +37,8 @@ export interface PersistedStateSlice {
   materialPreviewMode: MaterialPreviewMode;
   projectionCompositeMode: ProjectionCompositeMode;
   mappingMode: MappingMode;
+  sharedContentSourceProjectorId: string | null;
+  calculationTargetId: string | null;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
@@ -66,6 +74,8 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     materialPreviewMode: slice.materialPreviewMode,
     projectionCompositeMode: slice.projectionCompositeMode,
     mappingMode: slice.mappingMode,
+    sharedContentSourceProjectorId: slice.sharedContentSourceProjectorId,
+    calculationTargetId: slice.calculationTargetId,
     selectedObjectId: slice.selectedObjectId,
     selectedProjectorId: slice.selectedProjectorId,
     displayUnit: slice.displayUnit,
@@ -84,16 +94,39 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
 }
 
 export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice {
+  const projectors = snapshot.projectors;
+  const sceneObjects = snapshot.sceneObjects;
+  const selectedProjectorId = snapshot.selectedProjectorId;
+
+  const explicitSharedSource =
+    typeof snapshot.sharedContentSourceProjectorId === 'string'
+      ? snapshot.sharedContentSourceProjectorId
+      : null;
+  const explicitCalcTarget =
+    typeof snapshot.calculationTargetId === 'string' ? snapshot.calculationTargetId : null;
+
+  const sharedContentSourceProjectorId = resolveSharedContentSourceId(
+    projectors,
+    explicitSharedSource ??
+      legacyDefaultSharedContentSourceId(projectors, selectedProjectorId),
+  );
+  const calculationTargetId = resolveCalculationTargetId(
+    sceneObjects,
+    explicitCalcTarget ?? legacyDefaultCalculationTargetId(sceneObjects),
+  );
+
   return {
     projectName: snapshot.name,
-    sceneObjects: snapshot.sceneObjects,
-    projectors: snapshot.projectors,
+    sceneObjects,
+    projectors,
     mediaAssets: snapshot.mediaAssets ?? [],
     materialPreviewMode: snapshot.materialPreviewMode ?? 'projectionPreview',
     projectionCompositeMode: snapshot.projectionCompositeMode ?? 'unblended',
     mappingMode: snapshot.mappingMode === 'sharedCanvas' ? 'sharedCanvas' : 'raw',
+    sharedContentSourceProjectorId,
+    calculationTargetId,
     selectedObjectId: snapshot.selectedObjectId,
-    selectedProjectorId: snapshot.selectedProjectorId,
+    selectedProjectorId,
     displayUnit: snapshot.displayUnit,
     viewPreset: snapshot.viewPreset,
     transformMode: snapshot.transformMode,
@@ -136,6 +169,8 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     materialPreviewMode: 'projectionPreview',
     projectionCompositeMode: 'solo',
     mappingMode: 'raw',
+    sharedContentSourceProjectorId: 'proj-1',
+    calculationTargetId: 'screen-1',
     selectedObjectId: 'proj-1',
     selectedProjectorId: 'proj-1',
     displayUnit: 'm',

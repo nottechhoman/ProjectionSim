@@ -26,6 +26,12 @@ export function buildCalculationCsv(ctx: ReportContext): string {
     ['Project', ctx.projectName],
     ['Exported', ctx.exportedAt ?? new Date().toISOString()],
     ['Display unit', ctx.displayUnit],
+    [
+      'Calculation target',
+      ctx.calculationResults.calculationTarget
+        ? `${ctx.calculationResults.calculationTarget.name} (${ctx.calculationResults.calculationTarget.type})`
+        : '',
+    ],
     [],
     ['Section', 'Field', 'Value'],
   ];
@@ -113,7 +119,12 @@ export function buildCalculationHtml(ctx: ReportContext): string {
   let body = `<h1>ProjectionLab Report</h1>
 <p><strong>Project:</strong> ${escapeHtml(ctx.projectName)}<br/>
 <strong>Exported:</strong> ${escapeHtml(exportedAt)}<br/>
-<strong>Display unit:</strong> ${escapeHtml(ctx.displayUnit)}</p>`;
+<strong>Display unit:</strong> ${escapeHtml(ctx.displayUnit)}<br/>
+<strong>Calculation target:</strong> ${escapeHtml(
+    ctx.calculationResults.calculationTarget
+      ? `${ctx.calculationResults.calculationTarget.name} (${ctx.calculationResults.calculationTarget.type})`
+      : 'None',
+  )}</p>`;
 
   if (nominal) {
     body += `<h2>Projection</h2><table>

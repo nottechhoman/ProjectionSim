@@ -3,6 +3,7 @@ import { useAppStore } from '../../store';
 import type { DisplayUnit, MappingMode, ProjectionCompositeMode, ViewPreset } from '../../types';
 import { MAX_PROJECTORS } from '../../types';
 import { resolveSharedCanvasSupport } from '../../projection/sharedCanvasMapping';
+import { listSharedContentSourceProjectors } from '../../store/reliabilitySettings';
 import styles from './Toolbar.module.css';
 
 const UNITS: DisplayUnit[] = ['m', 'cm', 'mm'];
@@ -22,7 +23,9 @@ export function Toolbar() {
   const materialPreviewMode = useAppStore((s) => s.materialPreviewMode);
   const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
   const mappingMode = useAppStore((s) => s.mappingMode);
+  const sharedContentSourceProjectorId = useAppStore((s) => s.sharedContentSourceProjectorId);
   const sceneObjects = useAppStore((s) => s.sceneObjects);
+  const projectors = useAppStore((s) => s.projectors);
   const projectorCount = useAppStore((s) => s.projectors.length);
   const projectName = useAppStore((s) => s.projectName);
   const setDisplayUnit = useAppStore((s) => s.setDisplayUnit);
@@ -31,6 +34,7 @@ export function Toolbar() {
   const setMaterialPreviewMode = useAppStore((s) => s.setMaterialPreviewMode);
   const setProjectionCompositeMode = useAppStore((s) => s.setProjectionCompositeMode);
   const setMappingMode = useAppStore((s) => s.setMappingMode);
+  const setSharedContentSourceProjectorId = useAppStore((s) => s.setSharedContentSourceProjectorId);
   const addProjector = useAppStore((s) => s.addProjector);
   const addBox = useAppStore((s) => s.addBox);
   const addCurvedScreen = useAppStore((s) => s.addCurvedScreen);
@@ -176,6 +180,7 @@ export function Toolbar() {
             className={mappingMode === mode ? styles.active : undefined}
             onClick={() => setMappingMode(mode)}
             disabled={mode === 'sharedCanvas' && !sharedCanvasSupport.supported}
+            data-testid={mode === 'sharedCanvas' ? 'mapping-shared-button' : `mapping-${mode}-button`}
             title={
               mode === 'sharedCanvas' && !sharedCanvasSupport.supported
                 ? sharedCanvasSupport.reason ?? 'Shared canvas unavailable'
@@ -187,6 +192,28 @@ export function Toolbar() {
             {mode === 'raw' ? 'Raw' : 'Shared'}
           </button>
         ))}
+        {mappingMode === 'sharedCanvas' && (
+          <label className={styles.label} style={{ marginLeft: 8 }}>
+            Shared content source
+            <select
+              aria-label="Shared content source"
+              data-testid="shared-content-source-select"
+              value={sharedContentSourceProjectorId ?? ''}
+              onChange={(e) => setSharedContentSourceProjectorId(e.target.value || null)}
+              disabled={projectors.length === 0}
+            >
+              {projectors.length === 0 ? (
+                <option value="">No projectors</option>
+              ) : (
+                listSharedContentSourceProjectors(projectors).map((proj) => (
+                  <option key={proj.id} value={proj.id}>
+                    {proj.name}{proj.enabled ? '' : ' (disabled)'}
+                  </option>
+                ))
+              )}
+            </select>
+          </label>
+        )}
       </div>
 
       <div className={styles.separator} />

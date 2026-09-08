@@ -149,6 +149,15 @@ export function parseProjectJson(text: string): ProjectSnapshot {
       ? data.projectionCompositeMode
       : 'unblended';
 
+  const mappingMode: import('../types').MappingMode =
+    data.mappingMode === 'sharedCanvas' ? 'sharedCanvas' : 'raw';
+  const sharedContentSourceProjectorId =
+    typeof data.sharedContentSourceProjectorId === 'string'
+      ? data.sharedContentSourceProjectorId
+      : undefined;
+  const calculationTargetId =
+    typeof data.calculationTargetId === 'string' ? data.calculationTargetId : undefined;
+
   const snapshot: ProjectSnapshotV2 = {
     version: PROJECT_FILE_VERSION,
     savedAt: typeof data.savedAt === 'string' ? data.savedAt : new Date().toISOString(),
@@ -158,6 +167,9 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     mediaAssets,
     materialPreviewMode,
     projectionCompositeMode,
+    mappingMode,
+    sharedContentSourceProjectorId,
+    calculationTargetId,
     selectedObjectId,
     selectedProjectorId,
     displayUnit: data.displayUnit === 'cm' || data.displayUnit === 'mm' ? data.displayUnit : 'm',

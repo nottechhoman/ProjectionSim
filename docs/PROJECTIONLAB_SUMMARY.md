@@ -13,8 +13,8 @@ ProjectionLab is a browser-based 3D projection planning simulator. It lets you p
 ```bash
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm test           # 23 Vitest tests
-npm run test:e2e   # Playwright smoke tests
+npm test           # 41 Vitest tests
+npm run test:e2e   # 3 Playwright smoke tests
 npm run build      # Production build
 ```
 
@@ -31,6 +31,7 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 | **M3** | Multi-projector overlap, blending, composite modes | Done |
 | **M4** | Undo/redo, measure, reports, panel UX, E2E tests | Done |
 | **Post-M4** | Curved beam, curved overlap, shared-canvas mapping | Done |
+| **Reliability** | Explicit shared content source and calculation target | Done |
 
 ---
 
@@ -82,9 +83,28 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 | Mode | Behavior |
 |------|----------|
 | **Raw** | Each projector samples its own raster UV. Rotating a projector visibly distorts content. |
-| **Shared** | Content is sampled in screen/curved-surface coordinates. Overlapping projectors show aligned imagery. Uses the **selected projector** as the content source. |
+| **Shared** | Content is sampled in screen/curved-surface coordinates. Overlapping projectors show aligned imagery. |
 
 Toolbar: **Mapping → Raw / Shared**
+
+When **Shared** is active, a **Shared content source** dropdown lists all projectors by name. The chosen projector owns the media/pattern used for shared mapping. This is independent of the currently selected object. **Disabled projectors may remain the content source** — content ownership is separate from projection participation.
+
+### Reliability Settings
+
+| Setting | Location | Behavior |
+|---------|----------|----------|
+| **Shared content source** | Toolbar (when Mapping = Shared) | Explicit projector ID for shared-canvas media/pattern. Unaffected by object selection. |
+| **Calculation target** | Inspector → Calculation target | Explicit flat or curved screen for footprint/overlap math. Unaffected by object selection. |
+
+**Migration (legacy projects without these fields):**
+- Shared content source defaults once to the saved selected projector, else first projector.
+- Calculation target defaults once to legacy auto-pick (curved screen before flat).
+
+**Fallback when a setting becomes invalid:**
+- Shared content source → first projector in the list.
+- Calculation target → first flat screen with `receivesProjection`, else first curved screen.
+
+Both settings persist in project files, autosave, and undo/redo history.
 
 ### Panel UX (M4)
 
@@ -184,17 +204,15 @@ src/
 
 ### Calculation behavior
 
-`recomputeCalculations` in the store:
+`recomputeCalculations` uses the **explicit calculation target** (`calculationTargetId`), not the selected object. Footprint/overlap for the selected projector are computed against that target. Results include `calculationTarget` name and type; CSV/HTML reports include the target.
 
-- **Flat `screen`** → planar footprint + `computeAlignedOverlap`
-- **`curvedScreen`** → `computeCurvedFootprint` + `computeCurvedOverlap`
-- Primary receiver selection prefers **curved screen** over flat when both receive projection
+Shared-canvas **rendering** still uses `resolveSharedCanvasSupport()` for surface UV mapping (primary receiver for mapping). This is intentionally separate from the calculation target.
 
 ---
 
 ## Tests
 
-### Vitest (23 tests)
+### Vitest (41 tests)
 
 | Test | File | Description |
 |------|------|-------------|
@@ -204,13 +222,15 @@ src/
 | 4 | `src/coverage/overlap.test.ts` | Pairwise overlap, union, triple-region math |
 | 4 | `src/coverage/curvedOverlap.test.ts` | Curved-screen overlap for dual projectors |
 | 4 | `src/projection/sharedCanvasMapping.test.ts` | Shared-canvas screen UV mapping |
+| R | `src/store/reliabilitySettings.test.ts` | Source/target resolution and fallback |
+| R | `src/store/reliabilityState.test.ts` | Store selection independence, undo, serialization |
 | 5 | `src/blending/blendWeights.test.ts` | Blend weights sum to 1; no double brightness |
 
 Additional unit tests: `clipFootprint`, `curvedFootprint`, `history`, `reportExport`, `projectSerializer`.
 
 ### Playwright
 
-`e2e/smoke.spec.ts` — basic load and panel visibility checks.
+`e2e/smoke.spec.ts` — app shell, panels, and reliability regression (shared source + calculation target stable across selection).
 
 ---
 

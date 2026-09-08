@@ -190,6 +190,7 @@ export class SceneEngine {
   private materialPreviewMode: MaterialPreviewMode = 'projectionPreview';
   private projectionCompositeMode: ProjectionCompositeMode = 'unblended';
   private mappingMode: MappingMode = 'raw';
+  private sharedContentSourceProjectorId: string | null = null;
   private sceneObjects: SceneObject[] = [];
   private animationId: number | null = null;
   private disposed = false;
@@ -368,6 +369,7 @@ export class SceneEngine {
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
     this.mappingMode = state.mappingMode;
+    this.sharedContentSourceProjectorId = state.sharedContentSourceProjectorId;
     this.showProjectionBeam = state.showProjectionBeam;
     this.syncProjectors(
       state.projectors,
@@ -761,17 +763,9 @@ export class SceneEngine {
     return mappingInt;
   }
 
-  private contentSourceProjector(
-    projectors: ProjectorConfig[],
-    selectedProjectorId: string,
-  ): ProjectorConfig | null {
-    const enabled = projectors.filter((p) => p.enabled);
-    if (enabled.length === 0) return null;
-    return (
-      enabled.find((p) => p.id === selectedProjectorId) ??
-      enabled.find((p) => p.id === this.selectedProjectorId) ??
-      enabled[0]
-    );
+  private contentSourceProjector(projectors: ProjectorConfig[]): ProjectorConfig | null {
+    if (!this.sharedContentSourceProjectorId) return null;
+    return projectors.find((p) => p.id === this.sharedContentSourceProjectorId) ?? null;
   }
 
   private applyProjectiveUniforms(projector: ProjectorConfig): void {
@@ -781,21 +775,27 @@ export class SceneEngine {
     this.projectiveMaterial.uniforms.projectorMatrix.value.copy(
       getProjectorViewProjectionMatrix(projector.optics, worldMatrix),
     );
-    this.projectiveMaterial.uniforms.patternType.value = patternToInt(projector.testPattern);
-    this.projectiveMaterial.uniforms.brightness.value = projector.brightness;
-    this.projectiveMaterial.uniforms.rasterAspect.value = projector.optics.aspectRatio;
-    (this.projectiveMaterial.uniforms.projectorColor.value as THREE.Color).set(projector.color);
+
+    const contentProjector =
+      this.mappingMode === 'sharedCanvas'
+        ? (this.contentSourceProjector(this.allProjectors) ?? projector)
+        : projector;
+
+    this.projectiveMaterial.uniforms.patternType.value = patternToInt(contentProjector.testPattern);
+    this.projectiveMaterial.uniforms.brightness.value = contentProjector.brightness;
+    this.projectiveMaterial.uniforms.rasterAspect.value = contentProjector.optics.aspectRatio;
+    (this.projectiveMaterial.uniforms.projectorColor.value as THREE.Color).set(contentProjector.color);
 
     const useMedia =
-      (projector.mediaSource === 'image' || projector.mediaSource === 'video') &&
-      projector.mediaAssetId;
+      (contentProjector.mediaSource === 'image' || contentProjector.mediaSource === 'video') &&
+      contentProjector.mediaAssetId;
     if (useMedia) {
-      const entry = mediaTextureCache.get(projector.mediaAssetId!);
+      const entry = mediaTextureCache.get(contentProjector.mediaAssetId!);
       if (entry) {
         this.projectiveMaterial.uniforms.useMediaTexture.value = 1;
         this.projectiveMaterial.uniforms.mediaMap.value = entry.texture;
         this.projectiveMaterial.uniforms.mediaAspect.value = entry.aspect;
-        this.projectiveMaterial.uniforms.fitMode.value = fitModeToInt(projector.mediaFit);
+        this.projectiveMaterial.uniforms.fitMode.value = fitModeToInt(contentProjector.mediaFit);
       } else {
         this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
       }
@@ -889,7 +889,7 @@ export class SceneEngine {
           depthTextures,
           this.projectionCompositeMode,
           this.materialPreviewMode === 'projectionUv',
-          this.contentSourceProjector(this.allProjectors, this.selectedProjectorId),
+          this.contentSourceProjector(this.allProjectors),
           this.applyMappingUniforms(
             this.multiProjectiveMaterial,
             this.sceneObjects,

@@ -372,10 +372,10 @@ export function Inspector() {
               onChange={(v) => updateProjectorOptics(projector.id, { lensShiftV: v })}
             />
           </div>
-
-          <CalcResults />
         </>
       )}
+
+      <CalcResults />
     </div>
   );
 }

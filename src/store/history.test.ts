@@ -8,6 +8,8 @@ describe('scene history', () => {
       sceneObjects: DEFAULT_SCENE_OBJECTS,
       projectors: DEFAULT_PROJECTORS,
       mediaAssets: [],
+      sharedContentSourceProjectorId: 'proj-1',
+      calculationTargetId: 'screen-1',
     };
     const a = captureSceneHistory(base);
     const b = captureSceneHistory(base);
@@ -19,6 +21,8 @@ describe('scene history', () => {
       sceneObjects: DEFAULT_SCENE_OBJECTS,
       projectors: DEFAULT_PROJECTORS,
       mediaAssets: [],
+      sharedContentSourceProjectorId: 'proj-1',
+      calculationTargetId: 'screen-1',
     };
     const snapshot = captureSceneHistory(base);
     const next = appendHistory([], snapshot);
