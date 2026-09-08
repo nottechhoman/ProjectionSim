@@ -89,7 +89,7 @@ Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection
 - **Resizable panels** — drag Scene and Inspector edges (160–560 px)
 - **Pop-out panels** — float Scene or Inspector over the viewport in the same tab; drag header to move, dock to restore
 - **Playwright smoke tests** — basic load and panel visibility checks
-- **Projection beam helper** — toolbar **Beam** shows frustum to calculated image size with footprint rectangle
+- **Projection beam helper** — toolbar **Beam** shows rays to footprint corners with yellow outline (flat or curved screens)
 - **Receiving surface visibility** — objects keep their base material outside the projected region
 - **Footprint clipping** — clipped area on screen bounds (planar screens)
 - **Video transport** — seek bar, mute, and loop controls in the status bar when a video is assigned
@@ -109,7 +109,7 @@ Features deferred to later milestones are disabled in the UI or stubbed in code:
 
 | Feature | Milestone |
 |---------|-----------|
-| Curved screen footprint / overlap calculation | M3+ (preview works; calc panel planar only) |
+| Curved screen overlap calculation | M3+ (planar overlap only) |
 | Shared-canvas mapping mode | M3+ |
 | Video seek/loop/mute timeline | Done (status bar transport) |
 | Footprint clipping to screen bounds (clipped area stub) | Done (planar clip) |

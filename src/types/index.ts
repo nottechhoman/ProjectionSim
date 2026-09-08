@@ -119,6 +119,8 @@ export interface NominalProjection {
 
 export interface FootprintResult {
   corners: Vec3[];
+  /** Optional polyline for beam outline (curved screens). */
+  beamOutline?: Vec3[];
   unclippedArea: number;
   clippedArea: number;
   centerHit: Vec3 | null;

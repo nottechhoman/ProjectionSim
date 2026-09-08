@@ -27,6 +27,8 @@ import { mediaTextureCache, modelCache } from '../media';
 import { cloneModelGroup } from './ModelLoader';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../utils/euler';
 import { unprojectRasterRay } from '../optics/rays';
+import { computePlanarFootprint } from '../coverage/planarFootprint';
+import { computeCurvedFootprint, type CurvedScreenSurface } from '../coverage/curvedFootprint';
 
 const CORNER_UV = [
   [0, 0],
@@ -94,6 +96,58 @@ function meshBaseColor(mesh: THREE.Mesh): THREE.Color {
   return new THREE.Color(0.55, 0.55, 0.55);
 }
 
+function objectWorldMatrix(transform: Transform): THREE.Matrix4 {
+  const matrix = new THREE.Matrix4();
+  const position = new THREE.Vector3(transform.position.x, transform.position.y, transform.position.z);
+  const quaternion = new THREE.Quaternion(...transform.quaternion);
+  matrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1));
+  return matrix;
+}
+
+function buildPlanarScreen(sceneObjects: SceneObject[]): {
+  center: THREE.Vector3;
+  normal: THREE.Vector3;
+  width: number;
+  height: number;
+} | null {
+  const screen = sceneObjects.find((obj) => obj.type === 'screen' && obj.receivesProjection);
+  if (!screen) return null;
+  const matrix = objectWorldMatrix(screen.transform);
+  const center = new THREE.Vector3().setFromMatrixPosition(matrix);
+  const normal = new THREE.Vector3(0, 0, 1)
+    .applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(matrix))
+    .normalize();
+  return {
+    center,
+    normal,
+    width: screen.dimensions.width,
+    height: screen.dimensions.height,
+  };
+}
+
+function buildCurvedScreenSurface(sceneObjects: SceneObject[]): CurvedScreenSurface | null {
+  const screen = sceneObjects.find((obj) => obj.type === 'curvedScreen' && obj.receivesProjection);
+  if (!screen?.curved) return null;
+  return {
+    worldMatrix: objectWorldMatrix(screen.transform),
+    radius: screen.curved.radius,
+    arcAngleDeg: screen.curved.arcAngleDeg,
+    height: screen.curved.height,
+  };
+}
+
+function offsetCornersAlongNormal(
+  corners: { x: number; y: number; z: number }[],
+  normal: THREE.Vector3,
+  offset: number,
+): { x: number; y: number; z: number }[] {
+  return corners.map((c) => ({
+    x: c.x + normal.x * offset,
+    y: c.y + normal.y * offset,
+    z: c.z + normal.z * offset,
+  }));
+}
+
 function projectorWorldMatrix(projector: ProjectorConfig): THREE.Matrix4 {
   const matrix = new THREE.Matrix4();
   const position = new THREE.Vector3(
@@ -142,7 +196,6 @@ export class SceneEngine {
   private gizmoRotateStartQuat: THREE.Quaternion | null = null;
   private currentTransformMode: TransformMode = 'translate';
   private showProjectionBeam = false;
-  private footprintCorners: { x: number; y: number; z: number }[] | null = null;
   private measureMode = false;
   private readonly measureGroup = new THREE.Group();
   private measureLine: THREE.Line | null = null;
@@ -307,8 +360,12 @@ export class SceneEngine {
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
     this.showProjectionBeam = state.showProjectionBeam;
-    this.footprintCorners = state.calculationResults.footprint?.corners ?? null;
-    this.syncProjectors(state.projectors, state.selectedProjectorId, this.gizmoDragging);
+    this.syncProjectors(
+      state.projectors,
+      state.selectedProjectorId,
+      state.sceneObjects,
+      this.gizmoDragging,
+    );
     if (state.measureMode) {
       this.transformControls?.detach();
     } else {
@@ -579,11 +636,18 @@ export class SceneEngine {
     return visual;
   }
 
-  private syncProjectors(projectors: ProjectorConfig[], selectedProjectorId: string, skipTransforms = false): void {
+  private syncProjectors(
+    projectors: ProjectorConfig[],
+    selectedProjectorId: string,
+    sceneObjects: SceneObject[],
+    skipTransforms = false,
+  ): void {
     this.allProjectors = projectors;
     this.selectedProjectorId = selectedProjectorId;
     const enabled = projectors.filter((p) => p.enabled);
     this.activeProjectors = enabled;
+    const planarScreen = buildPlanarScreen(sceneObjects);
+    const curvedScreen = buildCurvedScreenSurface(sceneObjects);
 
     const nextIds = new Set(projectors.map((p) => p.id));
     for (const [id, visual] of this.projectorVisuals) {
@@ -622,29 +686,39 @@ export class SceneEngine {
       }
 
       const cornerRays = CORNER_UV.map(([u, v]) => unprojectRasterRay(projector.optics, u, v, worldMatrix));
-      const sizedBeam =
-        this.showProjectionBeam &&
-        projector.id === selectedProjectorId &&
-        this.footprintCorners &&
-        this.footprintCorners.length === 4;
 
-      if (sizedBeam) {
-        const origin = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
-        visual.frustum.updateSizedBeam(origin, this.footprintCorners!);
-      } else {
-        const previewLength = Math.max(
-          2,
-          Math.hypot(
-            projector.transform.position.x,
-            projector.transform.position.y,
-            projector.transform.position.z,
-          ) * 0.5,
-        );
-        visual.frustum.updateShortFrustum(previewLength, cornerRays);
+      let footprintCorners: { x: number; y: number; z: number }[] | null = null;
+      let footprintOutline: { x: number; y: number; z: number }[] | undefined;
+      if (planarScreen) {
+        const footprint = computePlanarFootprint(projector.optics, worldMatrix, planarScreen);
+        if (footprint.corners.length === 4) {
+          footprintCorners = offsetCornersAlongNormal(footprint.corners, planarScreen.normal, 0.01);
+        }
+      } else if (curvedScreen) {
+        const footprint = computeCurvedFootprint(projector.optics, worldMatrix, curvedScreen);
+        if (footprint.corners.length === 4) {
+          footprintCorners = footprint.corners;
+          footprintOutline = footprint.beamOutline;
+        }
       }
 
+      const previewLength = Math.max(
+        2,
+        Math.hypot(
+          projector.transform.position.x,
+          projector.transform.position.y,
+          projector.transform.position.z,
+        ) * 0.5,
+      );
+
+      visual.frustum.updateVisuals(cornerRays, projector.color, {
+        footprintCorners,
+        footprintOutline,
+        showBeamRays: this.showProjectionBeam,
+        shortFrustumLength: previewLength,
+      });
+
       visual.frustum.visible = true;
-      (visual.frustum.material as THREE.LineBasicMaterial).color.set(projector.color);
     }
 
     if (enabled.length === 1) {

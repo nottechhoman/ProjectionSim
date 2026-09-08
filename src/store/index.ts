@@ -25,7 +25,7 @@ import type {
 } from '../types';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
-import { computePlanarFootprint, computeAlignedOverlap } from '../coverage';
+import { computePlanarFootprint, computeCurvedFootprint, computeAlignedOverlap } from '../coverage';
 import { DEFAULT_BLEND_EDGES, MAX_PROJECTORS, PROJECTOR_PALETTE } from '../types';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import {
@@ -503,6 +503,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         width: screen.dimensions.width,
         height: screen.dimensions.height,
         matrix: screenMatrix,
+      });
+    } else if (screen && screen.type === 'curvedScreen' && screen.curved) {
+      const screenMatrix = buildWorldMatrix(screen.transform);
+      footprint = computeCurvedFootprint(proj.optics, worldMatrix, {
+        worldMatrix: screenMatrix,
+        radius: screen.curved.radius,
+        arcAngleDeg: screen.curved.arcAngleDeg,
+        height: screen.curved.height,
       });
     }
 

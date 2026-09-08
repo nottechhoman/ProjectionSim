@@ -96,6 +96,5 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     measureMode: state.measureMode,
     measurePoints: state.measurePoints,
     showProjectionBeam: state.showProjectionBeam,
-    calculationResults: state.calculationResults,
   };
 }
