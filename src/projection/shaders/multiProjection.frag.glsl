@@ -18,8 +18,21 @@ uniform int projectorCount;
 uniform int compositeMode;
 uniform int forceUvPreview;
 uniform vec3 surfaceBaseColor;
+uniform int mappingMode;
+uniform int screenMapKind;
+uniform mat4 screenMapMatrixInv;
+uniform vec4 screenMapParams;
+uniform int sharedUseMediaTexture;
+uniform sampler2D sharedMediaMap;
+uniform float sharedPatternType;
+uniform float sharedFitMode;
+uniform float sharedMediaAspect;
+uniform float sharedRasterAspect;
+uniform vec3 sharedProjectorColor;
+uniform float sharedBrightness;
 
 varying vec3 vWorldPos;
+varying vec2 vSurfaceUv;
 
 float checker(vec2 uv) {
   vec2 c = floor(uv * 16.0);
@@ -58,6 +71,43 @@ vec2 applyFit(vec2 uv, float fitMode, float mediaAspect, float rasterAspect) {
     else scaleY = rasterAspect / mediaAspect;
   }
   return vec2((uv.x - 0.5) / scaleX + 0.5, (uv.y - 0.5) / scaleY + 0.5);
+}
+
+vec2 sharedContentUv() {
+  if (screenMapKind == 3) return vSurfaceUv;
+  vec3 local = (screenMapMatrixInv * vec4(vWorldPos, 1.0)).xyz;
+  if (screenMapKind == 1) {
+    return vec2(local.x / screenMapParams.x + 0.5, local.y / screenMapParams.y + 0.5);
+  }
+  if (screenMapKind == 2) {
+    float theta = atan(local.z, local.x);
+    float arcRad = screenMapParams.z * 0.01745329252;
+    float u = (theta + arcRad * 0.5) / arcRad;
+    float v = (local.y + screenMapParams.y * 0.5) / screenMapParams.y;
+    return vec2(u, v);
+  }
+  return vec2(0.0);
+}
+
+vec3 sampleSharedContent(vec2 contentUv) {
+  if (sharedUseMediaTexture > 0.5) {
+    vec2 mediaUv = applyFit(contentUv, sharedFitMode, sharedMediaAspect, sharedRasterAspect);
+    if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) {
+      return vec3(0.0);
+    }
+    return texture2D(sharedMediaMap, mediaUv).rgb;
+  }
+  if (sharedPatternType < 0.5) {
+    float v = checker(contentUv);
+    return mix(vec3(0.1), vec3(0.9), v);
+  } else if (sharedPatternType < 1.5) {
+    return vec3(contentUv, 0.0);
+  } else if (sharedPatternType < 2.5) {
+    return vec3(contentUv.x, contentUv.y, 0.5);
+  } else if (sharedPatternType < 3.5) {
+    return vec3(1.0);
+  }
+  return sharedProjectorColor;
 }
 
 vec3 sampleProjectorColor(int idx, vec2 uv) {
@@ -110,13 +160,16 @@ void main() {
     if (abs(projNDC.x) > 1.0 || abs(projNDC.y) > 1.0 || abs(projNDC.z) > 1.0) continue;
 
     vec2 uv = projNDC.xy * 0.5 + 0.5;
+    vec2 contentUv = mappingMode == 1 ? sharedContentUv() : uv;
     float fragDepth = projNDC.z * 0.5 + 0.5;
     if (!projectorVisible(i, uv, fragDepth)) continue;
 
     hitCount++;
     vec3 color;
     if (forceUvPreview == 1) {
-      color = vec3(uv, 0.2);
+      color = mappingMode == 1 ? vec3(contentUv, 0.2) : vec3(uv, 0.2);
+    } else if (mappingMode == 1) {
+      color = sampleSharedContent(contentUv) * sharedBrightness;
     } else {
       color = sampleProjectorColor(i, uv) * brightness[i];
     }

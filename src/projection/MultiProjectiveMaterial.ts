@@ -57,6 +57,18 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       compositeMode: { value: 0 },
       forceUvPreview: { value: 0 },
       surfaceBaseColor: { value: new THREE.Color(0.55, 0.55, 0.55) },
+      mappingMode: { value: 0 },
+      screenMapKind: { value: 0 },
+      screenMapMatrixInv: { value: new THREE.Matrix4() },
+      screenMapParams: { value: new THREE.Vector4(1, 1, 90, 0) },
+      sharedUseMediaTexture: { value: 0 },
+      sharedMediaMap: { value: fallback },
+      sharedPatternType: { value: 0 },
+      sharedFitMode: { value: 0 },
+      sharedMediaAspect: { value: 1.0 },
+      sharedRasterAspect: { value: 16 / 9 },
+      sharedProjectorColor: { value: new THREE.Color('#ffffff') },
+      sharedBrightness: { value: 1.0 },
     },
     vertexShader: vert,
     fragmentShader: multiFrag,
@@ -73,6 +85,8 @@ export function updateMultiProjectiveMaterial(
   depthTextures: THREE.Texture[],
   compositeMode: ProjectionCompositeMode,
   forceUvPreview = false,
+  contentProjector?: ProjectorConfig | null,
+  mappingMode = 0,
 ): void {
   const count = Math.min(projectors.length, MAX);
   material.uniforms.projectorCount.value = count;
@@ -137,6 +151,30 @@ export function updateMultiProjectiveMaterial(
 
   material.uniforms.depthMaps.value = depthMaps;
   material.uniforms.mediaMaps.value = mediaMaps;
+
+  const source = contentProjector ?? projectors[0];
+  if (source) {
+    material.uniforms.sharedPatternType.value = PATTERN_MAP[source.testPattern];
+    material.uniforms.sharedRasterAspect.value = source.optics.aspectRatio;
+    material.uniforms.sharedBrightness.value = source.brightness;
+    (material.uniforms.sharedProjectorColor.value as THREE.Color).set(source.color);
+    const useMedia =
+      (source.mediaSource === 'image' || source.mediaSource === 'video') && source.mediaAssetId;
+    if (useMedia) {
+      const entry = mediaTextureCache.get(source.mediaAssetId!);
+      if (entry) {
+        material.uniforms.sharedUseMediaTexture.value = 1;
+        material.uniforms.sharedMediaMap.value = entry.texture;
+        material.uniforms.sharedMediaAspect.value = entry.aspect;
+        material.uniforms.sharedFitMode.value = fitModeToInt(source.mediaFit);
+      } else {
+        material.uniforms.sharedUseMediaTexture.value = 0;
+      }
+    } else {
+      material.uniforms.sharedUseMediaTexture.value = 0;
+    }
+  }
+  material.uniforms.mappingMode.value = mappingMode;
 }
 
 export { patternToInt };

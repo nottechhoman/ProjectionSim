@@ -21,6 +21,8 @@ export type TestPattern =
 
 export type ProjectionCompositeMode = 'solo' | 'unblended' | 'heatmap' | 'blended';
 
+export type MappingMode = 'raw' | 'sharedCanvas';
+
 export interface BlendEdges {
   /** Feather width as fraction of image width/height (0–0.5). */
   left: number;

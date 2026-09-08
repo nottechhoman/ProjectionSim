@@ -18,6 +18,7 @@ export interface ProjectSnapshotV2 {
   mediaAssets: import('../types').MediaAssetRecord[];
   materialPreviewMode: import('../types').MaterialPreviewMode;
   projectionCompositeMode: import('../types').ProjectionCompositeMode;
+  mappingMode?: import('../types').MappingMode;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;

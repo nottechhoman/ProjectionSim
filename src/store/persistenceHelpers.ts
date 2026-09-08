@@ -2,6 +2,7 @@ import type { ProjectSnapshot } from '../persistence/projectSchema';
 import type {
   DisplayUnit,
   MaterialPreviewMode,
+  MappingMode,
   ProjectionCompositeMode,
   MediaAssetRecord,
   ProjectorConfig,
@@ -29,6 +30,7 @@ export interface PersistedStateSlice {
   mediaAssets: MediaAssetRecord[];
   materialPreviewMode: MaterialPreviewMode;
   projectionCompositeMode: ProjectionCompositeMode;
+  mappingMode: MappingMode;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
@@ -63,6 +65,7 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     mediaAssets: slice.mediaAssets,
     materialPreviewMode: slice.materialPreviewMode,
     projectionCompositeMode: slice.projectionCompositeMode,
+    mappingMode: slice.mappingMode,
     selectedObjectId: slice.selectedObjectId,
     selectedProjectorId: slice.selectedProjectorId,
     displayUnit: slice.displayUnit,
@@ -88,6 +91,7 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
     mediaAssets: snapshot.mediaAssets ?? [],
     materialPreviewMode: snapshot.materialPreviewMode ?? 'projectionPreview',
     projectionCompositeMode: snapshot.projectionCompositeMode ?? 'unblended',
+    mappingMode: snapshot.mappingMode === 'sharedCanvas' ? 'sharedCanvas' : 'raw',
     selectedObjectId: snapshot.selectedObjectId,
     selectedProjectorId: snapshot.selectedProjectorId,
     displayUnit: snapshot.displayUnit,
@@ -131,6 +135,7 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     mediaAssets: [],
     materialPreviewMode: 'projectionPreview',
     projectionCompositeMode: 'solo',
+    mappingMode: 'raw',
     selectedObjectId: 'proj-1',
     selectedProjectorId: 'proj-1',
     displayUnit: 'm',

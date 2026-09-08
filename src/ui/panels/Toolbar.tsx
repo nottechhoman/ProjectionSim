@@ -1,7 +1,8 @@
 import { useRef, type ChangeEvent } from 'react';
 import { useAppStore } from '../../store';
-import type { DisplayUnit, ProjectionCompositeMode, ViewPreset } from '../../types';
+import type { DisplayUnit, MappingMode, ProjectionCompositeMode, ViewPreset } from '../../types';
 import { MAX_PROJECTORS } from '../../types';
+import { resolveSharedCanvasSupport } from '../../projection/sharedCanvasMapping';
 import styles from './Toolbar.module.css';
 
 const UNITS: DisplayUnit[] = ['m', 'cm', 'mm'];
@@ -20,6 +21,8 @@ export function Toolbar() {
   const transformMode = useAppStore((s) => s.transformMode);
   const materialPreviewMode = useAppStore((s) => s.materialPreviewMode);
   const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
+  const mappingMode = useAppStore((s) => s.mappingMode);
+  const sceneObjects = useAppStore((s) => s.sceneObjects);
   const projectorCount = useAppStore((s) => s.projectors.length);
   const projectName = useAppStore((s) => s.projectName);
   const setDisplayUnit = useAppStore((s) => s.setDisplayUnit);
@@ -27,6 +30,7 @@ export function Toolbar() {
   const setTransformMode = useAppStore((s) => s.setTransformMode);
   const setMaterialPreviewMode = useAppStore((s) => s.setMaterialPreviewMode);
   const setProjectionCompositeMode = useAppStore((s) => s.setProjectionCompositeMode);
+  const setMappingMode = useAppStore((s) => s.setMappingMode);
   const addProjector = useAppStore((s) => s.addProjector);
   const addBox = useAppStore((s) => s.addBox);
   const addCurvedScreen = useAppStore((s) => s.addCurvedScreen);
@@ -43,6 +47,7 @@ export function Toolbar() {
   const exportCalculationCsv = useAppStore((s) => s.exportCalculationCsv);
   const exportCalculationHtml = useAppStore((s) => s.exportCalculationHtml);
   const showProjectionBeam = useAppStore((s) => s.showProjectionBeam);
+  const sharedCanvasSupport = resolveSharedCanvasSupport(sceneObjects);
 
   const handleOpenFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -158,6 +163,30 @@ export function Toolbar() {
         <button type="button" onClick={addProjector} disabled={projectorCount >= MAX_PROJECTORS}>
           + Projector
         </button>
+      </div>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <span className={styles.label}>Mapping</span>
+        {(['raw', 'sharedCanvas'] as MappingMode[]).map((mode) => (
+          <button
+            key={mode}
+            type="button"
+            className={mappingMode === mode ? styles.active : undefined}
+            onClick={() => setMappingMode(mode)}
+            disabled={mode === 'sharedCanvas' && !sharedCanvasSupport.supported}
+            title={
+              mode === 'sharedCanvas' && !sharedCanvasSupport.supported
+                ? sharedCanvasSupport.reason ?? 'Shared canvas unavailable'
+                : mode === 'sharedCanvas'
+                  ? 'Align content to the receiving surface coordinate system'
+                  : 'Each projector uses its own raster coordinates'
+            }
+          >
+            {mode === 'raw' ? 'Raw' : 'Shared'}
+          </button>
+        ))}
       </div>
 
       <div className={styles.separator} />

@@ -10,6 +10,7 @@ import {
 } from '../projection/MultiProjectiveMaterial';
 import { DepthPass } from '../visibility/DepthPass';
 import type {
+  MappingMode,
   MaterialPreviewMode,
   ProjectionCompositeMode,
   ProjectorConfig,
@@ -29,6 +30,10 @@ import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../utils/euler';
 import { unprojectRasterRay } from '../optics/rays';
 import { computePlanarFootprint } from '../coverage/planarFootprint';
 import { computeCurvedFootprint, type CurvedScreenSurface } from '../coverage/curvedFootprint';
+import {
+  buildScreenMapUniforms,
+  resolveSharedCanvasSupport,
+} from '../projection/sharedCanvasMapping';
 
 const CORNER_UV = [
   [0, 0],
@@ -184,6 +189,8 @@ export class SceneEngine {
   private selectedProjectorId = 'proj-1';
   private materialPreviewMode: MaterialPreviewMode = 'projectionPreview';
   private projectionCompositeMode: ProjectionCompositeMode = 'unblended';
+  private mappingMode: MappingMode = 'raw';
+  private sceneObjects: SceneObject[] = [];
   private animationId: number | null = null;
   private disposed = false;
   private currentViewPreset: ViewPreset = 'persp';
@@ -357,8 +364,10 @@ export class SceneEngine {
     }
 
     this.syncSceneObjects(state.sceneObjects, this.gizmoDragging);
+    this.sceneObjects = state.sceneObjects;
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
+    this.mappingMode = state.mappingMode;
     this.showProjectionBeam = state.showProjectionBeam;
     this.syncProjectors(
       state.projectors,
@@ -730,6 +739,41 @@ export class SceneEngine {
     }
   }
 
+  private applyMappingUniforms(
+    material: THREE.ShaderMaterial,
+    sceneObjects: SceneObject[],
+    mappingMode: MappingMode,
+  ): number {
+    const support = resolveSharedCanvasSupport(sceneObjects);
+    const active = mappingMode === 'sharedCanvas' && support.supported;
+    const mappingInt = active ? 1 : 0;
+    material.uniforms.mappingMode.value = mappingInt;
+
+    if (!active || !support.primaryReceiver) {
+      material.uniforms.screenMapKind.value = 0;
+      return mappingInt;
+    }
+
+    const map = buildScreenMapUniforms(support.primaryReceiver, support.mapKind);
+    material.uniforms.screenMapKind.value = map.mapKind;
+    (material.uniforms.screenMapMatrixInv.value as THREE.Matrix4).copy(map.matrixInv);
+    (material.uniforms.screenMapParams.value as THREE.Vector4).copy(map.params);
+    return mappingInt;
+  }
+
+  private contentSourceProjector(
+    projectors: ProjectorConfig[],
+    selectedProjectorId: string,
+  ): ProjectorConfig | null {
+    const enabled = projectors.filter((p) => p.enabled);
+    if (enabled.length === 0) return null;
+    return (
+      enabled.find((p) => p.id === selectedProjectorId) ??
+      enabled.find((p) => p.id === this.selectedProjectorId) ??
+      enabled[0]
+    );
+  }
+
   private applyProjectiveUniforms(projector: ProjectorConfig): void {
     const worldMatrix = projectorWorldMatrix(projector);
     const forceUv = this.materialPreviewMode === 'projectionUv' ? 1 : 0;
@@ -758,6 +802,8 @@ export class SceneEngine {
     } else {
       this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
     }
+
+    this.applyMappingUniforms(this.projectiveMaterial, this.sceneObjects, this.mappingMode);
   }
 
   start(): void {
@@ -843,6 +889,12 @@ export class SceneEngine {
           depthTextures,
           this.projectionCompositeMode,
           this.materialPreviewMode === 'projectionUv',
+          this.contentSourceProjector(this.allProjectors, this.selectedProjectorId),
+          this.applyMappingUniforms(
+            this.multiProjectiveMaterial,
+            this.sceneObjects,
+            this.mappingMode,
+          ),
         );
         this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(
           this.depthPass.target.width,

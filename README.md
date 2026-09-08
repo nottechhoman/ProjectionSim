@@ -79,6 +79,7 @@ Expected inspector readout for the default scene: **4.0 m × 2.25 m** projection
 - **Composite preview modes** — Raw (additive), Blend (normalized edge weights), Heatmap (overlap count)
 - **Per-edge blend controls** — left/right/top/bottom feather in projector UV space
 - **Overlap calculations** — pairwise area, union, multi-coverage, horizontal overlap, overlap pixels (planar and curved screens)
+- **Shared-canvas mapping** — align content to screen or curved-surface coordinates (toolbar Mapping → Shared)
 - **Acceptance Tests 4 & 5** — overlap union math and blend weight normalization
 
 ## M4 Features
@@ -109,8 +110,7 @@ Features deferred to later milestones are disabled in the UI or stubbed in code:
 
 | Feature | Milestone |
 |---------|-----------|
-| Shared-canvas mapping mode | M3+ |
-| Video seek/loop/mute timeline | Done (status bar transport) |
+| Per-projector raster preview panel | M3+ |
 | Footprint clipping to screen bounds (clipped area stub) | Done (planar clip) |
 | Brightness/lux photometry estimates | Post-M1 |
 
@@ -135,4 +135,5 @@ npm run build         # Production build
 | 3 | `src/coverage/coverage.test.ts` | 20° yaw footprint matches ray–plane math |
 | 4 | `src/coverage/overlap.test.ts` | Pairwise overlap, union, triple-region math |
 | 4 | `src/coverage/curvedOverlap.test.ts` | Curved-screen overlap for dual projectors |
+| 4 | `src/projection/sharedCanvasMapping.test.ts` | Shared-canvas screen UV mapping |
 | 5 | `src/blending/blendWeights.test.ts` | Blend weights sum to 1; no double brightness |

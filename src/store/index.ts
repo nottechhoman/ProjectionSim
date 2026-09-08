@@ -12,6 +12,7 @@ import type {
   CalculationResults,
   DisplayUnit,
   MaterialPreviewMode,
+  MappingMode,
   MediaAssetRecord,
   MediaFitMode,
   MediaSourceKind,
@@ -46,6 +47,7 @@ import {
   buildCalculationHtml,
   downloadTextFile,
 } from '../persistence/reportExport';
+import { resolveSharedCanvasSupport } from '../projection/sharedCanvasMapping';
 
 interface AppState extends PersistedStateSlice {
   projectMessage: string | null;
@@ -76,6 +78,8 @@ interface AppState extends PersistedStateSlice {
   setDisplayUnit: (u: DisplayUnit) => void;
   setViewPreset: (preset: ViewPreset) => void;
   setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
+  setMappingMode: (mode: MappingMode) => void;
+  getSharedCanvasSupport: () => { supported: boolean; reason: string | null };
   setShowProjectionBeam: (show: boolean) => void;
   toggleProjectionBeam: () => void;
   setProjectionCompositeMode: (mode: ProjectionCompositeMode) => void;
@@ -180,6 +184,7 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     mediaAssets: state.mediaAssets,
     materialPreviewMode: state.materialPreviewMode,
     projectionCompositeMode: state.projectionCompositeMode,
+    mappingMode: state.mappingMode,
     selectedObjectId: state.selectedObjectId,
     selectedProjectorId: state.selectedProjectorId,
     displayUnit: state.displayUnit,
@@ -207,6 +212,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   mediaAssets: initial.mediaAssets,
   materialPreviewMode: initial.materialPreviewMode,
   projectionCompositeMode: initial.projectionCompositeMode,
+  mappingMode: initial.mappingMode,
   selectedObjectId: initial.selectedObjectId,
   selectedProjectorId: initial.selectedProjectorId,
   displayUnit: initial.displayUnit,
@@ -306,6 +312,17 @@ export const useAppStore = create<AppState>((set, get) => ({
   setDisplayUnit: (u) => set({ displayUnit: u }),
   setViewPreset: (preset) => set({ viewPreset: preset }),
   setMaterialPreviewMode: (mode) => set({ materialPreviewMode: mode }),
+  setMappingMode: (mode) => {
+    if (mode === 'sharedCanvas') {
+      const support = resolveSharedCanvasSupport(get().sceneObjects);
+      if (!support.supported) return;
+    }
+    set({ mappingMode: mode });
+  },
+  getSharedCanvasSupport: () => {
+    const support = resolveSharedCanvasSupport(get().sceneObjects);
+    return { supported: support.supported, reason: support.reason };
+  },
   setShowProjectionBeam: (show) => set({ showProjectionBeam: show }),
   toggleProjectionBeam: () => set((s) => ({ showProjectionBeam: !s.showProjectionBeam })),
   setProjectionCompositeMode: (mode) => set({ projectionCompositeMode: mode }),
