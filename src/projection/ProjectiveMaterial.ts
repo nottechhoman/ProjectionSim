@@ -36,6 +36,7 @@ export function createProjectiveMaterial(): THREE.ShaderMaterial {
       screenMapKind: { value: 0 },
       screenMapMatrixInv: { value: new THREE.Matrix4() },
       screenMapParams: { value: new THREE.Vector4(1, 1, 90, 0) },
+      projectionSides: { value: 0 },
     },
     vertexShader: vert,
     fragmentShader: frag,

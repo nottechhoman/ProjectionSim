@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ProjectionLab</title>
+    <script>
+      // GitHub Pages SPA fallback: serve the app shell for deep links.
+      const segment = '/ProjectionSim/';
+      const prefix = location.pathname.startsWith(segment) ? segment : '/';
+      const rest = location.pathname.startsWith(prefix)
+        ? location.pathname.slice(prefix.length)
+        : location.pathname.replace(/^\//, '');
+      const target = prefix + '?p=' + encodeURIComponent(rest) + location.search + location.hash;
+      location.replace(target);
+    </script>
+  </head>
+  <body></body>
+</html>

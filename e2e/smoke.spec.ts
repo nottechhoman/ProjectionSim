@@ -40,3 +40,36 @@ test('keeps shared content source and calculation target stable across selection
   await expect(targetSelect).toHaveValue('screen-1');
   await expect(page.getByTestId('calculation-target-label')).toContainText('Screen (flat)');
 });
+
+test('visible coverage responds to blocker and preserves calculation target', async ({ page }) => {
+  await page.goto('/');
+
+  const targetSelect = page.getByTestId('calculation-target-select');
+  await targetSelect.selectOption({ label: 'Screen (flat)' });
+
+  const visibleCoverage = page.getByTestId('visible-coverage');
+  await expect(visibleCoverage).toBeVisible();
+  const baselineText = await visibleCoverage.textContent();
+  const baselineArea = parseCoverageArea(baselineText ?? '');
+  expect(baselineArea).toBeGreaterThan(0);
+
+  await page.getByRole('button', { name: 'Add Box' }).click();
+  await page.getByRole('listitem').filter({ hasText: 'Box' }).click();
+
+  await expect
+    .poll(async () => parseCoverageArea(await visibleCoverage.textContent() ?? ''))
+    .toBeLessThan(baselineArea);
+
+  await page.getByTestId('blocks-projection-checkbox').uncheck();
+  await expect
+    .poll(async () => parseCoverageArea(await visibleCoverage.textContent() ?? ''))
+    .toBeCloseTo(baselineArea, 1);
+
+  await page.getByRole('listitem').filter({ hasText: 'Floor' }).click();
+  await expect(targetSelect).toHaveValue('screen-1');
+});
+
+function parseCoverageArea(text: string): number {
+  const match = text.match(/([\d.]+)\s*m²/);
+  return match ? Number(match[1]) : 0;
+}

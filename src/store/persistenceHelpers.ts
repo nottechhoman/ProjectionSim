@@ -9,6 +9,8 @@ import type {
   SceneObject,
   TransformMode,
   ViewPreset,
+  AnalysisQuality,
+  CalculationTargetSide,
 } from '../types';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
 import {
@@ -39,6 +41,8 @@ export interface PersistedStateSlice {
   mappingMode: MappingMode;
   sharedContentSourceProjectorId: string | null;
   calculationTargetId: string | null;
+  analysisQuality: AnalysisQuality;
+  calculationTargetSide: CalculationTargetSide;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
@@ -76,6 +80,8 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     mappingMode: slice.mappingMode,
     sharedContentSourceProjectorId: slice.sharedContentSourceProjectorId,
     calculationTargetId: slice.calculationTargetId,
+    analysisQuality: slice.analysisQuality,
+    calculationTargetSide: slice.calculationTargetSide,
     selectedObjectId: slice.selectedObjectId,
     selectedProjectorId: slice.selectedProjectorId,
     displayUnit: slice.displayUnit,
@@ -125,6 +131,11 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
     mappingMode: snapshot.mappingMode === 'sharedCanvas' ? 'sharedCanvas' : 'raw',
     sharedContentSourceProjectorId,
     calculationTargetId,
+    analysisQuality: snapshot.analysisQuality === 'high' ? 'high' : 'draft',
+    calculationTargetSide:
+      snapshot.calculationTargetSide === 'back' || snapshot.calculationTargetSide === 'both'
+        ? snapshot.calculationTargetSide
+        : 'front',
     selectedObjectId: snapshot.selectedObjectId,
     selectedProjectorId,
     displayUnit: snapshot.displayUnit,
@@ -171,6 +182,8 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     mappingMode: 'raw',
     sharedContentSourceProjectorId: 'proj-1',
     calculationTargetId: 'screen-1',
+    analysisQuality: 'draft',
+    calculationTargetSide: 'front',
     selectedObjectId: 'proj-1',
     selectedProjectorId: 'proj-1',
     displayUnit: 'm',

@@ -69,6 +69,7 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       sharedRasterAspect: { value: 16 / 9 },
       sharedProjectorColor: { value: new THREE.Color('#ffffff') },
       sharedBrightness: { value: 1.0 },
+      projectionSides: { value: 0 },
     },
     vertexShader: vert,
     fragmentShader: multiFrag,

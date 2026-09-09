@@ -1,5 +1,5 @@
 import { validateOptics } from '../optics/validate';
-import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, SceneObject } from '../types';
+import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, ProjectionSides, SceneObject } from '../types';
 import { DEFAULT_BLEND_EDGES } from '../types';
 import {
   clampPanelWidth,
@@ -59,7 +59,16 @@ function validateSceneObject(raw: unknown): SceneObject {
   if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) {
     throw new ProjectValidationError('Invalid scene object dimensions');
   }
-  return raw as unknown as SceneObject;
+  const projectionSides: ProjectionSides | undefined =
+    raw.projectionSides === 'back' || raw.projectionSides === 'both'
+      ? raw.projectionSides
+      : raw.projectionSides === 'front'
+        ? 'front'
+        : undefined;
+  return {
+    ...(raw as unknown as SceneObject),
+    projectionSides,
+  };
 }
 
 function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
@@ -157,6 +166,14 @@ export function parseProjectJson(text: string): ProjectSnapshot {
       : undefined;
   const calculationTargetId =
     typeof data.calculationTargetId === 'string' ? data.calculationTargetId : undefined;
+  const analysisQuality =
+    data.analysisQuality === 'high' ? 'high' : data.analysisQuality === 'draft' ? 'draft' : undefined;
+  const calculationTargetSide =
+    data.calculationTargetSide === 'back' || data.calculationTargetSide === 'both'
+      ? data.calculationTargetSide
+      : data.calculationTargetSide === 'front'
+        ? 'front'
+        : undefined;
 
   const snapshot: ProjectSnapshotV2 = {
     version: PROJECT_FILE_VERSION,
@@ -170,6 +187,8 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     mappingMode,
     sharedContentSourceProjectorId,
     calculationTargetId,
+    analysisQuality,
+    calculationTargetSide,
     selectedObjectId,
     selectedProjectorId,
     displayUnit: data.displayUnit === 'cm' || data.displayUnit === 'mm' ? data.displayUnit : 'm',

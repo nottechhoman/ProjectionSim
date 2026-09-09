@@ -24,6 +24,7 @@ const calculationResults: CalculationResults = {
   },
   opticsError: null,
   overlap: null,
+  coverageAnalysis: null,
   calculationTarget: { id: 'screen-1', name: 'Screen', type: 'screen' },
 };
 

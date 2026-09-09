@@ -1,5 +1,6 @@
 import { useAppStore } from '../../store';
-import type { TestPattern } from '../../types';
+import type { ProjectionSides, TestPattern } from '../../types';
+import { supportsProjectionSides } from '../../projection/projectionSides';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../../utils/euler';
 import { fromDisplayUnit, toDisplayUnit } from '../../utils/units';
 import { NumInput } from '../components/NumInput';
@@ -164,11 +165,32 @@ export function Inspector() {
           <label className={styles.checkRow}>
             <input
               type="checkbox"
+              data-testid="blocks-projection-checkbox"
               checked={sceneObject.blocksProjection}
               onChange={(e) => updateSceneObjectFlags(sceneObject.id, { blocksProjection: e.target.checked })}
             />
             Blocks projection
           </label>
+          {sceneObject.receivesProjection && supportsProjectionSides(sceneObject.type) && (
+            <div className={styles.row}>
+              <label htmlFor="projection-sides-select">Projection sides</label>
+              <select
+                id="projection-sides-select"
+                aria-label="Projection sides"
+                data-testid="projection-sides-select"
+                value={sceneObject.projectionSides ?? 'front'}
+                onChange={(e) =>
+                  updateSceneObjectFlags(sceneObject.id, {
+                    projectionSides: e.target.value as ProjectionSides,
+                  })
+                }
+              >
+                <option value="front">Front only</option>
+                <option value="back">Back only</option>
+                <option value="both">Both sides</option>
+              </select>
+            </div>
+          )}
           <button type="button" className={styles.dangerBtn} onClick={() => removeSceneObject(sceneObject.id)}>
             Delete object
           </button>

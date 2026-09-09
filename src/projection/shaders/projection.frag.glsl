@@ -16,8 +16,16 @@ uniform int screenMapKind;
 uniform mat4 screenMapMatrixInv;
 uniform vec4 screenMapParams;
 
+uniform int projectionSides;
+
 varying vec3 vWorldPos;
 varying vec2 vSurfaceUv;
+
+bool receivesOnThisFace() {
+  if (projectionSides >= 2) return true;
+  if (projectionSides == 0) return gl_FrontFacing;
+  return !gl_FrontFacing;
+}
 
 float checker(vec2 uv) {
   vec2 c = floor(uv * 16.0);
@@ -77,6 +85,11 @@ vec3 sampleContent(vec2 contentUv) {
 }
 
 void main() {
+  if (!receivesOnThisFace()) {
+    gl_FragColor = vec4(surfaceBaseColor, 1.0);
+    return;
+  }
+
   vec4 projClip = projectorMatrix * vec4(vWorldPos, 1.0);
   if (projClip.w <= 0.0) {
     gl_FragColor = vec4(surfaceBaseColor, 1.0);

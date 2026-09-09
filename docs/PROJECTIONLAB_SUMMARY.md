@@ -1,6 +1,6 @@
 # ProjectionLab — Project Summary
 
-**Branch:** `feat/milestone-1`  
+**Branch:** `feat/reliability-shared-source-target`  
 **Last updated:** 2026-09-08  
 **Stack:** React 19 · Three.js · Zustand · Vite · TypeScript · Vitest · Playwright
 
@@ -13,8 +13,8 @@ ProjectionLab is a browser-based 3D projection planning simulator. It lets you p
 ```bash
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm test           # 41 Vitest tests
-npm run test:e2e   # 3 Playwright smoke tests
+npm test           # 56 Vitest tests
+npm run test:e2e   # 4 Playwright smoke tests
 npm run build      # Production build
 ```
 
@@ -32,6 +32,7 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 | **M4** | Undo/redo, measure, reports, panel UX, E2E tests | Done |
 | **Post-M4** | Curved beam, curved overlap, shared-canvas mapping | Done |
 | **Reliability** | Explicit shared content source and calculation target | Done |
+| **Coverage reliability** | Sampled geometric/visible coverage, occlusion, reports | Done |
 
 ---
 
@@ -64,7 +65,7 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 ### Surfaces (M2–M4)
 
 - Flat screens, curved cylindrical screens, floors, boxes, imported models
-- Per-object flags: receives projection / blocks projection
+- Per-object flags: receives projection / blocks projection / **projection sides** (front, back, or both — flat screens, floors, curved screens)
 - Material preview modes: **Projection**, **UV**, **Original**
 - Curved-screen beam footprint with arc outline (yellow frame)
 - Footprint clipping to screen bounds (planar)
@@ -72,7 +73,7 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 ### Multi-Projector (M3)
 
 - Up to 4 projectors, each with independent optics, media, color, transform
-- Composite modes: **Solo**, **Raw** (additive), **Blend** (edge weights), **Heatmap** (overlap count)
+- Composite modes: **Solo**, **Raw** (additive), **Blend** (edge weights), **Coverage Count** (overlap count heatmap — not lux)
 - Per-edge blend feathering (left/right/top/bottom in projector UV space)
 - Overlap calculations:
   - **Planar screens** — pairwise area, union, multi-coverage, horizontal overlap, overlap pixels
@@ -105,6 +106,50 @@ When **Shared** is active, a **Shared content source** dropdown lists all projec
 - Calculation target → first flat screen with `receivesProjection`, else first curved screen.
 
 Both settings persist in project files, autosave, and undo/redo history.
+
+### Coverage Reliability (sampled analysis)
+
+Area-weighted surface sampling on the **calculation target** (flat or curved screen). Distinct from analytic pairwise overlap metrics above.
+
+| Metric | Definition |
+|--------|------------|
+| **receiverArea** | Total analyzed receiving surface area (sum of sample weights). |
+| **geometricCoveredArea** | Area inside ≥1 enabled projector frustum before occlusion. |
+| **visibleCoveredArea** | Area reached by ≥1 enabled projector after occlusion along lens→sample rays. |
+| **uncoveredArea** | `receiverArea − visibleCoveredArea`. |
+| **visibleOverlapArea** | Area reached by ≥2 projectors after occlusion (counted once; not summed pairwise). |
+| **occlusionLossArea** | Geometrically covered but not visible after occlusion. |
+
+Per-projector: geometric covered, visible covered, blocked area.
+
+**Eligibility:** enabled projectors with valid optics. Geometric metrics ignore blend weights and content brightness.
+
+**Sampling presets** (Inspector → Sampling quality):
+
+| Preset | Resolution (U×V) |
+|--------|-------------------|
+| Draft | 32×18 |
+| High | 64×36 |
+
+**Occlusion:** only objects with `blocksProjection=true` (box, floor, flat screen, curved screen). Imported meshes are not occluders in sampling. Endpoint tolerance avoids self-hit at the sample point (`1 mm` absolute or `0.01%` of ray length). Receivers with `blocksProjection` can block other surfaces.
+
+**Numerical tolerances (tests):** 12% relative area tolerance for draft vs high convergence; 3% for identical-projector overlap assertions.
+
+**Rendering vs calculation:** Both use `blocksProjection` objects for occlusion. Receivers are excluded from the WebGL depth pass to prevent self-occlusion in preview; sampling uses endpoint tolerance instead. A screen with `blocksProjection=true` occludes in both preview and sampled visible coverage.
+
+Reports (CSV/HTML) include target, sampled metrics, definitions, sampling resolution, projector optics/position, and lens-shift convention.
+
+### Dual-sided projection
+
+Thin surfaces (flat screen, floor, curved screen) support **Projection sides** in the Inspector:
+
+| Setting | Preview behavior | Calculation |
+|---------|------------------|-------------|
+| **Front only** | Mesh front face receives projection | Samples front face (+Z for screens, +Y for floors, concave interior for curved) |
+| **Back only** | Mesh back face receives projection | Samples reverse face |
+| **Both sides** | Both faces receive projection | Use **Analyze side** in calculation panel: Front / Back / Both (combined) |
+
+Preview uses mesh winding (`gl_FrontFacing`). Curved screens treat the **concave interior** as the front face in calculations (typical cinema layout). Legacy projects default to front-only.
 
 ### Panel UX (M4)
 
@@ -174,7 +219,7 @@ Open via **Open** in the toolbar:
 ```
 src/
 ├── optics/           # Throw ratio, projection matrix, ray unprojection
-├── coverage/         # Planar/curved footprints, overlap, clipping
+├── coverage/         # Planar/curved footprints, overlap, clipping, sampled coverage
 ├── projection/       # GLSL shaders, projective materials, shared-canvas mapping
 ├── blending/         # Edge blend weight functions
 ├── scene/            # SceneEngine, object factories, FrustumHelper
@@ -194,6 +239,7 @@ src/
 | Curved footprint | `src/coverage/curvedFootprint.ts` |
 | Planar overlap | `src/coverage/overlap.ts` |
 | Curved overlap | `src/coverage/curvedOverlap.ts` |
+| Sampled coverage analysis | `src/coverage/coverageAnalysis.ts`, `src/coverage/occlusion.ts` |
 | Shared-canvas mapping | `src/projection/sharedCanvasMapping.ts` |
 | Single-projector shader | `src/projection/shaders/projection.frag.glsl` |
 | Multi-projector shader | `src/projection/shaders/multiProjection.frag.glsl` |
@@ -204,7 +250,7 @@ src/
 
 ### Calculation behavior
 
-`recomputeCalculations` uses the **explicit calculation target** (`calculationTargetId`), not the selected object. Footprint/overlap for the selected projector are computed against that target. Results include `calculationTarget` name and type; CSV/HTML reports include the target.
+`recomputeCalculations` uses the **explicit calculation target** (`calculationTargetId`), not the selected object. Footprint/overlap for the selected projector are computed against that target. **Sampled coverage analysis** (`coverageAnalysis`) uses the same target plus `analysisQuality`. Results include `calculationTarget` name and type; CSV/HTML reports include the target and sampled metrics.
 
 Shared-canvas **rendering** still uses `resolveSharedCanvasSupport()` for surface UV mapping (primary receiver for mapping). This is intentionally separate from the calculation target.
 
@@ -212,7 +258,7 @@ Shared-canvas **rendering** still uses `resolveSharedCanvasSupport()` for surfac
 
 ## Tests
 
-### Vitest (41 tests)
+### Vitest (56 tests)
 
 | Test | File | Description |
 |------|------|-------------|
@@ -224,13 +270,14 @@ Shared-canvas **rendering** still uses `resolveSharedCanvasSupport()` for surfac
 | 4 | `src/projection/sharedCanvasMapping.test.ts` | Shared-canvas screen UV mapping |
 | R | `src/store/reliabilitySettings.test.ts` | Source/target resolution and fallback |
 | R | `src/store/reliabilityState.test.ts` | Store selection independence, undo, serialization |
+| CR | `src/coverage/coverageAnalysis.test.ts` | Sampled geometric/visible coverage, occlusion, curved, convergence |
 | 5 | `src/blending/blendWeights.test.ts` | Blend weights sum to 1; no double brightness |
 
 Additional unit tests: `clipFootprint`, `curvedFootprint`, `history`, `reportExport`, `projectSerializer`.
 
 ### Playwright
 
-`e2e/smoke.spec.ts` — app shell, panels, and reliability regression (shared source + calculation target stable across selection).
+`e2e/smoke.spec.ts` — app shell, panels, reliability regression (shared source + calculation target stable across selection), and visible coverage blocker scenario.
 
 ---
 
@@ -266,7 +313,9 @@ Annotated tags for rollback:
 |---------|--------|
 | Per-projector raster preview panel | Deferred |
 | Brightness/lux photometry estimates | Deferred |
-| Curved footprint area | Approximate (`radius × arcSpan × heightSpan`) |
+| Curved footprint area (analytic beam) | Approximate (`radius × arcSpan × heightSpan`) |
+| Sampled coverage accuracy | Resolution-dependent; no guaranteed error bound |
+| Imported mesh occluders in sampling | Not supported |
 | Shared-canvas on imported meshes | Uses mesh UV when model is the primary receiver |
 | Digital warp / homography correction | Not implemented (separate from lens shift) |
 

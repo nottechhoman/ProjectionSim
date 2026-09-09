@@ -31,8 +31,16 @@ uniform float sharedRasterAspect;
 uniform vec3 sharedProjectorColor;
 uniform float sharedBrightness;
 
+uniform int projectionSides;
+
 varying vec3 vWorldPos;
 varying vec2 vSurfaceUv;
+
+bool receivesOnThisFace() {
+  if (projectionSides >= 2) return true;
+  if (projectionSides == 0) return gl_FrontFacing;
+  return !gl_FrontFacing;
+}
 
 float checker(vec2 uv) {
   vec2 c = floor(uv * 16.0);
@@ -146,6 +154,11 @@ vec3 heatmapColor(int count) {
 }
 
 void main() {
+  if (!receivesOnThisFace()) {
+    gl_FragColor = vec4(surfaceBaseColor, 1.0);
+    return;
+  }
+
   vec3 sumColor = vec3(0.0);
   float sumWeight = 0.0;
   int hitCount = 0;

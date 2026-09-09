@@ -21,6 +21,7 @@ function resetStore(): void {
       footprint: null,
       opticsError: null,
       overlap: null,
+      coverageAnalysis: null,
       calculationTarget: null,
     },
     shaderWarning: null,
@@ -71,6 +72,7 @@ describe('reliability store state', () => {
     vi.stubGlobal('window', { confirm: () => true });
     useAppStore.getState().updateSceneObjectFlags('screen-1', { receivesProjection: false });
     expect(useAppStore.getState().calculationResults.nominal).toBeNull();
+    expect(useAppStore.getState().calculationResults.coverageAnalysis).toBeNull();
     expect(useAppStore.getState().calculationResults.calculationTarget).toBeNull();
     vi.unstubAllGlobals();
   });

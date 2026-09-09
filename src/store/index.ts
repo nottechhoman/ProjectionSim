@@ -23,10 +23,12 @@ import type {
   TransformMode,
   Vec3,
   ViewPreset,
+  AnalysisQuality,
+  CalculationTargetSide,
 } from '../types';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
-import { computePlanarFootprint, computeCurvedFootprint, computeAlignedOverlap, computeCurvedOverlap } from '../coverage';
+import { computePlanarFootprint, computeCurvedFootprint, computeAlignedOverlap, computeCurvedOverlap, computeSampledCoverageAnalysis } from '../coverage';
 import { DEFAULT_BLEND_EDGES, MAX_PROJECTORS, PROJECTOR_PALETTE } from '../types';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import {
@@ -77,7 +79,9 @@ interface AppState extends PersistedStateSlice {
   ) => void;
   updateSceneObjectFlags: (
     id: string,
-    patch: Partial<Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'blocksProjection'>>,
+    patch: Partial<
+      Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'blocksProjection' | 'projectionSides'>
+    >,
   ) => void;
   removeSceneObject: (id: string) => void;
   setDisplayUnit: (u: DisplayUnit) => void;
@@ -86,6 +90,8 @@ interface AppState extends PersistedStateSlice {
   setMappingMode: (mode: MappingMode) => void;
   setSharedContentSourceProjectorId: (id: string | null) => void;
   setCalculationTargetId: (id: string | null) => void;
+  setAnalysisQuality: (quality: AnalysisQuality) => void;
+  setCalculationTargetSide: (side: CalculationTargetSide) => void;
   getSharedCanvasSupport: () => { supported: boolean; reason: string | null };
   setShowProjectionBeam: (show: boolean) => void;
   toggleProjectionBeam: () => void;
@@ -199,6 +205,8 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     mappingMode: state.mappingMode,
     sharedContentSourceProjectorId: state.sharedContentSourceProjectorId,
     calculationTargetId: state.calculationTargetId,
+    analysisQuality: state.analysisQuality,
+    calculationTargetSide: state.calculationTargetSide,
     selectedObjectId: state.selectedObjectId,
     selectedProjectorId: state.selectedProjectorId,
     displayUnit: state.displayUnit,
@@ -229,6 +237,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   mappingMode: initial.mappingMode,
   sharedContentSourceProjectorId: initial.sharedContentSourceProjectorId,
   calculationTargetId: initial.calculationTargetId,
+  analysisQuality: initial.analysisQuality,
+  calculationTargetSide: initial.calculationTargetSide,
   selectedObjectId: initial.selectedObjectId,
   selectedProjectorId: initial.selectedProjectorId,
   displayUnit: initial.displayUnit,
@@ -244,6 +254,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     footprint: null,
     opticsError: null,
     overlap: null,
+    coverageAnalysis: null,
     calculationTarget: null,
   },
   shaderWarning: null,
@@ -350,6 +361,14 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCalculationTargetId: (id) => {
     pushSceneHistory(get, set);
     set({ calculationTargetId: id });
+    get().recomputeCalculations();
+  },
+  setAnalysisQuality: (quality) => {
+    set({ analysisQuality: quality });
+    get().recomputeCalculations();
+  },
+  setCalculationTargetSide: (side) => {
+    set({ calculationTargetSide: side });
     get().recomputeCalculations();
   },
   getSharedCanvasSupport: () => {
@@ -527,7 +546,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   setTransformMode: (mode) => set({ transformMode: mode }),
   recomputeCalculations: () => {
-    const { projectors, sceneObjects, selectedProjectorId, calculationTargetId } = get();
+    const { projectors, sceneObjects, selectedProjectorId, calculationTargetId, analysisQuality, calculationTargetSide } = get();
     const proj = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
     if (!proj) {
       set({
@@ -536,6 +555,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           footprint: null,
           opticsError: null,
           overlap: null,
+          coverageAnalysis: null,
           calculationTarget: null,
         },
       });
@@ -554,6 +574,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           footprint: null,
           opticsError: null,
           overlap: null,
+          coverageAnalysis: null,
           calculationTarget: null,
         },
       });
@@ -595,6 +616,14 @@ export const useAppStore = create<AppState>((set, get) => ({
       overlap = computeCurvedOverlap(projectors, curvedSurface);
     }
 
+    const coverageAnalysis = computeSampledCoverageAnalysis({
+      receiver: screen,
+      sceneObjects,
+      projectors,
+      quality: analysisQuality,
+      targetSide: calculationTargetSide,
+    });
+
     const distance = footprint?.axialDistance ?? 6;
     const nominal = computeNominalProjection(proj.optics, distance);
     set({
@@ -603,6 +632,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         footprint,
         opticsError: null,
         overlap,
+        coverageAnalysis,
         calculationTarget: targetInfo,
       },
     });
@@ -765,6 +795,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         footprint: null,
         opticsError: null,
         overlap: null,
+        coverageAnalysis: null,
         calculationTarget: null,
       },
       videoPlaying: false,
@@ -798,6 +829,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         footprint: null,
         opticsError: null,
         overlap: null,
+        coverageAnalysis: null,
         calculationTarget: null,
       },
         videoPlaying: false,

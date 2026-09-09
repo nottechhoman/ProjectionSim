@@ -23,6 +23,13 @@ export type ProjectionCompositeMode = 'solo' | 'unblended' | 'heatmap' | 'blende
 
 export type MappingMode = 'raw' | 'sharedCanvas';
 
+export type AnalysisQuality = 'draft' | 'high';
+
+export type ProjectionSides = 'front' | 'back' | 'both';
+
+/** Which face(s) of the calculation target to analyze. */
+export type CalculationTargetSide = 'front' | 'back' | 'both';
+
 export interface BlendEdges {
   /** Feather width as fraction of image width/height (0–0.5). */
   left: number;
@@ -62,6 +69,8 @@ export interface SceneObject {
   visibleInEditor: boolean;
   receivesProjection: boolean;
   blocksProjection: boolean;
+  /** Which mesh faces receive projection (thin surfaces only). Default: front. */
+  projectionSides?: ProjectionSides;
   /** Width, height, depth in meters (depth optional for planes) */
   dimensions: { width: number; height: number; depth?: number };
   /** Curved screen: radius (m), arc angle (degrees), height (m) */
@@ -151,11 +160,50 @@ export interface OverlapResults {
   horizontalOverlapM: number | null;
 }
 
+export interface ProjectorCoverageMetrics {
+  projectorId: string;
+  geometricCoveredArea: number;
+  visibleCoveredArea: number;
+  blockedArea: number;
+}
+
+/** Area-weighted surface sampling results — distinct from analytic overlap metrics. */
+export interface SampledCoverageAnalysis {
+  method: 'surface-sampling';
+  quality: AnalysisQuality;
+  targetSide: CalculationTargetSide;
+  samplingResolution: { u: number; v: number };
+  receiverArea: number;
+  geometricCoveredArea: number;
+  visibleCoveredArea: number;
+  uncoveredArea: number;
+  visibleOverlapArea: number;
+  occlusionLossArea: number;
+  perProjector: ProjectorCoverageMetrics[];
+  perSide?: {
+    front?: SampledCoverageSideMetrics;
+    back?: SampledCoverageSideMetrics;
+  };
+  eligibleProjectorIds: string[];
+  assumptions: string[];
+  limitations: string[];
+}
+
+export interface SampledCoverageSideMetrics {
+  receiverArea: number;
+  geometricCoveredArea: number;
+  visibleCoveredArea: number;
+  uncoveredArea: number;
+  visibleOverlapArea: number;
+  occlusionLossArea: number;
+}
+
 export interface CalculationResults {
   nominal: NominalProjection | null;
   footprint: FootprintResult | null;
   opticsError: string | null;
   overlap: OverlapResults | null;
+  coverageAnalysis: SampledCoverageAnalysis | null;
   calculationTarget: {
     id: string;
     name: string;

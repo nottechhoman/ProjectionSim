@@ -19,6 +19,11 @@ import type {
   TransformMode,
   ViewPreset,
 } from '../types';
+import {
+  normalizeProjectionSides,
+  projectionSidesToInt,
+  supportsProjectionSides,
+} from '../projection/projectionSides';
 import { createScreen } from './objects/createScreen';
 import { createFloor } from './objects/createFloor';
 import { createBox } from './objects/createBox';
@@ -82,6 +87,22 @@ function createObjectMesh(obj: SceneObject): THREE.Object3D {
     }
     default:
       return createScreen(obj);
+  }
+}
+
+function attachProjectionSideUniform(mesh: THREE.Mesh, sidesInt: number): void {
+  mesh.userData.projectionSides = sidesInt;
+  mesh.onBeforeRender = (_renderer, _scene, _camera, _geometry, material) => {
+    const mat = material as THREE.ShaderMaterial;
+    if (mat.uniforms?.projectionSides) {
+      mat.uniforms.projectionSides.value = mesh.userData.projectionSides ?? 0;
+    }
+  };
+}
+
+function syncReceiverMeshSides(root: THREE.Object3D, sidesInt: number): void {
+  for (const mesh of collectMeshes(root)) {
+    attachProjectionSideUniform(mesh, sidesInt);
   }
 }
 
@@ -630,6 +651,9 @@ export class SceneEngine {
       obj3d.userData.id = obj.id;
       obj3d.userData.receivesProjection = obj.receivesProjection;
       obj3d.userData.blocksProjection = obj.blocksProjection;
+      if (supportsProjectionSides(obj.type)) {
+        syncReceiverMeshSides(obj3d, projectionSidesToInt(normalizeProjectionSides(obj)));
+      }
     }
   }
 

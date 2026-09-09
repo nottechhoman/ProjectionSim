@@ -1,4 +1,5 @@
 import type { CalculationResults, DisplayUnit, ProjectorConfig } from '../types';
+import { percentOfReceiver } from '../coverage/coverageAnalysis';
 import { formatLength } from '../utils/units';
 
 export interface ReportContext {
@@ -20,7 +21,7 @@ function escapeCsv(value: string | number | null | undefined): string {
 }
 
 export function buildCalculationCsv(ctx: ReportContext): string {
-  const { nominal, footprint, overlap } = ctx.calculationResults;
+  const { nominal, footprint, overlap, coverageAnalysis } = ctx.calculationResults;
   const rows: string[][] = [
     ['ProjectionLab Calculation Report'],
     ['Project', ctx.projectName],
@@ -98,6 +99,97 @@ export function buildCalculationCsv(ctx: ReportContext): string {
     }
   }
 
+  if (coverageAnalysis) {
+    const denom = coverageAnalysis.receiverArea;
+    rows.push(
+      ['Coverage (sampled)', 'Method', 'surface-sampling'],
+      ['Coverage (sampled)', 'Analyze side', coverageAnalysis.targetSide],
+      ['Coverage (sampled)', 'Quality', coverageAnalysis.quality],
+      [
+        'Coverage (sampled)',
+        'Sampling resolution',
+        `${coverageAnalysis.samplingResolution.u}×${coverageAnalysis.samplingResolution.v}`,
+      ],
+      ['Coverage (sampled)', 'Receiver area (m²)', coverageAnalysis.receiverArea.toFixed(4)],
+      [
+        'Coverage (sampled)',
+        'Geometric covered area (m²)',
+        coverageAnalysis.geometricCoveredArea.toFixed(4),
+      ],
+      [
+        'Coverage (sampled)',
+        'Geometric covered (%)',
+        `${percentOfReceiver(coverageAnalysis.geometricCoveredArea, denom).toFixed(2)}% of receiver`,
+      ],
+      [
+        'Coverage (sampled)',
+        'Visible covered area (m²)',
+        coverageAnalysis.visibleCoveredArea.toFixed(4),
+      ],
+      [
+        'Coverage (sampled)',
+        'Visible covered (%)',
+        `${percentOfReceiver(coverageAnalysis.visibleCoveredArea, denom).toFixed(2)}% of receiver`,
+      ],
+      ['Coverage (sampled)', 'Uncovered area (m²)', coverageAnalysis.uncoveredArea.toFixed(4)],
+      [
+        'Coverage (sampled)',
+        'Visible overlap area (m²)',
+        coverageAnalysis.visibleOverlapArea.toFixed(4),
+      ],
+      [
+        'Coverage (sampled)',
+        'Occlusion loss area (m²)',
+        coverageAnalysis.occlusionLossArea.toFixed(4),
+      ],
+    );
+    for (const id of coverageAnalysis.eligibleProjectorIds) {
+      const proj = ctx.projectors.find((p) => p.id === id);
+      rows.push([
+        'Eligible projector',
+        id,
+        proj ? `${proj.name} (enabled)` : id,
+      ]);
+    }
+    for (const metrics of coverageAnalysis.perProjector) {
+      const name = projectorName(ctx.projectors, metrics.projectorId);
+      rows.push(
+        ['Per-projector coverage', `${name} geometric (m²)`, metrics.geometricCoveredArea.toFixed(4)],
+        ['Per-projector coverage', `${name} visible (m²)`, metrics.visibleCoveredArea.toFixed(4)],
+        ['Per-projector coverage', `${name} blocked (m²)`, metrics.blockedArea.toFixed(4)],
+      );
+    }
+    for (const line of coverageAnalysis.assumptions) {
+      rows.push(['Assumption', '', line]);
+    }
+    for (const line of coverageAnalysis.limitations) {
+      rows.push(['Limitation', '', line]);
+    }
+  }
+
+  rows.push([]);
+  rows.push(['Projector optics', 'Lens shift convention', 'setViewOffset with negative shift fractions']);
+  for (const proj of ctx.projectors) {
+    rows.push(
+      ['Projector', 'ID', proj.id],
+      ['Projector', 'Name', proj.name],
+      ['Projector', 'Enabled', proj.enabled ? 'yes' : 'no'],
+      [
+        'Projector',
+        'Position (m)',
+        `${proj.transform.position.x}, ${proj.transform.position.y}, ${proj.transform.position.z}`,
+      ],
+      [
+        'Projector',
+        'Rotation (quaternion)',
+        proj.transform.quaternion.join(', '),
+      ],
+      ['Projector', 'Resolution', `${proj.optics.resolution.width}×${proj.optics.resolution.height}`],
+      ['Projector', 'Throw ratio', String(proj.optics.throwRatio)],
+      ['Projector', 'Lens shift H/V', `${proj.optics.lensShiftH}, ${proj.optics.lensShiftV}`],
+    );
+  }
+
   return rows.map((row) => row.map(escapeCsv).join(',')).join('\n');
 }
 
@@ -110,7 +202,7 @@ function escapeHtml(value: string | number | null | undefined): string {
 }
 
 export function buildCalculationHtml(ctx: ReportContext): string {
-  const { nominal, footprint, overlap } = ctx.calculationResults;
+  const { nominal, footprint, overlap, coverageAnalysis } = ctx.calculationResults;
   const exportedAt = ctx.exportedAt ?? new Date().toISOString();
 
   const row = (label: string, value: string) =>
@@ -164,6 +256,65 @@ ${overlap.combinedWidthM != null ? row('Combined width', formatLength(overlap.co
       body += '</tbody></table>';
     }
   }
+
+  if (coverageAnalysis) {
+    const denom = coverageAnalysis.receiverArea;
+    body += `<h2>Coverage reliability (sampled)</h2><table>
+${row('Method', 'surface-sampling')}
+${row('Quality', coverageAnalysis.quality)}
+${row('Sampling resolution', `${coverageAnalysis.samplingResolution.u}×${coverageAnalysis.samplingResolution.v}`)}
+${row('Receiver area', `${coverageAnalysis.receiverArea.toFixed(2)} m²`)}
+${row('Geometric coverage', `${coverageAnalysis.geometricCoveredArea.toFixed(2)} m² (${percentOfReceiver(coverageAnalysis.geometricCoveredArea, denom).toFixed(1)}% of receiver)`)}
+${row('Visible coverage', `${coverageAnalysis.visibleCoveredArea.toFixed(2)} m² (${percentOfReceiver(coverageAnalysis.visibleCoveredArea, denom).toFixed(1)}% of receiver)`)}
+${row('Uncovered', `${coverageAnalysis.uncoveredArea.toFixed(2)} m² (${percentOfReceiver(coverageAnalysis.uncoveredArea, denom).toFixed(1)}% of receiver)`)}
+${row('Visible overlap', `${coverageAnalysis.visibleOverlapArea.toFixed(2)} m² (${percentOfReceiver(coverageAnalysis.visibleOverlapArea, denom).toFixed(1)}% of receiver)`)}
+${row('Occlusion loss', `${coverageAnalysis.occlusionLossArea.toFixed(2)} m² (${percentOfReceiver(coverageAnalysis.occlusionLossArea, denom).toFixed(1)}% of receiver)`)}
+</table>`;
+
+    if (coverageAnalysis.perProjector.length > 0) {
+      body += '<h3>Per-projector coverage</h3><table><thead><tr><th>Projector</th><th>Geometric</th><th>Visible</th><th>Blocked</th></tr></thead><tbody>';
+      for (const metrics of coverageAnalysis.perProjector) {
+        const name = projectorName(ctx.projectors, metrics.projectorId);
+        body += `<tr>
+<td>${escapeHtml(name)}</td>
+<td>${escapeHtml(metrics.geometricCoveredArea.toFixed(2))} m²</td>
+<td>${escapeHtml(metrics.visibleCoveredArea.toFixed(2))} m²</td>
+<td>${escapeHtml(metrics.blockedArea.toFixed(2))} m²</td>
+</tr>`;
+      }
+      body += '</tbody></table>';
+    }
+
+    if (coverageAnalysis.assumptions.length > 0) {
+      body += '<h3>Assumptions</h3><ul>';
+      for (const line of coverageAnalysis.assumptions) {
+        body += `<li>${escapeHtml(line)}</li>`;
+      }
+      body += '</ul>';
+    }
+    if (coverageAnalysis.limitations.length > 0) {
+      body += '<h3>Limitations</h3><ul>';
+      for (const line of coverageAnalysis.limitations) {
+        body += `<li>${escapeHtml(line)}</li>`;
+      }
+      body += '</ul>';
+    }
+  }
+
+  body += `<h2>Projector parameters</h2>
+<p><strong>Lens shift convention:</strong> setViewOffset with negative shift fractions (see optics module).</p>
+<table><thead><tr><th>Name</th><th>Enabled</th><th>Position</th><th>Resolution</th><th>Throw</th><th>Lens shift H/V</th></tr></thead><tbody>`;
+  for (const proj of ctx.projectors) {
+    body += `<tr>
+<td>${escapeHtml(proj.name)}</td>
+<td>${escapeHtml(proj.enabled ? 'yes' : 'no')}</td>
+<td>${escapeHtml(`${proj.transform.position.x}, ${proj.transform.position.y}, ${proj.transform.position.z}`)}</td>
+<td>${escapeHtml(`${proj.optics.resolution.width}×${proj.optics.resolution.height}`)}</td>
+<td>${escapeHtml(String(proj.optics.throwRatio))}</td>
+<td>${escapeHtml(`${proj.optics.lensShiftH}, ${proj.optics.lensShiftV}`)}</td>
+</tr>`;
+  }
+  body += '</tbody></table>';
 
   if (!nominal) {
     body += '<p>No calculation results available for the current selection.</p>';

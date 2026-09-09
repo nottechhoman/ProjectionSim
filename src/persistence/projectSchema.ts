@@ -21,6 +21,8 @@ export interface ProjectSnapshotV2 {
   mappingMode?: import('../types').MappingMode;
   sharedContentSourceProjectorId?: string | null;
   calculationTargetId?: string | null;
+  analysisQuality?: import('../types').AnalysisQuality;
+  calculationTargetSide?: import('../types').CalculationTargetSide;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;

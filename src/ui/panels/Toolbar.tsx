@@ -241,7 +241,7 @@ export function Toolbar() {
                 ? 'Raw'
                 : mode === 'blended'
                   ? 'Blend'
-                  : 'Heatmap'}
+                  : 'Coverage Count'}
           </button>
         ))}
       </div>
