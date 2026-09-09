@@ -79,6 +79,8 @@ function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
     mediaFit: raw.mediaFit ?? 'contain',
     blendEdges: raw.blendEdges ?? { ...DEFAULT_BLEND_EDGES },
     outerEdgeFade: raw.outerEdgeFade ?? false,
+    lookAtEnabled: raw.lookAtEnabled ?? false,
+    lookAtTarget: raw.lookAtTarget ?? { x: 0, y: 1.5, z: 0 },
   };
 }
 

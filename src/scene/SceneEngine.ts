@@ -31,6 +31,8 @@ import { createCurvedScreen } from './objects/createCurvedScreen';
 import { FrustumHelper } from './helpers/FrustumHelper';
 import { mediaTextureCache, modelCache } from '../media';
 import { cloneModelGroup } from './ModelLoader';
+import { computeProjectorLookAtQuaternion, rollFromProjectorQuaternion } from '../optics/lookAt';
+import { getCalculationTargetObject } from '../store/reliabilitySettings';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../utils/euler';
 import { unprojectRasterRay } from '../optics/rays';
 import { computePlanarFootprint } from '../coverage/planarFootprint';
@@ -130,14 +132,19 @@ function objectWorldMatrix(transform: Transform): THREE.Matrix4 {
   return matrix;
 }
 
-function buildPlanarScreen(sceneObjects: SceneObject[]): {
+function buildPlanarScreen(
+  sceneObjects: SceneObject[],
+  calculationTargetId: string | null,
+): {
   center: THREE.Vector3;
   normal: THREE.Vector3;
   width: number;
   height: number;
 } | null {
-  const screen = sceneObjects.find((obj) => obj.type === 'screen' && obj.receivesProjection);
-  if (!screen) return null;
+  const screen =
+    getCalculationTargetObject(sceneObjects, calculationTargetId) ??
+    sceneObjects.find((obj) => obj.type === 'screen' && obj.receivesProjection);
+  if (!screen || screen.type !== 'screen') return null;
   const matrix = objectWorldMatrix(screen.transform);
   const center = new THREE.Vector3().setFromMatrixPosition(matrix);
   const normal = new THREE.Vector3(0, 0, 1)
@@ -151,9 +158,14 @@ function buildPlanarScreen(sceneObjects: SceneObject[]): {
   };
 }
 
-function buildCurvedScreenSurface(sceneObjects: SceneObject[]): CurvedScreenSurface | null {
-  const screen = sceneObjects.find((obj) => obj.type === 'curvedScreen' && obj.receivesProjection);
-  if (!screen?.curved) return null;
+function buildCurvedScreenSurface(
+  sceneObjects: SceneObject[],
+  calculationTargetId: string | null,
+): CurvedScreenSurface | null {
+  const screen =
+    getCalculationTargetObject(sceneObjects, calculationTargetId) ??
+    sceneObjects.find((obj) => obj.type === 'curvedScreen' && obj.receivesProjection);
+  if (!screen || screen.type !== 'curvedScreen' || !screen.curved) return null;
   return {
     worldMatrix: objectWorldMatrix(screen.transform),
     radius: screen.curved.radius,
@@ -223,6 +235,9 @@ export class SceneEngine {
   private gizmoDragging = false;
   private gizmoRotateStartEuler: { yaw: number; pitch: number; roll: number } | null = null;
   private gizmoRotateStartQuat: THREE.Quaternion | null = null;
+  private gizmoOrbitStartOffset: THREE.Vector3 | null = null;
+  private calculationTargetId: string | null = null;
+  private readonly lookAtMarkers = new Map<string, THREE.Mesh>();
   private currentTransformMode: TransformMode = 'translate';
   private showProjectionBeam = false;
   private measureMode = false;
@@ -287,8 +302,8 @@ export class SceneEngine {
         this.callbacks.onHistoryCheckpoint?.();
       }
 
-      if (this.gizmoDragging && this.transformControls?.mode === 'rotate') {
-        const obj = this.transformControls.object;
+      if (this.gizmoDragging) {
+        const obj = this.transformControls?.object;
         const isProjector =
           obj &&
           [...this.projectorVisuals.values()].some((visual) => visual.body === obj);
@@ -300,10 +315,16 @@ export class SceneEngine {
             obj.quaternion.z,
             obj.quaternion.w,
           ]);
+          const proj = this.findProjectorByBody(obj);
+          if (proj?.lookAtEnabled && this.transformControls?.mode === 'rotate') {
+            const target = this.lookAtTargetVec(proj);
+            this.gizmoOrbitStartOffset = obj.position.clone().sub(target);
+          }
         }
       } else if (!this.gizmoDragging) {
         this.gizmoRotateStartEuler = null;
         this.gizmoRotateStartQuat = null;
+        this.gizmoOrbitStartOffset = null;
       }
     });
     this.transformControls.addEventListener('change', () => {
@@ -392,6 +413,7 @@ export class SceneEngine {
     this.mappingMode = state.mappingMode;
     this.sharedContentSourceProjectorId = state.sharedContentSourceProjectorId;
     this.showProjectionBeam = state.showProjectionBeam;
+    this.calculationTargetId = state.calculationTargetId;
     this.syncProjectors(
       state.projectors,
       state.selectedProjectorId,
@@ -485,18 +507,67 @@ export class SceneEngine {
     this.transformControls.detach();
   }
 
+  private lookAtTargetVec(projector: ProjectorConfig): THREE.Vector3 {
+    const t = projector.lookAtTarget ?? { x: 0, y: 1.5, z: 0 };
+    return new THREE.Vector3(t.x, t.y, t.z);
+  }
+
+  private findProjectorByBody(body: THREE.Object3D): ProjectorConfig | undefined {
+    for (const [projId, visual] of this.projectorVisuals) {
+      if (visual.body === body) {
+        return this.allProjectors.find((p) => p.id === projId);
+      }
+    }
+    return undefined;
+  }
+
   private handleGizmoChange(): void {
     const tc = this.transformControls;
     const obj = tc?.object;
     if (!obj || !tc) return;
 
     let q = obj.quaternion;
+    const projector = this.findProjectorByBody(obj);
+    const isProjector = projector != null;
 
-    const isProjector = [...this.projectorVisuals.values()].some((visual) => visual.body === obj);
+    if (isProjector && projector.lookAtEnabled) {
+      const target = this.lookAtTargetVec(projector);
+      const start = this.gizmoRotateStartEuler;
+      const pos = { x: obj.position.x, y: obj.position.y, z: obj.position.z };
 
-    // Projectors use YXZ yaw/pitch/roll — map gizmo rings to single inspector fields.
-    // Scene objects use the gizmo quaternion directly (YXZ remapping breaks their rotation).
-    if (
+      if (
+        this.currentTransformMode === 'rotate' &&
+        start &&
+        this.gizmoRotateStartQuat &&
+        this.gizmoOrbitStartOffset &&
+        tc.axis &&
+        (tc.axis === 'X' || tc.axis === 'Y' || tc.axis === 'Z')
+      ) {
+        const qDelta = this.gizmoRotateStartQuat.clone().invert().multiply(q).normalize();
+        const angleDeg = deltaAngleDegreesForAxis(qDelta, tc.axis);
+
+        if (tc.axis === 'Z') {
+          const roll = start.roll + angleDeg;
+          const quat = computeProjectorLookAtQuaternion(pos, target, roll);
+          obj.quaternion.set(quat[0], quat[1], quat[2], quat[3]);
+        } else {
+          const newOffset = this.gizmoOrbitStartOffset.clone().applyQuaternion(qDelta);
+          const newPos = target.clone().add(newOffset);
+          obj.position.copy(newPos);
+          const quat = computeProjectorLookAtQuaternion(
+            { x: newPos.x, y: newPos.y, z: newPos.z },
+            { x: target.x, y: target.y, z: target.z },
+            start.roll,
+          );
+          obj.quaternion.set(quat[0], quat[1], quat[2], quat[3]);
+        }
+      } else if (this.currentTransformMode === 'translate') {
+        const roll = start?.roll ?? rollFromProjectorQuaternion(projector.transform.quaternion);
+        const quat = computeProjectorLookAtQuaternion(pos, target, roll);
+        obj.quaternion.set(quat[0], quat[1], quat[2], quat[3]);
+      }
+      q = obj.quaternion;
+    } else if (
       isProjector &&
       this.currentTransformMode === 'rotate' &&
       this.gizmoRotateStartEuler &&
@@ -671,6 +742,31 @@ export class SceneEngine {
     return visual;
   }
 
+  private syncLookAtMarker(projector: ProjectorConfig): void {
+    let marker = this.lookAtMarkers.get(projector.id);
+    if (!projector.lookAtEnabled) {
+      if (marker) marker.visible = false;
+      return;
+    }
+
+    if (!marker) {
+      const geo = new THREE.SphereGeometry(0.12, 12, 12);
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xff9800,
+        emissive: 0xff9800,
+        emissiveIntensity: 0.35,
+      });
+      marker = new THREE.Mesh(geo, mat);
+      marker.userData.pickId = `lookat-${projector.id}`;
+      this.lookAtMarkers.set(projector.id, marker);
+      this.helpersGroup.add(marker);
+    }
+
+    const t = projector.lookAtTarget ?? { x: 0, y: 1.5, z: 0 };
+    marker.position.set(t.x, t.y, t.z);
+    marker.visible = projector.enabled;
+  }
+
   private syncProjectors(
     projectors: ProjectorConfig[],
     selectedProjectorId: string,
@@ -681,10 +777,18 @@ export class SceneEngine {
     this.selectedProjectorId = selectedProjectorId;
     const enabled = projectors.filter((p) => p.enabled);
     this.activeProjectors = enabled;
-    const planarScreen = buildPlanarScreen(sceneObjects);
-    const curvedScreen = buildCurvedScreenSurface(sceneObjects);
+    const planarScreen = buildPlanarScreen(sceneObjects, this.calculationTargetId);
+    const curvedScreen = buildCurvedScreenSurface(sceneObjects, this.calculationTargetId);
 
     const nextIds = new Set(projectors.map((p) => p.id));
+    for (const [id, marker] of this.lookAtMarkers) {
+      if (!nextIds.has(id)) {
+        this.helpersGroup.remove(marker);
+        marker.geometry.dispose();
+        (marker.material as THREE.Material).dispose();
+        this.lookAtMarkers.delete(id);
+      }
+    }
     for (const [id, visual] of this.projectorVisuals) {
       if (!nextIds.has(id)) {
         this.helpersGroup.remove(visual.body, visual.frustum);
@@ -724,13 +828,16 @@ export class SceneEngine {
 
       let footprintCorners: { x: number; y: number; z: number }[] | null = null;
       let footprintOutline: { x: number; y: number; z: number }[] | undefined;
+      let axialDistance: number | null = null;
       if (planarScreen) {
         const footprint = computePlanarFootprint(projector.optics, worldMatrix, planarScreen);
+        axialDistance = footprint.axialDistance;
         if (footprint.corners.length === 4) {
           footprintCorners = offsetCornersAlongNormal(footprint.corners, planarScreen.normal, 0.01);
         }
       } else if (curvedScreen) {
         const footprint = computeCurvedFootprint(projector.optics, worldMatrix, curvedScreen);
+        axialDistance = footprint.axialDistance;
         if (footprint.corners.length === 4) {
           footprintCorners = footprint.corners;
           footprintOutline = footprint.beamOutline;
@@ -739,12 +846,15 @@ export class SceneEngine {
 
       const previewLength = Math.max(
         2,
-        Math.hypot(
-          projector.transform.position.x,
-          projector.transform.position.y,
-          projector.transform.position.z,
-        ) * 0.5,
+        axialDistance ??
+          Math.hypot(
+            projector.transform.position.x,
+            projector.transform.position.y,
+            projector.transform.position.z,
+          ),
       );
+
+      this.syncLookAtMarker(projector);
 
       visual.frustum.updateVisuals(cornerRays, projector.color, {
         footprintCorners,

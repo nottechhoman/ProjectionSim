@@ -26,6 +26,7 @@ import type {
   AnalysisQuality,
   CalculationTargetSide,
 } from '../types';
+import { applyLookAtToProjector } from '../optics/lookAt';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
 import { computePlanarFootprint, computeCurvedFootprint, computeAlignedOverlap, computeCurvedOverlap, computeSampledCoverageAnalysis } from '../coverage';
@@ -274,7 +275,19 @@ export const useAppStore = create<AppState>((set, get) => ({
   setSelectedProjector: (id) => set({ selectedProjectorId: id, selectedObjectId: id }),
   updateProjector: (id, patch) => {
     set((s) => ({
-      projectors: s.projectors.map((p) => (p.id === id ? { ...p, ...patch } : p)),
+      projectors: s.projectors.map((p) => {
+        if (p.id !== id) return p;
+        const merged = { ...p, ...patch };
+        if (!merged.lookAtEnabled) return merged;
+        if (
+          patch.lookAtEnabled === true ||
+          patch.lookAtTarget !== undefined ||
+          patch.transform?.position !== undefined
+        ) {
+          return applyLookAtToProjector(merged);
+        }
+        return merged;
+      }),
     }));
     get().recomputeCalculations();
   },

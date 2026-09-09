@@ -114,6 +114,9 @@ export interface ProjectorConfig {
   mediaFit: MediaFitMode;
   blendEdges: BlendEdges;
   outerEdgeFade: boolean;
+  /** When true, projector orientation aims at lookAtTarget (orbit on rotate). */
+  lookAtEnabled?: boolean;
+  lookAtTarget?: Vec3;
 }
 
 export interface NominalProjection {

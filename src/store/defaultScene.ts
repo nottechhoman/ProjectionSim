@@ -57,5 +57,7 @@ export const DEFAULT_PROJECTORS: ProjectorConfig[] = [
     mediaFit: 'contain',
     blendEdges: { left: 0, right: 0, top: 0, bottom: 0 },
     outerEdgeFade: false,
+    lookAtEnabled: true,
+    lookAtTarget: { x: 0, y: 1.5, z: 0 },
   },
 ];

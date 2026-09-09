@@ -1,5 +1,7 @@
 import { useAppStore } from '../../store';
-import type { ProjectionSides, TestPattern } from '../../types';
+import { getCalculationTargetObject } from '../../store/reliabilitySettings';
+import type { ProjectionSides, TestPattern, Vec3 } from '../../types';
+import { computeProjectorLookAtQuaternion, defaultLookAtTarget } from '../../optics/lookAt';
 import { supportsProjectionSides } from '../../projection/projectionSides';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../../utils/euler';
 import { fromDisplayUnit, toDisplayUnit } from '../../utils/units';
@@ -34,6 +36,7 @@ export function Inspector() {
   const updateSceneObjectFlags = useAppStore((s) => s.updateSceneObjectFlags);
   const mediaAssets = useAppStore((s) => s.mediaAssets);
   const setProjectorMedia = useAppStore((s) => s.setProjectorMedia);
+  const calculationTargetId = useAppStore((s) => s.calculationTargetId);
 
   const projector = projectors.find((p) => p.id === selectedObjectId);
   const sceneObject = sceneObjects.find((o) => o.id === selectedObjectId);
@@ -83,12 +86,37 @@ export function Inspector() {
 
   const setRotation = (yaw: number, pitch: number, roll: number) => {
     pushSceneHistoryCheckpoint();
+    if (projector?.lookAtEnabled) {
+      const target = projector.lookAtTarget ?? defaultLookAtTarget();
+      const quaternion = computeProjectorLookAtQuaternion(transform.position, target, roll);
+      updateProjector(projector.id, { transform: { ...transform, quaternion } });
+      return;
+    }
     const quaternion = eulerYXZToQuaternion(yaw, pitch, roll);
     if (projector) {
       updateProjector(projector.id, { transform: { ...transform, quaternion } });
     } else if (sceneObject) {
       updateSceneObjectTransform(sceneObject.id, { quaternion });
     }
+  };
+
+  const setLookAtTarget = (axis: 'x' | 'y' | 'z', displayValue: number) => {
+    if (!projector) return;
+    pushSceneHistoryCheckpoint();
+    const meters = fromDisplayUnit(displayValue, displayUnit);
+    const base = projector.lookAtTarget ?? defaultLookAtTarget();
+    const lookAtTarget: Vec3 = { ...base, [axis]: meters };
+    updateProjector(projector.id, { lookAtTarget });
+  };
+
+  const setLookAtToScreenCenter = () => {
+    if (!projector) return;
+    pushSceneHistoryCheckpoint();
+    const screen = getCalculationTargetObject(sceneObjects, calculationTargetId);
+    const lookAtTarget = screen
+      ? { ...screen.transform.position }
+      : defaultLookAtTarget();
+    updateProjector(projector.id, { lookAtTarget });
   };
 
   const patchProjector = (patch: Parameters<typeof updateProjector>[1]) => {
@@ -141,7 +169,48 @@ export function Inspector() {
           step={0.1}
           onChange={(v) => setRotation(euler.yaw, euler.pitch, v)}
         />
+        {projector?.lookAtEnabled && (
+          <p className={styles.hint}>
+            Look-at is on: use gizmo X/Y to orbit the target; rotation Z is roll only.
+          </p>
+        )}
       </div>
+
+      {projector && (
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Look At</div>
+          <label className={styles.checkRow}>
+            <input
+              type="checkbox"
+              checked={projector.lookAtEnabled ?? false}
+              onChange={(e) => patchProjector({ lookAtEnabled: e.target.checked })}
+            />
+            Aim at target (orbit on rotate)
+          </label>
+          {projector.lookAtEnabled && (
+            <>
+              <NumInput
+                label="Target X"
+                value={toDisplayUnit((projector.lookAtTarget ?? defaultLookAtTarget()).x, displayUnit)}
+                onChange={(v) => setLookAtTarget('x', v)}
+              />
+              <NumInput
+                label="Target Y"
+                value={toDisplayUnit((projector.lookAtTarget ?? defaultLookAtTarget()).y, displayUnit)}
+                onChange={(v) => setLookAtTarget('y', v)}
+              />
+              <NumInput
+                label="Target Z"
+                value={toDisplayUnit((projector.lookAtTarget ?? defaultLookAtTarget()).z, displayUnit)}
+                onChange={(v) => setLookAtTarget('z', v)}
+              />
+              <button type="button" className={styles.actionBtn} onClick={setLookAtToScreenCenter}>
+                Use calculation target center
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {sceneObject && !projector && (
         <div className={styles.section}>
