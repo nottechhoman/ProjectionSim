@@ -863,7 +863,7 @@ export class SceneEngine {
         shortFrustumLength: previewLength,
       });
 
-      visual.frustum.visible = true;
+      visual.frustum.visible = this.showProjectionBeam;
     }
 
     if (enabled.length === 1) {

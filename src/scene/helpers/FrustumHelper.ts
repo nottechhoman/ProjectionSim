@@ -29,17 +29,16 @@ export class FrustumHelper extends THREE.LineSegments {
 
     const points: THREE.Vector3[] = [];
 
-    if (hasFootprint) {
+    if (showBeamRays && hasFootprint) {
       const origin = cornerRays[0]?.origin ?? new THREE.Vector3();
       for (const corner of footprintCorners!) {
         points.push(origin.clone(), new THREE.Vector3(corner.x, corner.y, corner.z));
       }
-    } else {
-      const rayLength = showBeamRays ? shortFrustumLength : Math.min(shortFrustumLength, 3);
+    } else if (showBeamRays) {
       for (const ray of cornerRays) {
         points.push(
           ray.origin.clone(),
-          ray.origin.clone().add(ray.direction.clone().multiplyScalar(rayLength)),
+          ray.origin.clone().add(ray.direction.clone().multiplyScalar(shortFrustumLength)),
         );
       }
     }
@@ -55,7 +54,7 @@ export class FrustumHelper extends THREE.LineSegments {
       this.footprintLoop = null;
     }
 
-    if (hasFootprint) {
+    if (showBeamRays && hasFootprint) {
       const outlinePoints =
         footprintOutline && footprintOutline.length >= 3
           ? footprintOutline.map((c) => new THREE.Vector3(c.x, c.y, c.z))
