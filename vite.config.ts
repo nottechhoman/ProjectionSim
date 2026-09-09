@@ -2,9 +2,9 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   // GitHub Pages project site: https://<user>.github.io/ProjectionSim/
-  base: process.env.GITHUB_PAGES === 'true' ? '/ProjectionSim/' : '/',
+  base: mode === 'pages' ? '/ProjectionSim/' : '/',
   plugins: [react()],
   test: {
     globals: true,
@@ -13,4 +13,4 @@ export default defineConfig({
     exclude: ['**/node_modules/**', '**/dist/**', 'e2e/**'],
   },
   assetsInclude: ['**/*.glsl'],
-});
+}));
