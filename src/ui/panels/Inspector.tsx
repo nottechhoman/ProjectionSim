@@ -34,6 +34,7 @@ export function Inspector() {
   const removeSceneObject = useAppStore((s) => s.removeSceneObject);
   const updateSceneObjectTransform = useAppStore((s) => s.updateSceneObjectTransform);
   const updateSceneObjectFlags = useAppStore((s) => s.updateSceneObjectFlags);
+  const updateSceneObjectDimensions = useAppStore((s) => s.updateSceneObjectDimensions);
   const mediaAssets = useAppStore((s) => s.mediaAssets);
   const setProjectorMedia = useAppStore((s) => s.setProjectorMedia);
   const calculationTargetId = useAppStore((s) => s.calculationTargetId);
@@ -213,6 +214,107 @@ export function Inspector() {
       )}
 
       {sceneObject && !projector && (
+        <>
+        <div className={styles.section}>
+          <div className={styles.sectionTitle}>Size</div>
+          <p className={styles.hint}>Dimensions use the toolbar unit ({displayUnit}); stored internally in meters.</p>
+          {(sceneObject.type === 'screen' ||
+            sceneObject.type === 'floor' ||
+            sceneObject.type === 'box') && (
+            <>
+              <NumInput
+                label={`Width (${displayUnit})`}
+                value={toDisplayUnit(sceneObject.dimensions.width, displayUnit)}
+                step={displayUnit === 'mm' ? 10 : displayUnit === 'cm' ? 1 : 0.1}
+                onChange={(v) => {
+                  pushSceneHistoryCheckpoint();
+                  updateSceneObjectDimensions(sceneObject.id, {
+                    dimensions: { width: Math.max(fromDisplayUnit(v, displayUnit), 0.01) },
+                  });
+                }}
+              />
+              <NumInput
+                label={`Height (${displayUnit})`}
+                value={toDisplayUnit(sceneObject.dimensions.height, displayUnit)}
+                step={displayUnit === 'mm' ? 10 : displayUnit === 'cm' ? 1 : 0.1}
+                onChange={(v) => {
+                  pushSceneHistoryCheckpoint();
+                  updateSceneObjectDimensions(sceneObject.id, {
+                    dimensions: { height: Math.max(fromDisplayUnit(v, displayUnit), 0.01) },
+                  });
+                }}
+              />
+              {sceneObject.type === 'box' && (
+                <NumInput
+                  label={`Depth (${displayUnit})`}
+                  value={toDisplayUnit(sceneObject.dimensions.depth ?? 1, displayUnit)}
+                  step={displayUnit === 'mm' ? 10 : displayUnit === 'cm' ? 1 : 0.1}
+                  onChange={(v) => {
+                    pushSceneHistoryCheckpoint();
+                    updateSceneObjectDimensions(sceneObject.id, {
+                      dimensions: { depth: Math.max(fromDisplayUnit(v, displayUnit), 0.01) },
+                    });
+                  }}
+                />
+              )}
+            </>
+          )}
+          {sceneObject.type === 'curvedScreen' && (
+            <>
+              <NumInput
+                label={`Radius (${displayUnit})`}
+                value={toDisplayUnit(sceneObject.curved?.radius ?? 4, displayUnit)}
+                step={displayUnit === 'mm' ? 10 : displayUnit === 'cm' ? 1 : 0.1}
+                onChange={(v) => {
+                  pushSceneHistoryCheckpoint();
+                  updateSceneObjectDimensions(sceneObject.id, {
+                    curved: { radius: Math.max(fromDisplayUnit(v, displayUnit), 0.01) },
+                  });
+                }}
+              />
+              <NumInput
+                label="Arc angle (°)"
+                value={sceneObject.curved?.arcAngleDeg ?? 90}
+                step={1}
+                onChange={(v) => {
+                  pushSceneHistoryCheckpoint();
+                  updateSceneObjectDimensions(sceneObject.id, {
+                    curved: { arcAngleDeg: Math.max(Math.min(v, 359), 1) },
+                  });
+                }}
+              />
+              <NumInput
+                label={`Height (${displayUnit})`}
+                value={toDisplayUnit(
+                  sceneObject.curved?.height ?? sceneObject.dimensions.height,
+                  displayUnit,
+                )}
+                step={displayUnit === 'mm' ? 10 : displayUnit === 'cm' ? 1 : 0.1}
+                onChange={(v) => {
+                  pushSceneHistoryCheckpoint();
+                  const height = Math.max(fromDisplayUnit(v, displayUnit), 0.01);
+                  updateSceneObjectDimensions(sceneObject.id, {
+                    curved: { height },
+                    dimensions: { height },
+                  });
+                }}
+              />
+            </>
+          )}
+          {sceneObject.type === 'model' && (
+            <NumInput
+              label="Model scale"
+              value={sceneObject.modelScale ?? 1}
+              step={0.05}
+              onChange={(v) => {
+                pushSceneHistoryCheckpoint();
+                updateSceneObjectDimensions(sceneObject.id, {
+                  modelScale: Math.max(v, 0.01),
+                });
+              }}
+            />
+          )}
+        </div>
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Surface</div>
           <label className={styles.checkRow}>
@@ -264,6 +366,7 @@ export function Inspector() {
             Delete object
           </button>
         </div>
+        </>
       )}
 
       {projector && (

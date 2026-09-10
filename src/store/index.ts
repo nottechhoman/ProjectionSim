@@ -84,6 +84,14 @@ interface AppState extends PersistedStateSlice {
       Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'blocksProjection' | 'projectionSides'>
     >,
   ) => void;
+  updateSceneObjectDimensions: (
+    id: string,
+    patch: {
+      dimensions?: Partial<SceneObject['dimensions']>;
+      curved?: Partial<NonNullable<SceneObject['curved']>>;
+      modelScale?: number;
+    },
+  ) => void;
   removeSceneObject: (id: string) => void;
   setDisplayUnit: (u: DisplayUnit) => void;
   setViewPreset: (preset: ViewPreset) => void;
@@ -327,6 +335,31 @@ export const useAppStore = create<AppState>((set, get) => ({
     pushSceneHistory(get, set);
     set((s) => ({
       sceneObjects: s.sceneObjects.map((obj) => (obj.id === id ? { ...obj, ...patch } : obj)),
+    }));
+    applyReliabilityReconcile(set, get);
+    get().recomputeCalculations();
+  },
+  updateSceneObjectDimensions: (id, patch) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      sceneObjects: s.sceneObjects.map((obj) => {
+        if (obj.id !== id) return obj;
+        const nextDimensions = patch.dimensions
+          ? { ...obj.dimensions, ...patch.dimensions }
+          : obj.dimensions;
+        const baseCurved = obj.curved ?? {
+          radius: 4,
+          arcAngleDeg: 90,
+          height: obj.dimensions.height,
+        };
+        const nextCurved = patch.curved ? { ...baseCurved, ...patch.curved } : obj.curved;
+        return {
+          ...obj,
+          dimensions: nextDimensions,
+          curved: nextCurved,
+          modelScale: patch.modelScale ?? obj.modelScale,
+        };
+      }),
     }));
     applyReliabilityReconcile(set, get);
     get().recomputeCalculations();
