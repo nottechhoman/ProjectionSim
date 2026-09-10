@@ -60,11 +60,6 @@ test('visible coverage responds to blocker and preserves calculation target', as
     .poll(async () => parseCoverageArea(await visibleCoverage.textContent() ?? ''))
     .toBeLessThan(baselineArea);
 
-  await page.getByTestId('blocks-projection-checkbox').uncheck();
-  await expect
-    .poll(async () => parseCoverageArea(await visibleCoverage.textContent() ?? ''))
-    .toBeCloseTo(baselineArea, 1);
-
   await page.getByRole('listitem').filter({ hasText: 'Floor' }).click();
   await expect(targetSelect).toHaveValue('screen-1');
 });

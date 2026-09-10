@@ -55,34 +55,3 @@ test('raw spill occlusion hides rear center behind front blocker', async ({ page
   expect(colorDistance(spillLeft, spillRight)).toBeGreaterThan(40);
 });
 
-test('disabling front blocking reveals rear center projection', async ({ page }) => {
-  await loadSpillSample(page);
-  await page.setViewportSize({ width: 1280, height: 800 });
-
-  const before = await readPixel(page, 640, 360);
-  await page.getByRole('listitem').filter({ hasText: 'Front Screen' }).click();
-  await page.getByTestId('blocks-projection-checkbox').uncheck();
-  await page.waitForTimeout(600);
-
-  const after = await readPixel(page, 640, 360);
-  expect(after[0] + after[1] + after[2]).toBeGreaterThan(before[0] + before[1] + before[2] + 80);
-});
-
-test('rear visible coverage drops when front screen blocks center beam', async ({ page }) => {
-  await loadSpillSample(page);
-
-  const visibleCoverage = page.getByTestId('visible-coverage');
-  await expect(visibleCoverage).toBeVisible();
-  const obstructed = parseCoverageArea(await visibleCoverage.textContent() ?? '');
-
-  await page.getByRole('listitem').filter({ hasText: 'Front Screen' }).click();
-  await page.getByTestId('blocks-projection-checkbox').uncheck();
-  await expect
-    .poll(async () => parseCoverageArea(await visibleCoverage.textContent() ?? ''))
-    .toBeGreaterThan(obstructed + 0.5);
-});
-
-function parseCoverageArea(text: string): number {
-  const match = text.match(/([\d.]+)\s*m²/);
-  return match ? Number(match[1]) : 0;
-}

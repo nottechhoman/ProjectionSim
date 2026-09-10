@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { effectiveBlocksProjection } from '../blocksProjectionPolicy';
 import type { SceneObject } from '../../types';
 
 export function createScreen(obj: SceneObject): THREE.Mesh {
@@ -10,7 +11,7 @@ export function createScreen(obj: SceneObject): THREE.Mesh {
   mesh.userData = {
     id: obj.id,
     receivesProjection: obj.receivesProjection,
-    blocksProjection: obj.blocksProjection,
+    blocksProjection: effectiveBlocksProjection(obj),
   };
   return mesh;
 }

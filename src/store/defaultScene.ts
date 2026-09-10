@@ -12,7 +12,7 @@ export const DEFAULT_SCENE_OBJECTS: SceneObject[] = [
     },
     visibleInEditor: true,
     receivesProjection: true,
-    blocksProjection: false,
+    blocksProjection: true,
     projectionSides: 'front',
     dimensions: { width: 6, height: 3.375 },
   },

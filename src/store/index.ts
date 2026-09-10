@@ -81,7 +81,7 @@ interface AppState extends PersistedStateSlice {
   updateSceneObjectFlags: (
     id: string,
     patch: Partial<
-      Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'blocksProjection' | 'projectionSides'>
+      Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'projectionSides'>
     >,
   ) => void;
   updateSceneObjectDimensions: (
@@ -722,7 +722,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           visibleInEditor: true,
           receivesProjection: true,
-          blocksProjection: false,
+          blocksProjection: true,
           dimensions: { width: 6, height: 3.375 },
           curved: { radius: 4, arcAngleDeg: 90, height: 3.375 },
         },

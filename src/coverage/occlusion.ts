@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { effectiveBlocksProjection } from '../scene/blocksProjectionPolicy';
 import type { SceneObject } from '../types';
 
 /** Scale-aware endpoint tolerance for self-occlusion at the sample point (meters). */
@@ -44,7 +45,7 @@ export function buildWorldMatrixFromTransform(transform: {
 export function listBlockerDescriptors(sceneObjects: SceneObject[]): BlockerDescriptor[] {
   const blockers: BlockerDescriptor[] = [];
   for (const obj of sceneObjects) {
-    if (!obj.blocksProjection) continue;
+    if (!effectiveBlocksProjection(obj)) continue;
     const worldMatrix = buildWorldMatrixFromTransform(obj.transform);
 
     if (obj.type === 'box') {

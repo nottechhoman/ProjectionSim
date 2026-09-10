@@ -8,6 +8,7 @@ import {
   createMultiProjectiveMaterial,
   updateMultiProjectiveMaterial,
 } from '../projection/MultiProjectiveMaterial';
+import { effectiveBlocksProjection } from './blocksProjectionPolicy';
 import { DepthPass } from '../visibility/DepthPass';
 import {
   collectBlockerMeshes,
@@ -759,7 +760,8 @@ export class SceneEngine {
       obj3d.visible = obj.visibleInEditor;
       obj3d.userData.id = obj.id;
       obj3d.userData.receivesProjection = obj.receivesProjection;
-      obj3d.userData.blocksProjection = obj.blocksProjection;
+      const blocksProjection = effectiveBlocksProjection(obj);
+      obj3d.userData.blocksProjection = blocksProjection;
       if (obj.receivesProjection) {
         const sidesInt = supportsProjectionSides(obj.type)
           ? projectionSidesToInt(normalizeProjectionSides(obj))
@@ -767,7 +769,7 @@ export class SceneEngine {
         syncReceiverMeshHooks(
           obj3d,
           obj.id,
-          obj.blocksProjection,
+          blocksProjection,
           sidesInt,
           (key, multi) => this.resolveOcclusionDepth(key, multi),
         );

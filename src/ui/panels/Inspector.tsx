@@ -333,15 +333,6 @@ export function Inspector() {
             />
             Receives projection
           </label>
-          <label className={styles.checkRow}>
-            <input
-              type="checkbox"
-              data-testid="blocks-projection-checkbox"
-              checked={sceneObject.blocksProjection}
-              onChange={(e) => updateSceneObjectFlags(sceneObject.id, { blocksProjection: e.target.checked })}
-            />
-            Blocks projection
-          </label>
           {sceneObject.receivesProjection && supportsProjectionSides(sceneObject.type) && (
             <div className={styles.row}>
               <label htmlFor="projection-sides-select">Projection sides</label>
