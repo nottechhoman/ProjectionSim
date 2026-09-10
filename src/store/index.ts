@@ -23,6 +23,7 @@ import type {
   MediaFitMode,
   MediaSourceKind,
   ProjectionCompositeMode,
+  ProjectionSides,
   ProjectorConfig,
   SceneObject,
   Transform,
@@ -142,6 +143,17 @@ interface AppState extends PersistedStateSlice {
   recomputeCalculations: () => void;
   addBox: () => void;
   addCurvedScreen: () => void;
+  addLedWall: () => void;
+  updateSceneObjectLedWall: (
+    id: string,
+    patch: {
+      pixelResolution?: Partial<{ width: number; height: number }>;
+      mediaSource?: 'image' | 'video';
+      mediaAssetId?: string | null;
+      mediaFit?: MediaFitMode;
+      projectionSides?: ProjectionSides;
+    },
+  ) => void;
   importFile: (file: File, modelScale?: number) => Promise<void>;
   setProjectorMedia: (
     projectorId: string,
@@ -744,6 +756,65 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     get().recomputeCalculations();
   },
+  addLedWall: () => {
+    pushSceneHistory(get, set);
+    const id = `ledwall-${Date.now()}`;
+    set((s) => ({
+      sceneObjects: [
+        ...s.sceneObjects,
+        {
+          id,
+          name: 'LED Wall',
+          type: 'ledWall' as const,
+          transform: {
+            position: { x: 0, y: 2, z: -1 },
+            quaternion: eulerYXZToQuaternion(0, 0, 0),
+          },
+          visibleInEditor: true,
+          receivesProjection: false,
+          blocksProjection: true,
+          projectionSides: 'front',
+          dimensions: { width: 4, height: 2.25 },
+          ledWall: {
+            pixelResolution: { width: 1920, height: 1080 },
+            mediaSource: 'image' as const,
+            mediaAssetId: null,
+            mediaFit: 'contain' as const,
+          },
+        },
+      ],
+      selectedObjectId: id,
+      projectMessage: 'Added LED Wall — assign an image or video in Inspector',
+    }));
+    get().recomputeCalculations();
+  },
+  updateSceneObjectLedWall: (id, patch) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      sceneObjects: s.sceneObjects.map((obj) => {
+        if (obj.id !== id || obj.type !== 'ledWall') return obj;
+        const base = obj.ledWall ?? {
+          pixelResolution: { width: 1920, height: 1080 },
+          mediaSource: 'image' as const,
+          mediaAssetId: null,
+          mediaFit: 'contain' as const,
+        };
+        const nextLedWall = {
+          ...base,
+          ...patch,
+          pixelResolution: patch.pixelResolution
+            ? { ...base.pixelResolution, ...patch.pixelResolution }
+            : base.pixelResolution,
+        };
+        return {
+          ...obj,
+          projectionSides: patch.projectionSides ?? obj.projectionSides,
+          ledWall: nextLedWall,
+        };
+      }),
+    }));
+    get().recomputeCalculations();
+  },
   importFile: async (file, modelScale = 1) => {
     const kind = detectFileKind(file);
     if (!kind) {
@@ -811,7 +882,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ videoPlaybackRevision: s.videoPlaybackRevision + 1 }));
   },
   playAllSceneVideos: () => {
-    const assetIds = listSceneVideoSources(get().projectors).map((source) => source.assetId);
+    const assetIds = listSceneVideoSources(get().projectors, get().sceneObjects).map(
+      (source) => source.assetId,
+    );
     const started = playVideos(assetIds);
     if (started > 0) {
       set((s) => ({
@@ -821,7 +894,9 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   pauseAllSceneVideos: () => {
-    const assetIds = listSceneVideoSources(get().projectors).map((source) => source.assetId);
+    const assetIds = listSceneVideoSources(get().projectors, get().sceneObjects).map(
+      (source) => source.assetId,
+    );
     pauseVideos(assetIds);
     set((s) => ({ videoPlaybackRevision: s.videoPlaybackRevision + 1 }));
   },
@@ -860,7 +935,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       historyPast: [],
       historyFuture: [],
     });
-    pauseVideos(listSceneVideoSources(get().projectors).map((source) => source.assetId));
+    pauseVideos(
+      listSceneVideoSources(get().projectors, get().sceneObjects).map((source) => source.assetId),
+    );
     clearAutosave();
     get().recomputeCalculations();
   },
@@ -895,7 +972,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         historyPast: [],
         historyFuture: [],
       });
-      pauseVideos(listSceneVideoSources(get().projectors).map((source) => source.assetId));
+      pauseVideos(
+        listSceneVideoSources(get().projectors, get().sceneObjects).map((source) => source.assetId),
+      );
       writeAutosave(snapshot);
       get().recomputeCalculations();
     } catch (err) {

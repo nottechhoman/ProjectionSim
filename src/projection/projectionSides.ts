@@ -4,14 +4,15 @@ import type { CalculationTargetSide, ProjectionSides, SceneObject, SceneObjectTy
 /** Small offset (m) when sampling front/back faces separately. */
 export const SURFACE_SIDE_OFFSET = 1e-4;
 
-const SURFACE_TYPES = new Set<SceneObjectType>(['screen', 'floor', 'curvedScreen']);
+const SURFACE_TYPES = new Set<SceneObjectType>(['screen', 'floor', 'curvedScreen', 'ledWall']);
 
 export function supportsProjectionSides(type: SceneObjectType): boolean {
   return SURFACE_TYPES.has(type);
 }
 
 export function normalizeProjectionSides(obj: SceneObject): ProjectionSides {
-  if (!obj.receivesProjection || !supportsProjectionSides(obj.type)) return 'front';
+  if (!supportsProjectionSides(obj.type)) return 'front';
+  if (!obj.receivesProjection && obj.type !== 'ledWall') return 'front';
   if (obj.projectionSides === 'back' || obj.projectionSides === 'both') return obj.projectionSides;
   return 'front';
 }

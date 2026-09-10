@@ -70,7 +70,7 @@ export function listBlockerDescriptors(sceneObjects: SceneObject[]): BlockerDesc
       continue;
     }
 
-    if (obj.type === 'screen') {
+    if (obj.type === 'screen' || obj.type === 'ledWall') {
       const normal = new THREE.Vector3(0, 0, 1).transformDirection(worldMatrix).normalize();
       const point = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
       blockers.push({

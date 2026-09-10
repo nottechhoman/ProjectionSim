@@ -33,6 +33,8 @@ import {
   supportsProjectionSides,
 } from '../projection/projectionSides';
 import { createScreen } from './objects/createScreen';
+import { createLedWall } from './objects/createLedWall';
+import { updateLedWallMaterial } from '../projection/LedWallMaterial';
 import { createFloor } from './objects/createFloor';
 import { createBox } from './objects/createBox';
 import { createCurvedScreen } from './objects/createCurvedScreen';
@@ -75,7 +77,12 @@ function dimensionsKey(obj: SceneObject): string {
     ? `${obj.curved.radius}:${obj.curved.arcAngleDeg}:${obj.curved.height}`
     : '';
   const model = obj.modelAssetId ? `${obj.modelAssetId}:${obj.modelScale ?? 1}` : '';
-  return `${obj.type}:${obj.dimensions.width}:${obj.dimensions.height}:${depth}:${curved}:${model}`;
+  const led =
+    obj.ledWall
+      ? `${obj.ledWall.pixelResolution.width}x${obj.ledWall.pixelResolution.height}:${obj.ledWall.mediaSource}:${obj.ledWall.mediaAssetId}:${obj.ledWall.mediaFit}`
+      : '';
+  const sides = obj.projectionSides ?? 'front';
+  return `${obj.type}:${obj.dimensions.width}:${obj.dimensions.height}:${depth}:${curved}:${model}:${led}:${sides}`;
 }
 
 function createObjectMesh(obj: SceneObject): THREE.Object3D {
@@ -88,6 +95,8 @@ function createObjectMesh(obj: SceneObject): THREE.Object3D {
       return createBox(obj);
     case 'curvedScreen':
       return createCurvedScreen(obj);
+    case 'ledWall':
+      return createLedWall(obj);
     case 'model': {
       if (!obj.modelAssetId) return createBox(obj);
       const prototype = modelCache.get(obj.modelAssetId);
@@ -762,7 +771,12 @@ export class SceneEngine {
       obj3d.userData.receivesProjection = obj.receivesProjection;
       const blocksProjection = effectiveBlocksProjection(obj);
       obj3d.userData.blocksProjection = blocksProjection;
-      if (obj.receivesProjection) {
+      if (obj.type === 'ledWall') {
+        const mesh = obj3d as THREE.Mesh;
+        if (mesh.material instanceof THREE.ShaderMaterial) {
+          updateLedWallMaterial(mesh.material, obj);
+        }
+      } else if (obj.receivesProjection) {
         const sidesInt = supportsProjectionSides(obj.type)
           ? projectionSidesToInt(normalizeProjectionSides(obj))
           : 0;

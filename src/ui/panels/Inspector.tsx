@@ -35,6 +35,7 @@ export function Inspector() {
   const updateSceneObjectTransform = useAppStore((s) => s.updateSceneObjectTransform);
   const updateSceneObjectFlags = useAppStore((s) => s.updateSceneObjectFlags);
   const updateSceneObjectDimensions = useAppStore((s) => s.updateSceneObjectDimensions);
+  const updateSceneObjectLedWall = useAppStore((s) => s.updateSceneObjectLedWall);
   const mediaAssets = useAppStore((s) => s.mediaAssets);
   const setProjectorMedia = useAppStore((s) => s.setProjectorMedia);
   const calculationTargetId = useAppStore((s) => s.calculationTargetId);
@@ -220,7 +221,8 @@ export function Inspector() {
           <p className={styles.hint}>Dimensions use the toolbar unit ({displayUnit}); stored internally in meters.</p>
           {(sceneObject.type === 'screen' ||
             sceneObject.type === 'floor' ||
-            sceneObject.type === 'box') && (
+            sceneObject.type === 'box' ||
+            sceneObject.type === 'ledWall') && (
             <>
               <NumInput
                 label={`Width (${displayUnit})`}
@@ -315,6 +317,91 @@ export function Inspector() {
             />
           )}
         </div>
+        {sceneObject.type === 'ledWall' && (
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>LED Display</div>
+            <p className={styles.hint}>
+              Direct pixel surface — assign image or video; independent from projector content.
+            </p>
+            <NumInput
+              label="Resolution width (px)"
+              value={sceneObject.ledWall?.pixelResolution.width ?? 1920}
+              step={1}
+              onChange={(v) => {
+                pushSceneHistoryCheckpoint();
+                updateSceneObjectLedWall(sceneObject.id, {
+                  pixelResolution: { width: Math.max(Math.round(v), 1) },
+                });
+              }}
+            />
+            <NumInput
+              label="Resolution height (px)"
+              value={sceneObject.ledWall?.pixelResolution.height ?? 1080}
+              step={1}
+              onChange={(v) => {
+                pushSceneHistoryCheckpoint();
+                updateSceneObjectLedWall(sceneObject.id, {
+                  pixelResolution: { height: Math.max(Math.round(v), 1) },
+                });
+              }}
+            />
+            <div className={styles.row}>
+              <label htmlFor="led-media-source">Media source</label>
+              <select
+                id="led-media-source"
+                value={sceneObject.ledWall?.mediaSource ?? 'image'}
+                onChange={(e) => {
+                  pushSceneHistoryCheckpoint();
+                  const source = e.target.value as 'image' | 'video';
+                  updateSceneObjectLedWall(sceneObject.id, {
+                    mediaSource: source,
+                    mediaAssetId: null,
+                  });
+                }}
+              >
+                <option value="image">Image</option>
+                <option value="video">Video</option>
+              </select>
+            </div>
+            <div className={styles.row}>
+              <label htmlFor="led-media-asset">Media asset</label>
+              <select
+                id="led-media-asset"
+                value={sceneObject.ledWall?.mediaAssetId ?? ''}
+                onChange={(e) => {
+                  pushSceneHistoryCheckpoint();
+                  updateSceneObjectLedWall(sceneObject.id, {
+                    mediaAssetId: e.target.value || null,
+                  });
+                }}
+              >
+                <option value="">None</option>
+                {mediaAssets
+                  .filter((asset) => asset.kind === (sceneObject.ledWall?.mediaSource ?? 'image'))
+                  .map((asset) => (
+                    <option key={asset.id} value={asset.id}>{asset.name}</option>
+                  ))}
+              </select>
+            </div>
+            <div className={styles.row}>
+              <label htmlFor="led-media-fit">Fit mode</label>
+              <select
+                id="led-media-fit"
+                value={sceneObject.ledWall?.mediaFit ?? 'contain'}
+                onChange={(e) => {
+                  pushSceneHistoryCheckpoint();
+                  updateSceneObjectLedWall(sceneObject.id, {
+                    mediaFit: e.target.value as 'contain' | 'cover' | 'stretch',
+                  });
+                }}
+              >
+                <option value="contain">Contain</option>
+                <option value="cover">Cover</option>
+                <option value="stretch">Stretch</option>
+              </select>
+            </div>
+          </div>
+        )}
         <div className={styles.section}>
           <div className={styles.sectionTitle}>Surface</div>
           <label className={styles.checkRow}>
@@ -325,27 +412,36 @@ export function Inspector() {
             />
             Visible
           </label>
-          <label className={styles.checkRow}>
-            <input
-              type="checkbox"
-              checked={sceneObject.receivesProjection}
-              onChange={(e) => updateSceneObjectFlags(sceneObject.id, { receivesProjection: e.target.checked })}
-            />
-            Receives projection
-          </label>
-          {sceneObject.receivesProjection && supportsProjectionSides(sceneObject.type) && (
+          {sceneObject.type !== 'ledWall' && (
+            <label className={styles.checkRow}>
+              <input
+                type="checkbox"
+                checked={sceneObject.receivesProjection}
+                onChange={(e) => updateSceneObjectFlags(sceneObject.id, { receivesProjection: e.target.checked })}
+              />
+              Receives projection
+            </label>
+          )}
+          {((sceneObject.receivesProjection && supportsProjectionSides(sceneObject.type)) ||
+            sceneObject.type === 'ledWall') && (
             <div className={styles.row}>
-              <label htmlFor="projection-sides-select">Projection sides</label>
+              <label htmlFor="projection-sides-select">
+                {sceneObject.type === 'ledWall' ? 'Display sides' : 'Projection sides'}
+              </label>
               <select
                 id="projection-sides-select"
-                aria-label="Projection sides"
+                aria-label={sceneObject.type === 'ledWall' ? 'Display sides' : 'Projection sides'}
                 data-testid="projection-sides-select"
                 value={sceneObject.projectionSides ?? 'front'}
-                onChange={(e) =>
-                  updateSceneObjectFlags(sceneObject.id, {
-                    projectionSides: e.target.value as ProjectionSides,
-                  })
-                }
+                onChange={(e) => {
+                  const sides = e.target.value as ProjectionSides;
+                  if (sceneObject.type === 'ledWall') {
+                    pushSceneHistoryCheckpoint();
+                    updateSceneObjectLedWall(sceneObject.id, { projectionSides: sides });
+                    return;
+                  }
+                  updateSceneObjectFlags(sceneObject.id, { projectionSides: sides });
+                }}
               >
                 <option value="front">Front only</option>
                 <option value="back">Back only</option>
@@ -379,7 +475,8 @@ export function Inspector() {
               onChange={(v) => patchProjector({ brightness: Math.max(0, v) })}
             />
             <p className={styles.hint}>
-              Use toolbar Composite → Solo, then select each projector here to preview its image on surfaces.
+              Assign a different pattern, image, or video per projector. Use toolbar Composite → Raw to show all
+              projectors at once.
             </p>
             <button type="button" className={styles.dangerBtn} onClick={() => removeProjector(projector.id)}>
               Delete projector

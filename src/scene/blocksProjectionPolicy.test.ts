@@ -25,7 +25,7 @@ function baseObject(type: SceneObject['type']): SceneObject {
 
 describe('blocksProjectionPolicy', () => {
   it('treats primitive surfaces as always blocking', () => {
-    for (const type of ['box', 'floor', 'screen', 'curvedScreen'] as const) {
+    for (const type of ['box', 'floor', 'screen', 'curvedScreen', 'ledWall'] as const) {
       expect(objectTypeCanBlockProjection(type)).toBe(true);
       expect(effectiveBlocksProjection(baseObject(type))).toBe(true);
     }

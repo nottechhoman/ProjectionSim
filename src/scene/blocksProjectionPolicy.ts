@@ -1,6 +1,6 @@
 import type { SceneObject, SceneObjectType } from '../types';
 
-const BLOCKABLE_TYPES = new Set<SceneObjectType>(['box', 'floor', 'screen', 'curvedScreen']);
+const BLOCKABLE_TYPES = new Set<SceneObjectType>(['box', 'floor', 'screen', 'curvedScreen', 'ledWall']);
 
 export function objectTypeCanBlockProjection(type: SceneObjectType): boolean {
   return BLOCKABLE_TYPES.has(type);

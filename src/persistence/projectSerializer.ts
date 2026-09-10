@@ -43,7 +43,7 @@ function validateTransform(raw: unknown): void {
   }
 }
 
-const OBJECT_TYPES = ['screen', 'floor', 'wall', 'box', 'curvedScreen', 'model'] as const;
+const OBJECT_TYPES = ['screen', 'floor', 'wall', 'box', 'curvedScreen', 'model', 'ledWall'] as const;
 
 function validateSceneObject(raw: unknown): SceneObject {
   if (!isObject(raw)) throw new ProjectValidationError('Invalid scene object');

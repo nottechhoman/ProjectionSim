@@ -4,7 +4,9 @@ export type ViewPreset = 'persp' | 'top' | 'front' | 'side';
 
 export type TransformMode = 'translate' | 'rotate';
 
-export type SceneObjectType = 'screen' | 'floor' | 'wall' | 'box' | 'curvedScreen' | 'model';
+export type SceneObjectType = 'screen' | 'floor' | 'wall' | 'box' | 'curvedScreen' | 'model' | 'ledWall';
+
+export type LedWallMediaSource = 'image' | 'video';
 
 export type MaterialPreviewMode = 'original' | 'projectionPreview' | 'projectionUv' | 'falloff';
 
@@ -79,6 +81,13 @@ export interface SceneObject {
   modelAssetId?: string;
   /** Scale factor applied to imported models (1 = file units as meters) */
   modelScale?: number;
+  /** Direct-display LED wall settings (type ledWall only). */
+  ledWall?: {
+    pixelResolution: { width: number; height: number };
+    mediaSource: LedWallMediaSource;
+    mediaAssetId: string | null;
+    mediaFit: MediaFitMode;
+  };
 }
 
 export interface MediaAssetRecord {

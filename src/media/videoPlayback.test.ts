@@ -44,4 +44,26 @@ describe('videoPlayback', () => {
   it('ignores non-video projectors', () => {
     expect(listSceneVideoSources([projector('Projector 1', null)])).toEqual([]);
   });
+
+  it('includes LED wall video sources', () => {
+    const sources = listSceneVideoSources([], [
+      {
+        id: 'led-1',
+        name: 'Stage LED',
+        type: 'ledWall',
+        transform: { position: { x: 0, y: 0, z: 0 }, quaternion: [0, 0, 0, 1] },
+        visibleInEditor: true,
+        receivesProjection: false,
+        blocksProjection: true,
+        dimensions: { width: 4, height: 2 },
+        ledWall: {
+          pixelResolution: { width: 1920, height: 1080 },
+          mediaSource: 'video',
+          mediaAssetId: 'clip-1',
+          mediaFit: 'contain',
+        },
+      },
+    ]);
+    expect(sources).toEqual([{ assetId: 'clip-1', label: 'Stage LED' }]);
+  });
 });

@@ -41,6 +41,7 @@ export function Toolbar() {
   const addProjector = useAppStore((s) => s.addProjector);
   const addBox = useAppStore((s) => s.addBox);
   const addCurvedScreen = useAppStore((s) => s.addCurvedScreen);
+  const addLedWall = useAppStore((s) => s.addLedWall);
   const importFile = useAppStore((s) => s.importFile);
   const newProject = useAppStore((s) => s.newProject);
   const saveProjectToFile = useAppStore((s) => s.saveProjectToFile);
@@ -167,6 +168,7 @@ export function Toolbar() {
       <div className={styles.group}>
         <button type="button" onClick={addBox}>Add Box</button>
         <button type="button" onClick={addCurvedScreen}>Curved Screen</button>
+        <button type="button" onClick={addLedWall}>LED Wall</button>
         <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
       </div>
 

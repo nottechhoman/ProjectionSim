@@ -1,4 +1,4 @@
-import type { ProjectorConfig } from '../types';
+import type { ProjectorConfig, SceneObject } from '../types';
 import { mediaTextureCache } from './assetImport';
 
 export interface VideoSourceRef {
@@ -28,8 +28,30 @@ export function listProjectorVideoSources(projectors: ProjectorConfig[]): VideoS
   return [...byAsset.entries()].map(([assetId, label]) => ({ assetId, label }));
 }
 
-export function listSceneVideoSources(projectors: ProjectorConfig[]): VideoSourceRef[] {
-  return listProjectorVideoSources(projectors);
+export function listLedWallVideoSources(sceneObjects: SceneObject[]): VideoSourceRef[] {
+  const byAsset = new Map<string, string>();
+  for (const obj of sceneObjects) {
+    if (obj.type !== 'ledWall' || obj.ledWall?.mediaSource !== 'video' || !obj.ledWall.mediaAssetId) {
+      continue;
+    }
+    byAsset.set(obj.ledWall.mediaAssetId, obj.name);
+  }
+  return [...byAsset.entries()].map(([assetId, label]) => ({ assetId, label }));
+}
+
+export function listSceneVideoSources(
+  projectors: ProjectorConfig[],
+  sceneObjects: SceneObject[] = [],
+): VideoSourceRef[] {
+  const byAsset = new Map<string, string>();
+  for (const source of [
+    ...listProjectorVideoSources(projectors),
+    ...listLedWallVideoSources(sceneObjects),
+  ]) {
+    const existing = byAsset.get(source.assetId);
+    byAsset.set(source.assetId, existing ? `${existing}, ${source.label}` : source.label);
+  }
+  return [...byAsset.entries()].map(([assetId, label]) => ({ assetId, label }));
 }
 
 export function playVideo(assetId: string): boolean {
