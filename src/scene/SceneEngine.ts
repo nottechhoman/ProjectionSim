@@ -9,6 +9,13 @@ import {
   updateMultiProjectiveMaterial,
 } from '../projection/MultiProjectiveMaterial';
 import { DepthPass } from '../visibility/DepthPass';
+import {
+  collectBlockerMeshes,
+  excludeObjectIdFromDepthKey,
+  occlusionDepthKeyForReceiver,
+  requiredOcclusionDepthKeys,
+  type OcclusionDepthKey,
+} from '../visibility/projectionOcclusion';
 import type {
   MappingMode,
   MaterialPreviewMode,
@@ -92,19 +99,47 @@ function createObjectMesh(obj: SceneObject): THREE.Object3D {
   }
 }
 
-function attachProjectionSideUniform(mesh: THREE.Mesh, sidesInt: number): void {
+type OcclusionDepthResolver = (key: OcclusionDepthKey, multi: boolean) => THREE.Texture | THREE.Texture[] | null;
+
+function attachReceiverShaderHooks(
+  mesh: THREE.Mesh,
+  objectId: string,
+  blocksProjection: boolean,
+  sidesInt: number,
+  resolveOcclusionDepth: OcclusionDepthResolver,
+): void {
   mesh.userData.projectionSides = sidesInt;
+  mesh.userData.occlusionDepthKey = occlusionDepthKeyForReceiver(objectId, blocksProjection);
   mesh.onBeforeRender = (_renderer, _scene, _camera, _geometry, material) => {
     const mat = material as THREE.ShaderMaterial;
-    if (mat.uniforms?.projectionSides) {
+    if (!mat.uniforms) return;
+    if (mat.uniforms.projectionSides) {
       mat.uniforms.projectionSides.value = mesh.userData.projectionSides ?? 0;
+    }
+    const key = mesh.userData.occlusionDepthKey as OcclusionDepthKey;
+    const multi = mat.uniforms.depthMaps != null;
+    const depth = resolveOcclusionDepth(key, multi);
+    if (multi && Array.isArray(depth) && mat.uniforms.depthMaps) {
+      mat.uniforms.depthMaps.value = depth;
+      mat.uniforms.useOcclusion.value = 1;
+    } else if (!multi && depth instanceof THREE.Texture && mat.uniforms.depthMap) {
+      mat.uniforms.depthMap.value = depth;
+      mat.uniforms.useOcclusion.value = 1;
+    } else if (mat.uniforms.useOcclusion) {
+      mat.uniforms.useOcclusion.value = 0;
     }
   };
 }
 
-function syncReceiverMeshSides(root: THREE.Object3D, sidesInt: number): void {
+function syncReceiverMeshHooks(
+  root: THREE.Object3D,
+  objectId: string,
+  blocksProjection: boolean,
+  sidesInt: number,
+  resolveOcclusionDepth: OcclusionDepthResolver,
+): void {
   for (const mesh of collectMeshes(root)) {
-    attachProjectionSideUniform(mesh, sidesInt);
+    attachReceiverShaderHooks(mesh, objectId, blocksProjection, sidesInt, resolveOcclusionDepth);
   }
 }
 
@@ -244,6 +279,8 @@ export class SceneEngine {
   private readonly measureGroup = new THREE.Group();
   private measureLine: THREE.Line | null = null;
   private readonly measureMarkers: THREE.Mesh[] = [];
+  private readonly occlusionDepthSingle = new Map<OcclusionDepthKey, THREE.Texture | null>();
+  private readonly occlusionDepthMulti = new Map<OcclusionDepthKey, THREE.Texture[] | null>();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -722,10 +759,114 @@ export class SceneEngine {
       obj3d.userData.id = obj.id;
       obj3d.userData.receivesProjection = obj.receivesProjection;
       obj3d.userData.blocksProjection = obj.blocksProjection;
-      if (supportsProjectionSides(obj.type)) {
-        syncReceiverMeshSides(obj3d, projectionSidesToInt(normalizeProjectionSides(obj)));
+      if (obj.receivesProjection) {
+        const sidesInt = supportsProjectionSides(obj.type)
+          ? projectionSidesToInt(normalizeProjectionSides(obj))
+          : 0;
+        syncReceiverMeshHooks(
+          obj3d,
+          obj.id,
+          obj.blocksProjection,
+          sidesInt,
+          (key, multi) => this.resolveOcclusionDepth(key, multi),
+        );
       }
     }
+  }
+
+  private resolveOcclusionDepth(
+    key: OcclusionDepthKey,
+    multi: boolean,
+  ): THREE.Texture | THREE.Texture[] | null {
+    if (multi) {
+      if (this.occlusionDepthMulti.has(key)) return this.occlusionDepthMulti.get(key) ?? null;
+      return key === 'all' ? null : this.occlusionDepthMulti.get('all') ?? null;
+    }
+    if (this.occlusionDepthSingle.has(key)) return this.occlusionDepthSingle.get(key) ?? null;
+    return key === 'all' ? null : this.occlusionDepthSingle.get('all') ?? null;
+  }
+
+  private blockerRoots(): { id: string; root: THREE.Object3D; blocksProjection: boolean }[] {
+    return [...this.objectMeshes.entries()].map(([id, root]) => ({
+      id,
+      root,
+      blocksProjection: Boolean(root.userData.blocksProjection),
+    }));
+  }
+
+  private buildOcclusionDepthMaps(projectors: ProjectorConfig[]): boolean {
+    this.occlusionDepthSingle.clear();
+    this.occlusionDepthMulti.clear();
+
+    const blockerEntries = this.blockerRoots().filter((entry) => entry.blocksProjection);
+    if (blockerEntries.length === 0) return false;
+
+    const receiverEntries = [...this.objectMeshes.entries()].map(([id, root]) => ({
+      id,
+      blocksProjection: Boolean(root.userData.blocksProjection),
+      receivesProjection: Boolean(root.userData.receivesProjection),
+    }));
+    const keys = requiredOcclusionDepthKeys(receiverEntries);
+
+    if (projectors.length === 1) {
+      if (!this.depthPass) return false;
+      const projector = projectors[0];
+      const worldMatrix = projectorWorldMatrix(projector);
+      const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
+      for (const key of keys) {
+        const meshes = collectBlockerMeshes(
+          blockerEntries,
+          excludeObjectIdFromDepthKey(key),
+        );
+        if (meshes.length === 0) {
+          this.occlusionDepthSingle.set(key, null);
+          continue;
+        }
+        this.occlusionDepthSingle.set(
+          key,
+          this.depthPass.render(this.renderer!, this.editorScene, projectorCamera, meshes),
+        );
+      }
+      return true;
+    }
+
+    const texturesByKey = new Map<OcclusionDepthKey, THREE.Texture[]>();
+    for (const key of keys) {
+      const meshes = collectBlockerMeshes(
+        blockerEntries,
+        excludeObjectIdFromDepthKey(key),
+      );
+      if (meshes.length === 0) {
+        this.occlusionDepthMulti.set(key, null);
+        continue;
+      }
+      const textures: THREE.Texture[] = [];
+      for (const projector of projectors.slice(0, 4)) {
+        let pass = this.depthPassByProjector.get(projector.id);
+        if (!pass) {
+          pass = new DepthPass();
+          this.depthPassByProjector.set(projector.id, pass);
+        }
+        const worldMatrix = projectorWorldMatrix(projector);
+        const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
+        textures.push(pass.render(this.renderer!, this.editorScene, projectorCamera, meshes));
+      }
+      texturesByKey.set(key, textures);
+      this.occlusionDepthMulti.set(key, textures);
+    }
+    return texturesByKey.size > 0;
+  }
+
+  /** Read one canvas pixel after rendering (bottom-left WebGL origin). For tests only. */
+  readCanvasPixel(x: number, y: number): [number, number, number, number] | null {
+    if (!this.renderer) return null;
+    const gl = this.renderer.getContext();
+    const ratio = this.renderer.getPixelRatio();
+    const px = Math.floor(x * ratio);
+    const py = Math.floor(this.renderer.domElement.height - y * ratio);
+    const out = new Uint8Array(4);
+    gl.readPixels(px, py, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, out);
+    return [out[0], out[1], out[2], out[3]];
   }
 
   private ensureProjectorVisual(id: string): { body: THREE.Mesh; frustum: FrustumHelper } {
@@ -961,7 +1102,6 @@ export class SceneEngine {
     this.updateGizmoScale();
     this.editorScene.updateMatrixWorld(true);
 
-    const depthMeshes = this.getDepthMeshes();
     const receivers = this.getReceiverRoots();
     let projectorsToRender = this.activeProjectors;
 
@@ -976,21 +1116,18 @@ export class SceneEngine {
 
     if (
       (this.materialPreviewMode === 'projectionPreview' || this.materialPreviewMode === 'projectionUv') &&
-      projectorsToRender.length > 0 &&
-      depthMeshes.length > 0
+      projectorsToRender.length > 0
     ) {
+      const hasOcclusion = this.buildOcclusionDepthMaps(projectorsToRender);
+
       if (projectorsToRender.length === 1) {
         const projector = projectorsToRender[0];
         this.applyProjectiveUniforms(projector);
-        const worldMatrix = projectorWorldMatrix(projector);
-        const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
-        const depthMap = this.depthPass.render(
-          this.renderer,
-          this.editorScene,
-          projectorCamera,
-          depthMeshes,
-        );
-        this.projectiveMaterial.uniforms.depthMap.value = depthMap;
+        this.projectiveMaterial.uniforms.useOcclusion.value = hasOcclusion ? 1 : 0;
+        const defaultDepth = this.occlusionDepthSingle.get('all');
+        if (defaultDepth) {
+          this.projectiveMaterial.uniforms.depthMap.value = defaultDepth;
+        }
 
         for (const root of receivers) {
           const meshes = collectMeshes(root);
@@ -1005,22 +1142,11 @@ export class SceneEngine {
           }
         }
       } else {
-        const depthTextures: THREE.Texture[] = [];
-        for (const projector of projectorsToRender.slice(0, 4)) {
-          let pass = this.depthPassByProjector.get(projector.id);
-          if (!pass) {
-            pass = new DepthPass();
-            this.depthPassByProjector.set(projector.id, pass);
-          }
-          const worldMatrix = projectorWorldMatrix(projector);
-          const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
-          depthTextures.push(pass.render(this.renderer, this.editorScene, projectorCamera, depthMeshes));
-        }
-
+        const defaultDepths = this.occlusionDepthMulti.get('all');
         updateMultiProjectiveMaterial(
           this.multiProjectiveMaterial,
           projectorsToRender.slice(0, 4),
-          depthTextures,
+          defaultDepths ?? [],
           this.projectionCompositeMode,
           this.materialPreviewMode === 'projectionUv',
           this.contentSourceProjector(this.allProjectors),
@@ -1030,9 +1156,10 @@ export class SceneEngine {
             this.mappingMode,
           ),
         );
+        this.multiProjectiveMaterial.uniforms.useOcclusion.value = hasOcclusion ? 1 : 0;
         this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(
-          this.depthPass.target.width,
-          this.depthPass.target.height,
+          this.depthPass!.target.width,
+          this.depthPass!.target.height,
         );
 
         for (const root of receivers) {
@@ -1057,16 +1184,6 @@ export class SceneEngine {
     }
 
     this.callbacks.onFrameTime?.(performance.now() - frameStart);
-  }
-
-  private getDepthMeshes(): THREE.Mesh[] {
-    const meshes: THREE.Mesh[] = [];
-    for (const root of this.objectMeshes.values()) {
-      if (root.userData.blocksProjection) {
-        meshes.push(...collectMeshes(root));
-      }
-    }
-    return meshes;
   }
 
   private getReceiverRoots(): THREE.Object3D[] {

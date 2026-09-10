@@ -4,6 +4,7 @@ uniform mat4 projectorMatrices[MAX_P];
 uniform sampler2D depthMaps[MAX_P];
 uniform sampler2D mediaMaps[MAX_P];
 uniform float depthBias;
+uniform int useOcclusion;
 uniform float brightness[MAX_P];
 uniform float patternTypes[MAX_P];
 uniform float useMediaTexture[MAX_P];
@@ -142,6 +143,7 @@ vec3 sampleProjectorColor(int idx, vec2 uv) {
 }
 
 bool projectorVisible(int idx, vec2 uv, float fragDepth) {
+  if (useOcclusion == 0) return true;
   float sceneDepth = texture2D(depthMaps[idx], uv).r;
   return fragDepth <= sceneDepth + depthBias;
 }

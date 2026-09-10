@@ -57,6 +57,8 @@ export function Viewport() {
     engine.sync(useAppStore.getState());
     engine.start();
 
+    (window as Window & { __projectionLabEngine?: SceneEngine }).__projectionLabEngine = engine;
+
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
       const store = useAppStore.getState();
@@ -74,6 +76,7 @@ export function Viewport() {
 
     return () => {
       window.removeEventListener('keydown', onKeyDown);
+      delete (window as Window & { __projectionLabEngine?: SceneEngine }).__projectionLabEngine;
       unsub();
       engine.dispose();
       engineRef.current = null;

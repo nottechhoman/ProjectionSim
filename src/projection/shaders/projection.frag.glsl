@@ -2,6 +2,7 @@ uniform mat4 projectorMatrix;
 uniform sampler2D depthMap;
 uniform sampler2D mediaMap;
 uniform float depthBias;
+uniform int useOcclusion;
 uniform float brightness;
 uniform int patternType;
 uniform int useMediaTexture;
@@ -105,11 +106,13 @@ void main() {
   vec2 uv = projNDC.xy * 0.5 + 0.5;
   vec2 contentUv = mappingMode == 1 ? sharedContentUv() : uv;
 
-  float sceneDepth = texture2D(depthMap, uv).r;
-  float fragDepth = projNDC.z * 0.5 + 0.5;
-  if (fragDepth > sceneDepth + depthBias) {
-    gl_FragColor = vec4(surfaceBaseColor * 0.45, 1.0);
-    return;
+  if (useOcclusion == 1) {
+    float sceneDepth = texture2D(depthMap, uv).r;
+    float fragDepth = projNDC.z * 0.5 + 0.5;
+    if (fragDepth > sceneDepth + depthBias) {
+      gl_FragColor = vec4(surfaceBaseColor, 1.0);
+      return;
+    }
   }
 
   vec3 color;

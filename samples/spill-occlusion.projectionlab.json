@@ -1,0 +1,90 @@
+{
+  "version": 2,
+  "savedAt": "2026-09-09T00:00:00.000Z",
+  "name": "Spill Occlusion Demo",
+  "sceneObjects": [
+    {
+      "id": "front-screen",
+      "name": "Front Screen",
+      "type": "screen",
+      "transform": {
+        "position": { "x": 0, "y": 1.5, "z": 0.5 },
+        "quaternion": [0, 0, 0, 1]
+      },
+      "visibleInEditor": true,
+      "receivesProjection": true,
+      "blocksProjection": true,
+      "projectionSides": "front",
+      "dimensions": { "width": 2.5, "height": 1.40625 }
+    },
+    {
+      "id": "rear-screen",
+      "name": "Rear Screen",
+      "type": "screen",
+      "transform": {
+        "position": { "x": 0, "y": 1.5, "z": -2 },
+        "quaternion": [0, 0, 0, 1]
+      },
+      "visibleInEditor": true,
+      "receivesProjection": true,
+      "blocksProjection": false,
+      "projectionSides": "front",
+      "dimensions": { "width": 8, "height": 4.5 }
+    },
+    {
+      "id": "floor-1",
+      "name": "Floor",
+      "type": "floor",
+      "transform": {
+        "position": { "x": 0, "y": 0, "z": 0 },
+        "quaternion": [0, 0, 0, 1]
+      },
+      "visibleInEditor": true,
+      "receivesProjection": false,
+      "blocksProjection": true,
+      "dimensions": { "width": 20, "height": 20 }
+    }
+  ],
+  "projectors": [
+    {
+      "id": "proj-1",
+      "name": "Projector 1",
+      "enabled": true,
+      "color": "#4fc3f7",
+      "transform": {
+        "position": { "x": 0, "y": 1.5, "z": 6 },
+        "quaternion": [0, 0, 0, 1]
+      },
+      "optics": {
+        "throwRatio": 1.5,
+        "resolution": { "width": 1920, "height": 1080 },
+        "aspectRatio": 1.7777777777777777,
+        "lensShiftH": 0,
+        "lensShiftV": 0,
+        "nearLimit": 0.1,
+        "farLimit": 100
+      },
+      "testPattern": "colorBars",
+      "brightness": 1,
+      "mediaSource": "pattern",
+      "mediaAssetId": null,
+      "mediaFit": "contain",
+      "blendEdges": { "left": 0, "right": 0, "top": 0, "bottom": 0 },
+      "outerEdgeFade": false,
+      "lookAtEnabled": false
+    }
+  ],
+  "mediaAssets": [],
+  "materialPreviewMode": "projectionPreview",
+  "projectionCompositeMode": "solo",
+  "mappingMode": "raw",
+  "calculationTargetId": "rear-screen",
+  "selectedObjectId": "proj-1",
+  "selectedProjectorId": "proj-1",
+  "displayUnit": "m",
+  "viewPreset": "persp",
+  "transformMode": "translate",
+  "leftPanelVisible": true,
+  "rightPanelVisible": true,
+  "bottomPanelVisible": true
+}

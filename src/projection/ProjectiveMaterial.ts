@@ -22,6 +22,7 @@ export function createProjectiveMaterial(): THREE.ShaderMaterial {
       depthMap: { value: null },
       mediaMap: { value: fallback },
       depthBias: { value: 0.002 },
+      useOcclusion: { value: 0 },
       brightness: { value: 1.0 },
       patternType: { value: 0 },
       useMediaTexture: { value: 0 },

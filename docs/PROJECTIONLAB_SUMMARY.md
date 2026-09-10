@@ -1,7 +1,7 @@
 # ProjectionLab — Project Summary
 
 **Branch:** `feat/reliability-shared-source-target`  
-**Last updated:** 2026-09-08  
+**Last updated:** 2026-09-09  
 **Stack:** React 19 · Three.js · Zustand · Vite · TypeScript · Vitest · Playwright
 
 ProjectionLab is a browser-based 3D projection planning simulator. It lets you place projectors, screens, and occluders in a metric scene, preview projected content with realistic lens geometry, calculate footprints and overlap, and export planning reports.
@@ -13,8 +13,8 @@ ProjectionLab is a browser-based 3D projection planning simulator. It lets you p
 ```bash
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm test           # 56 Vitest tests
-npm run test:e2e   # 4 Playwright smoke tests
+npm test           # 69 Vitest tests
+npm run test:e2e   # 7 Playwright tests (smoke + spill occlusion)
 npm run build      # Production build
 ```
 
@@ -83,8 +83,8 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 
 | Mode | Behavior |
 |------|----------|
-| **Raw** | Each projector samples its own raster UV. Rotating a projector visibly distorts content. |
-| **Shared** | Content is sampled in screen/curved-surface coordinates. Overlapping projectors show aligned imagery. |
+| **Raw** | Each fragment samples the projector raster UV from world position (one continuous raster). Multiple receivers share the same UV field; `blocksProjection` occluders hide downstream fragments. Occluded regions keep their base material. |
+| **Shared** | Content is sampled in screen/curved-surface coordinates. Overlapping projectors show aligned imagery. Physical visibility still uses per-projector depth occlusion in Raw space; only content coordinates change. |
 
 Toolbar: **Mapping → Raw / Shared**
 
@@ -135,7 +135,7 @@ Per-projector: geometric covered, visible covered, blocked area.
 
 **Numerical tolerances (tests):** 12% relative area tolerance for draft vs high convergence; 3% for identical-projector overlap assertions.
 
-**Rendering vs calculation:** Both use `blocksProjection` objects for occlusion. Receivers are excluded from the WebGL depth pass to prevent self-occlusion in preview; sampling uses endpoint tolerance instead. A screen with `blocksProjection=true` occludes in both preview and sampled visible coverage.
+**Rendering vs calculation:** Both use `blocksProjection` objects for occlusion. The WebGL depth pass includes all `blocksProjection` geometry. Receiving surfaces that also block use an **exclude-self** depth map so they can receive projection without self-shadowing. Non-blocking receivers use the full blocker depth map. Sampled **visible** coverage uses ray casting with endpoint tolerance; analytic footprint/overlap metrics remain **geometric** (pre-occlusion) unless labeled otherwise in the calculation panel.
 
 Reports (CSV/HTML) include target, sampled metrics, definitions, sampling resolution, projector optics/position, and lens-shift convention.
 
@@ -163,11 +163,19 @@ Preview uses mesh winding (`gl_FrontFacing`). Curved screens treat the **concave
 - **Beam** — toggle lens-to-corner rays and yellow footprint outline
 - **Reports** — export calculation results as CSV or HTML
 
+### Physical projection spill (Raw mapping)
+
+- One projector raster mapped continuously from world position (no per-receiver UV normalization)
+- `receivesProjection` and `blocksProjection` are independent flags
+- A front receiving screen with **Blocks projection** intercepts the beam; a rear receiver shows only unblocked raster regions (spill), not a restarted image
+- Occluded fragments keep the surface **base material** (not dimmed or black)
+- Multi-projector visibility is evaluated independently per projector
+- **Shared** mapping keeps separate content coordinates; spill behavior applies to physical visibility
+
 ### Projection Visibility Fixes (Post-M4)
 
-- Receiving surfaces keep their base material outside the projected region
-- Receivers excluded from depth pass (only `blocksProjection` objects occlude) — fixes self-occlusion
-- Always-on yellow footprint frame on receiving surfaces when footprint can be computed
+- Receiving surfaces keep their base material outside the projected region or when occluded
+- Beam helper toggle controls lens rays and yellow footprint outline
 
 ---
 
@@ -191,12 +199,14 @@ Open via **Open** in the toolbar:
 |------|-------------|
 | `samples/two-projector-blend.projectionlab.json` | Two projectors with edge blend on a flat screen |
 | `samples/curved-screen.projectionlab.json` | Flat screen plus curved receiving surface |
+| `samples/spill-occlusion.projectionlab.json` | Front blocking screen + rear spill receiver (color bars diagnostic) |
 
 ### Suggested workflows
 
 1. **Two-projector blend** — load blend sample → add second projector if needed → try **Mapping → Shared** + **Composite → Blend**
 2. **Curved screen** — load curved sample → enable **Beam** → check yellow arc outline on curved surface
 3. **Overlap stats** — open calculation panel with two projectors enabled on flat or curved primary receiver
+4. **Spill occlusion** — open spill sample → front screen blocks center beam → rear shows outer color-bar spill only → toggle front **Blocks projection** to reveal center on rear
 
 ---
 
@@ -240,13 +250,14 @@ src/
 | Planar overlap | `src/coverage/overlap.ts` |
 | Curved overlap | `src/coverage/curvedOverlap.ts` |
 | Sampled coverage analysis | `src/coverage/coverageAnalysis.ts`, `src/coverage/occlusion.ts` |
+| Raw spill / projector occlusion | `src/visibility/projectionOcclusion.ts`, `src/visibility/DepthPass.ts` |
 | Shared-canvas mapping | `src/projection/sharedCanvasMapping.ts` |
 | Single-projector shader | `src/projection/shaders/projection.frag.glsl` |
 | Multi-projector shader | `src/projection/shaders/multiProjection.frag.glsl` |
 | App state | `src/store/index.ts` |
 | Panel layout | `src/ui/panelLayout.ts`, `FloatingPanel.tsx` |
 | Calculation reports | `src/persistence/reportExport.ts` |
-| E2E tests | `e2e/smoke.spec.ts` |
+| E2E tests | `e2e/smoke.spec.ts`, `e2e/spill-occlusion.spec.ts` |
 
 ### Calculation behavior
 
@@ -258,7 +269,7 @@ Shared-canvas **rendering** still uses `resolveSharedCanvasSupport()` for surfac
 
 ## Tests
 
-### Vitest (56 tests)
+### Vitest (69 tests)
 
 | Test | File | Description |
 |------|------|-------------|
@@ -273,11 +284,13 @@ Shared-canvas **rendering** still uses `resolveSharedCanvasSupport()` for surfac
 | CR | `src/coverage/coverageAnalysis.test.ts` | Sampled geometric/visible coverage, occlusion, curved, convergence |
 | 5 | `src/blending/blendWeights.test.ts` | Blend weights sum to 1; no double brightness |
 
-Additional unit tests: `clipFootprint`, `curvedFootprint`, `history`, `reportExport`, `projectSerializer`.
+Additional unit tests: `clipFootprint`, `curvedFootprint`, `history`, `reportExport`, `projectSerializer`, `projectionOcclusion` (blocker flags, exclude-self depth keys, collinear UV continuity).
 
 ### Playwright
 
-`e2e/smoke.spec.ts` — app shell, panels, reliability regression (shared source + calculation target stable across selection), and visible coverage blocker scenario.
+`e2e/smoke.spec.ts` — app shell, panels, reliability regression, visible coverage blocker scenario.
+
+`e2e/spill-occlusion.spec.ts` — loads spill sample, reads canvas pixels to verify rear center is occluded while spill regions show projection, and blocking toggle restores rear center.
 
 ---
 

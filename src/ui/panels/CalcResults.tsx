@@ -121,6 +121,10 @@ export function CalcResults() {
                 {nominal.pixelsPerMeterH.toFixed(1)} px/m · {nominal.mmPerPixelH.toFixed(3)} mm/px
               </span>
             </div>
+            <p className={styles.hint}>
+              Footprint and pairwise overlap are geometric (frustum vs target). Viewport spill uses the same
+              raster UV with depth occlusion; sampled visible metrics below include blockers.
+            </p>
             {footprint && (
               <>
                 <div className={styles.row}>

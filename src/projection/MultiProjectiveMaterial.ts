@@ -41,6 +41,7 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       depthMaps: { value: depthMaps },
       mediaMaps: { value: mediaMaps },
       depthBias: { value: 0.002 },
+      useOcclusion: { value: 0 },
       brightness: { value: new Float32Array(MAX) },
       patternTypes: { value: new Float32Array(MAX) },
       useMediaTexture: { value: new Float32Array(MAX) },
