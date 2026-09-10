@@ -6,7 +6,7 @@ export type TransformMode = 'translate' | 'rotate';
 
 export type SceneObjectType = 'screen' | 'floor' | 'wall' | 'box' | 'curvedScreen' | 'model';
 
-export type MaterialPreviewMode = 'original' | 'projectionPreview' | 'projectionUv';
+export type MaterialPreviewMode = 'original' | 'projectionPreview' | 'projectionUv' | 'falloff';
 
 export type MediaSourceKind = 'pattern' | 'image' | 'video';
 

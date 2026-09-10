@@ -16,6 +16,7 @@ export function BottomPanel() {
   const clearMeasurePoints = useAppStore((s) => s.clearMeasurePoints);
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
   const clearProjectMessage = useAppStore((s) => s.clearProjectMessage);
+  const materialPreviewMode = useAppStore((s) => s.materialPreviewMode);
   const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
   const showProjectionBeam = useAppStore((s) => s.showProjectionBeam);
   const projectorCount = useAppStore((s) => s.projectors.length);
@@ -87,6 +88,14 @@ export function BottomPanel() {
       {shaderWarning && (
         <div className={styles.warningBanner} title={shaderWarning}>
           Shader: {shaderWarning}
+        </div>
+      )}
+      {materialPreviewMode === 'falloff' && (
+        <div
+          className={styles.item}
+          title="Relative inverse-square brightness from each projector lens (planning estimate, not calibrated lux)"
+        >
+          Falloff heatmap: hot = near, cold = far
         </div>
       )}
       {showProjectionBeam && (

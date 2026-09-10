@@ -276,6 +276,14 @@ export function Toolbar() {
         </button>
         <button
           type="button"
+          className={materialPreviewMode === 'falloff' ? styles.active : undefined}
+          onClick={() => setMaterialPreviewMode('falloff')}
+          title="Inverse-square brightness heatmap from projector (near = hot, far = cold)"
+        >
+          Falloff
+        </button>
+        <button
+          type="button"
           className={materialPreviewMode === 'original' ? styles.active : undefined}
           onClick={() => setMaterialPreviewMode('original')}
         >

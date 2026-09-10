@@ -18,6 +18,9 @@ uniform mat4 screenMapMatrixInv;
 uniform vec4 screenMapParams;
 
 uniform int projectionSides;
+uniform int falloffPreview;
+uniform vec3 projectorWorldPos;
+uniform float falloffRefDistance;
 
 varying vec3 vWorldPos;
 varying vec2 vSurfaceUv;
@@ -61,6 +64,20 @@ vec2 sharedContentUv() {
     return vec2(u, v);
   }
   return vec2(0.0);
+}
+
+float distanceFalloffIntensity(float dist, float refDist) {
+  float ratio = refDist / max(dist, 0.05);
+  return clamp(ratio * ratio, 0.0, 1.0);
+}
+
+vec3 falloffHeatmap(float intensity) {
+  float t = clamp(intensity, 0.0, 1.0);
+  vec3 cold = vec3(0.05, 0.08, 0.35);
+  vec3 mid = vec3(0.95, 0.45, 0.05);
+  vec3 hot = vec3(1.0, 0.98, 0.75);
+  if (t < 0.5) return mix(cold, mid, t * 2.0);
+  return mix(mid, hot, (t - 0.5) * 2.0);
 }
 
 vec3 sampleContent(vec2 contentUv) {
@@ -113,6 +130,13 @@ void main() {
       gl_FragColor = vec4(surfaceBaseColor, 1.0);
       return;
     }
+  }
+
+  if (falloffPreview == 1) {
+    float dist = length(vWorldPos - projectorWorldPos);
+    float intensity = distanceFalloffIntensity(dist, falloffRefDistance) * brightness;
+    gl_FragColor = vec4(falloffHeatmap(intensity), 1.0);
+    return;
   }
 
   vec3 color;

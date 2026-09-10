@@ -38,6 +38,7 @@ import { createCurvedScreen } from './objects/createCurvedScreen';
 import { FrustumHelper } from './helpers/FrustumHelper';
 import { mediaTextureCache, modelCache } from '../media';
 import { cloneModelGroup } from './ModelLoader';
+import { falloffReferenceDistance } from '../optics/falloff';
 import { computeProjectorLookAtQuaternion, rollFromProjectorQuaternion } from '../optics/lookAt';
 import { getCalculationTargetObject } from '../store/reliabilitySettings';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../utils/euler';
@@ -1046,7 +1047,13 @@ export class SceneEngine {
   private applyProjectiveUniforms(projector: ProjectorConfig): void {
     const worldMatrix = projectorWorldMatrix(projector);
     const forceUv = this.materialPreviewMode === 'projectionUv' ? 1 : 0;
+    const falloff = this.materialPreviewMode === 'falloff' ? 1 : 0;
     this.projectiveMaterial.uniforms.forceUvPreview.value = forceUv;
+    this.projectiveMaterial.uniforms.falloffPreview.value = falloff;
+    (this.projectiveMaterial.uniforms.projectorWorldPos.value as THREE.Vector3).setFromMatrixPosition(
+      worldMatrix,
+    );
+    this.projectiveMaterial.uniforms.falloffRefDistance.value = falloffReferenceDistance(projector);
     this.projectiveMaterial.uniforms.projectorMatrix.value.copy(
       getProjectorViewProjectionMatrix(projector.optics, worldMatrix),
     );
@@ -1115,7 +1122,9 @@ export class SceneEngine {
     const savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
 
     if (
-      (this.materialPreviewMode === 'projectionPreview' || this.materialPreviewMode === 'projectionUv') &&
+      (this.materialPreviewMode === 'projectionPreview' ||
+        this.materialPreviewMode === 'projectionUv' ||
+        this.materialPreviewMode === 'falloff') &&
       projectorsToRender.length > 0
     ) {
       const hasOcclusion = this.buildOcclusionDepthMaps(projectorsToRender);
@@ -1155,6 +1164,7 @@ export class SceneEngine {
             this.sceneObjects,
             this.mappingMode,
           ),
+          this.materialPreviewMode === 'falloff',
         );
         this.multiProjectiveMaterial.uniforms.useOcclusion.value = hasOcclusion ? 1 : 0;
         this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(

@@ -152,7 +152,9 @@ export function parseProjectJson(text: string): ProjectSnapshot {
       ? 'original'
       : data.materialPreviewMode === 'projectionUv'
         ? 'projectionUv'
-        : 'projectionPreview';
+        : data.materialPreviewMode === 'falloff'
+          ? 'falloff'
+          : 'projectionPreview';
   const projectionCompositeMode: ProjectionCompositeMode =
     data.projectionCompositeMode === 'heatmap' ||
     data.projectionCompositeMode === 'blended' ||

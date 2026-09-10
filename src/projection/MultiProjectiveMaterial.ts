@@ -4,6 +4,7 @@ import multiFrag from './shaders/multiProjection.frag.glsl?raw';
 import type { MediaFitMode, ProjectionCompositeMode, ProjectorConfig, TestPattern } from '../types';
 import { FIT_MODE_INT } from '../media/MediaTextureCache';
 import { patternToInt } from './ProjectiveMaterial';
+import { falloffReferenceDistance } from '../optics/falloff';
 import { getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { mediaTextureCache } from '../media';
 
@@ -71,9 +72,15 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       sharedProjectorColor: { value: new THREE.Color('#ffffff') },
       sharedBrightness: { value: 1.0 },
       projectionSides: { value: 0 },
+      falloffPreview: { value: 0 },
+      projectorWorldPos: {
+        value: Array.from({ length: MAX }, () => new THREE.Vector3()),
+      },
+      falloffRefDistance: { value: new Float32Array(MAX) },
     },
     vertexShader: vert,
     fragmentShader: multiFrag,
+    side: THREE.DoubleSide,
   });
 }
 
@@ -89,6 +96,7 @@ export function updateMultiProjectiveMaterial(
   forceUvPreview = false,
   contentProjector?: ProjectorConfig | null,
   mappingMode = 0,
+  falloffPreview = false,
 ): void {
   const count = Math.min(projectors.length, MAX);
   material.uniforms.projectorCount.value = count;
@@ -107,6 +115,8 @@ export function updateMultiProjectiveMaterial(
   const outerEdgeFade = material.uniforms.outerEdgeFade.value as Float32Array;
   const depthMaps = material.uniforms.depthMaps.value as THREE.Texture[];
   const mediaMaps = material.uniforms.mediaMaps.value as THREE.Texture[];
+  const projectorWorldPos = material.uniforms.projectorWorldPos.value as THREE.Vector3[];
+  const falloffRefDistance = material.uniforms.falloffRefDistance.value as Float32Array;
 
   for (let i = 0; i < MAX; i++) {
     if (i >= count) break;
@@ -121,6 +131,8 @@ export function updateMultiProjectiveMaterial(
     worldMatrix.compose(pos, quat, new THREE.Vector3(1, 1, 1));
 
     matrices[i].copy(getProjectorViewProjectionMatrix(proj.optics, worldMatrix));
+    projectorWorldPos[i].copy(pos);
+    falloffRefDistance[i] = falloffReferenceDistance(proj);
     brightness[i] = proj.brightness;
     patternTypes[i] = PATTERN_MAP[proj.testPattern];
     rasterAspects[i] = proj.optics.aspectRatio;
@@ -177,6 +189,7 @@ export function updateMultiProjectiveMaterial(
     }
   }
   material.uniforms.mappingMode.value = mappingMode;
+  material.uniforms.falloffPreview.value = falloffPreview ? 1 : 0;
 }
 
 export { patternToInt };

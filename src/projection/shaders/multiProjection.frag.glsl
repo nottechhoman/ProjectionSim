@@ -33,6 +33,9 @@ uniform vec3 sharedProjectorColor;
 uniform float sharedBrightness;
 
 uniform int projectionSides;
+uniform int falloffPreview;
+uniform vec3 projectorWorldPos[MAX_P];
+uniform float falloffRefDistance[MAX_P];
 
 varying vec3 vWorldPos;
 varying vec2 vSurfaceUv;
@@ -148,6 +151,20 @@ bool projectorVisible(int idx, vec2 uv, float fragDepth) {
   return fragDepth <= sceneDepth + depthBias;
 }
 
+float distanceFalloffIntensity(float dist, float refDist) {
+  float ratio = refDist / max(dist, 0.05);
+  return clamp(ratio * ratio, 0.0, 1.0);
+}
+
+vec3 falloffHeatmap(float intensity) {
+  float t = clamp(intensity, 0.0, 1.0);
+  vec3 cold = vec3(0.05, 0.08, 0.35);
+  vec3 mid = vec3(0.95, 0.45, 0.05);
+  vec3 hot = vec3(1.0, 0.98, 0.75);
+  if (t < 0.5) return mix(cold, mid, t * 2.0);
+  return mix(mid, hot, (t - 0.5) * 2.0);
+}
+
 vec3 heatmapColor(int count) {
   if (count <= 0) return vec3(0.05);
   if (count == 1) return vec3(0.2, 0.75, 0.35);
@@ -158,6 +175,29 @@ vec3 heatmapColor(int count) {
 void main() {
   if (!receivesOnThisFace()) {
     gl_FragColor = vec4(surfaceBaseColor, 1.0);
+    return;
+  }
+
+  if (falloffPreview == 1) {
+    float bestIntensity = 0.0;
+    for (int i = 0; i < MAX_P; i++) {
+      if (i >= projectorCount) break;
+      vec4 projClip = projectorMatrices[i] * vec4(vWorldPos, 1.0);
+      if (projClip.w <= 0.0) continue;
+      vec3 projNDC = projClip.xyz / projClip.w;
+      if (abs(projNDC.x) > 1.0 || abs(projNDC.y) > 1.0 || abs(projNDC.z) > 1.0) continue;
+      vec2 uv = projNDC.xy * 0.5 + 0.5;
+      float fragDepth = projNDC.z * 0.5 + 0.5;
+      if (!projectorVisible(i, uv, fragDepth)) continue;
+      float dist = length(vWorldPos - projectorWorldPos[i]);
+      float intensity = distanceFalloffIntensity(dist, falloffRefDistance[i]) * brightness[i];
+      bestIntensity = max(bestIntensity, intensity);
+    }
+    if (bestIntensity <= 0.0) {
+      gl_FragColor = vec4(surfaceBaseColor, 1.0);
+      return;
+    }
+    gl_FragColor = vec4(falloffHeatmap(bestIntensity), 1.0);
     return;
   }
 
