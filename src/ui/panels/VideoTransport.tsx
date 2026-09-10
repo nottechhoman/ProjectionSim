@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { mediaTextureCache } from '../../media/assetImport';
+import { isVideoPlaying } from '../../media/videoPlayback';
 import { useAppStore } from '../../store';
 import styles from './BottomPanel.module.css';
 
 interface VideoTransportProps {
   assetId: string;
+  label?: string;
 }
 
 function formatVideoTime(seconds: number): string {
@@ -14,8 +16,8 @@ function formatVideoTime(seconds: number): string {
   return `${minutes}:${String(secs).padStart(2, '0')}`;
 }
 
-export function VideoTransport({ assetId }: VideoTransportProps) {
-  const videoPlaying = useAppStore((s) => s.videoPlaying);
+export function VideoTransport({ assetId, label }: VideoTransportProps) {
+  const videoPlaybackRevision = useAppStore((s) => s.videoPlaybackRevision);
   const toggleVideoPlayback = useAppStore((s) => s.toggleVideoPlayback);
   const seekVideo = useAppStore((s) => s.seekVideo);
   const setVideoMuted = useAppStore((s) => s.setVideoMuted);
@@ -25,6 +27,7 @@ export function VideoTransport({ assetId }: VideoTransportProps) {
   const [duration, setDuration] = useState(0);
   const [muted, setMuted] = useState(true);
   const [loop, setLoop] = useState(true);
+  const [playing, setPlaying] = useState(false);
 
   useEffect(() => {
     const video = mediaTextureCache.get(assetId)?.video;
@@ -35,27 +38,39 @@ export function VideoTransport({ assetId }: VideoTransportProps) {
       setCurrentTime(video.currentTime);
       setMuted(video.muted);
       setLoop(video.loop);
+      setPlaying(!video.paused);
     };
 
     const onTimeUpdate = () => setCurrentTime(video.currentTime);
-    const onEnded = () => useAppStore.setState({ videoPlaying: false });
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
+    const onEnded = () => setPlaying(false);
 
     syncMeta();
     video.addEventListener('loadedmetadata', syncMeta);
     video.addEventListener('timeupdate', onTimeUpdate);
+    video.addEventListener('play', onPlay);
+    video.addEventListener('pause', onPause);
     video.addEventListener('ended', onEnded);
 
     return () => {
       video.removeEventListener('loadedmetadata', syncMeta);
       video.removeEventListener('timeupdate', onTimeUpdate);
+      video.removeEventListener('play', onPlay);
+      video.removeEventListener('pause', onPause);
       video.removeEventListener('ended', onEnded);
     };
-  }, [assetId]);
+  }, [assetId, videoPlaybackRevision]);
+
+  useEffect(() => {
+    setPlaying(isVideoPlaying(assetId));
+  }, [assetId, videoPlaybackRevision]);
 
   return (
-    <div className={styles.videoTransport}>
-      <button type="button" className={styles.videoBtn} onClick={toggleVideoPlayback}>
-        {videoPlaying ? 'Pause' : 'Play'}
+    <div className={styles.videoTransport} data-testid={`video-transport-${assetId}`}>
+      {label && <span className={styles.videoLabel}>{label}</span>}
+      <button type="button" className={styles.videoBtn} onClick={() => toggleVideoPlayback(assetId)}>
+        {playing ? 'Pause' : 'Play'}
       </button>
       <input
         type="range"
@@ -64,8 +79,8 @@ export function VideoTransport({ assetId }: VideoTransportProps) {
         max={duration || 0}
         step={0.05}
         value={Math.min(currentTime, duration || 0)}
-        onChange={(event) => seekVideo(parseFloat(event.target.value))}
-        aria-label="Video timeline"
+        onChange={(event) => seekVideo(assetId, parseFloat(event.target.value))}
+        aria-label={`Video timeline${label ? ` for ${label}` : ''}`}
       />
       <span className={styles.videoTime}>
         {formatVideoTime(currentTime)} / {formatVideoTime(duration)}
@@ -74,7 +89,7 @@ export function VideoTransport({ assetId }: VideoTransportProps) {
         type="button"
         className={styles.videoBtn}
         onClick={() => {
-          setVideoMuted(!muted);
+          setVideoMuted(assetId, !muted);
           setMuted(!muted);
         }}
       >
@@ -84,7 +99,7 @@ export function VideoTransport({ assetId }: VideoTransportProps) {
         type="button"
         className={styles.videoBtn}
         onClick={() => {
-          setVideoLoop(!loop);
+          setVideoLoop(assetId, !loop);
           setLoop(!loop);
         }}
       >

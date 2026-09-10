@@ -82,6 +82,15 @@
   align-items: center;
   gap: 8px;
   min-width: 280px;
+  flex-shrink: 0;
+}
+
+.videoLabel {
+  color: #bbb;
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .videoSeek {

@@ -8,6 +8,12 @@ import {
   importMediaBlob,
   mediaTextureCache,
 } from '../media/assetImport';
+import {
+  listSceneVideoSources,
+  pauseVideos,
+  playVideos,
+  toggleVideo,
+} from '../media/videoPlayback';
 import type {
   CalculationResults,
   DisplayUnit,
@@ -67,7 +73,8 @@ interface AppState extends PersistedStateSlice {
   webgl2Available: boolean | null;
   calculationResults: CalculationResults;
   shaderWarning: string | null;
-  videoPlaying: boolean;
+  /** Bumped when global video transport changes so UI can refresh. */
+  videoPlaybackRevision: number;
   showProjectionBeam: boolean;
   setSelectedObject: (id: string | null) => void;
   setSelectedProjector: (id: string) => void;
@@ -142,10 +149,12 @@ interface AppState extends PersistedStateSlice {
     assetId: string | null,
     fit?: MediaFitMode,
   ) => void;
-  toggleVideoPlayback: () => void;
-  seekVideo: (seconds: number) => void;
-  setVideoMuted: (muted: boolean) => void;
-  setVideoLoop: (loop: boolean) => void;
+  toggleVideoPlayback: (assetId: string) => void;
+  playAllSceneVideos: () => void;
+  pauseAllSceneVideos: () => void;
+  seekVideo: (assetId: string, seconds: number) => void;
+  setVideoMuted: (assetId: string, muted: boolean) => void;
+  setVideoLoop: (assetId: string, loop: boolean) => void;
   getSnapshot: () => ProjectSnapshot;
   newProject: () => void;
   saveProjectToFile: () => void;
@@ -277,7 +286,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   leftPanelFloat: initial.leftPanelFloat,
   rightPanelFloat: initial.rightPanelFloat,
   transformMode: initial.transformMode,
-  videoPlaying: false,
+  videoPlaybackRevision: 0,
   showProjectionBeam: false,
   setSelectedObject: (id) => set({ selectedObjectId: id }),
   setSelectedProjector: (id) => set({ selectedProjectorId: id, selectedObjectId: id }),
@@ -797,41 +806,37 @@ export const useAppStore = create<AppState>((set, get) => ({
       ),
     }));
   },
-  toggleVideoPlayback: () => {
-    const projId = get().selectedProjectorId;
-    const proj = get().projectors.find((p) => p.id === projId);
-    if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
-    const entry = mediaTextureCache.get(proj.mediaAssetId);
-    if (!entry?.video) return;
-    if (entry.video.paused) {
-      void entry.video.play();
-      set({ videoPlaying: true });
-    } else {
-      entry.video.pause();
-      set({ videoPlaying: false });
+  toggleVideoPlayback: (assetId) => {
+    if (!toggleVideo(assetId)) return;
+    set((s) => ({ videoPlaybackRevision: s.videoPlaybackRevision + 1 }));
+  },
+  playAllSceneVideos: () => {
+    const assetIds = listSceneVideoSources(get().projectors).map((source) => source.assetId);
+    const started = playVideos(assetIds);
+    if (started > 0) {
+      set((s) => ({
+        videoPlaybackRevision: s.videoPlaybackRevision + 1,
+        projectMessage: `Playing ${started} video${started === 1 ? '' : 's'}`,
+      }));
     }
   },
-  seekVideo: (seconds) => {
-    const projId = get().selectedProjectorId;
-    const proj = get().projectors.find((p) => p.id === projId);
-    if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
-    const video = mediaTextureCache.get(proj.mediaAssetId)?.video;
+  pauseAllSceneVideos: () => {
+    const assetIds = listSceneVideoSources(get().projectors).map((source) => source.assetId);
+    pauseVideos(assetIds);
+    set((s) => ({ videoPlaybackRevision: s.videoPlaybackRevision + 1 }));
+  },
+  seekVideo: (assetId, seconds) => {
+    const video = mediaTextureCache.get(assetId)?.video;
     if (!video || !Number.isFinite(seconds)) return;
     video.currentTime = Math.max(0, Math.min(video.duration || 0, seconds));
   },
-  setVideoMuted: (muted) => {
-    const projId = get().selectedProjectorId;
-    const proj = get().projectors.find((p) => p.id === projId);
-    if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
-    const video = mediaTextureCache.get(proj.mediaAssetId)?.video;
+  setVideoMuted: (assetId, muted) => {
+    const video = mediaTextureCache.get(assetId)?.video;
     if (!video) return;
     video.muted = muted;
   },
-  setVideoLoop: (loop) => {
-    const projId = get().selectedProjectorId;
-    const proj = get().projectors.find((p) => p.id === projId);
-    if (!proj?.mediaAssetId || proj.mediaSource !== 'video') return;
-    const video = mediaTextureCache.get(proj.mediaAssetId)?.video;
+  setVideoLoop: (assetId, loop) => {
+    const video = mediaTextureCache.get(assetId)?.video;
     if (!video) return;
     video.loop = loop;
   },
@@ -849,12 +854,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         coverageAnalysis: null,
         calculationTarget: null,
       },
-      videoPlaying: false,
+      videoPlaybackRevision: 0,
       measureMode: false,
       measurePoints: [null, null],
       historyPast: [],
       historyFuture: [],
     });
+    pauseVideos(listSceneVideoSources(get().projectors).map((source) => source.assetId));
     clearAutosave();
     get().recomputeCalculations();
   },
@@ -883,12 +889,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         coverageAnalysis: null,
         calculationTarget: null,
       },
-        videoPlaying: false,
+        videoPlaybackRevision: 0,
         measureMode: false,
         measurePoints: [null, null],
         historyPast: [],
         historyFuture: [],
       });
+      pauseVideos(listSceneVideoSources(get().projectors).map((source) => source.assetId));
       writeAutosave(snapshot);
       get().recomputeCalculations();
     } catch (err) {

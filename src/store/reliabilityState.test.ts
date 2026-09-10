@@ -25,7 +25,7 @@ function resetStore(): void {
       calculationTarget: null,
     },
     shaderWarning: null,
-    videoPlaying: false,
+    videoPlaybackRevision: 0,
     showProjectionBeam: false,
   });
   useAppStore.getState().recomputeCalculations();
