@@ -239,9 +239,11 @@ export function Toolbar() {
             title={
               mode === 'solo'
                 ? 'Show only the selected projector on surfaces'
-                : projectorCount < 2
-                  ? 'Add a second projector'
-                  : undefined
+                : mode === 'unblended'
+                  ? 'Show every projector at once — assign different media per projector in Inspector'
+                  : projectorCount < 2
+                    ? 'Add a second projector'
+                    : undefined
             }
           >
             {mode === 'solo'

@@ -109,6 +109,11 @@ export function BottomPanel() {
         </div>
       )}
       {projectionCompositeMode === 'unblended' && projectorCount > 1 && (
+        <div className={styles.item} title="Each projector shows its own pattern, image, or video at the same time">
+          Multi-view: {projectors.filter((p) => p.enabled).length} projectors active
+        </div>
+      )}
+      {projectionCompositeMode === 'unblended' && projectorCount > 1 && (
         <div className={styles.warningBanner} title="Overlap regions appear brighter in raw additive mode">
           Raw overlap: additive brightness
         </div>

@@ -179,7 +179,7 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     projectors: structuredClone(DEFAULT_PROJECTORS),
     mediaAssets: [],
     materialPreviewMode: 'projectionPreview',
-    projectionCompositeMode: 'solo',
+    projectionCompositeMode: 'unblended',
     mappingMode: 'raw',
     sharedContentSourceProjectorId: 'proj-1',
     calculationTargetId: 'screen-1',

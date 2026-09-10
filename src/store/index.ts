@@ -460,11 +460,16 @@ export const useAppStore = create<AppState>((set, get) => ({
       blendEdges: { ...DEFAULT_BLEND_EDGES },
       outerEdgeFade: false,
     };
+    const switchToMultiView =
+      state.projectors.length === 1 && state.projectionCompositeMode === 'solo';
     set((s) => ({
       projectors: [...s.projectors, newProjector],
       selectedObjectId: id,
       selectedProjectorId: id,
-      projectMessage: `Added ${newProjector.name}`,
+      projectionCompositeMode: switchToMultiView ? 'unblended' : s.projectionCompositeMode,
+      projectMessage: switchToMultiView
+        ? `Added ${newProjector.name} — switched Composite to Raw (all projectors visible)`
+        : `Added ${newProjector.name}`,
     }));
     get().recomputeCalculations();
   },
