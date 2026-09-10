@@ -8,7 +8,7 @@ import {
   createMultiProjectiveMaterial,
   updateMultiProjectiveMaterial,
 } from '../projection/MultiProjectiveMaterial';
-import { effectiveBlocksProjection } from './blocksProjectionPolicy';
+import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 import { DepthPass } from '../visibility/DepthPass';
 import {
   collectBlockerMeshes,
@@ -230,18 +230,6 @@ function offsetCornersAlongNormal(
     y: c.y + normal.y * offset,
     z: c.z + normal.z * offset,
   }));
-}
-
-function projectorWorldMatrix(projector: ProjectorConfig): THREE.Matrix4 {
-  const matrix = new THREE.Matrix4();
-  const position = new THREE.Vector3(
-    projector.transform.position.x,
-    projector.transform.position.y,
-    projector.transform.position.z,
-  );
-  const quaternion = new THREE.Quaternion(...projector.transform.quaternion);
-  matrix.compose(position, quaternion, new THREE.Vector3(1, 1, 1));
-  return matrix;
 }
 
 export class SceneEngine {
@@ -769,8 +757,7 @@ export class SceneEngine {
       obj3d.visible = obj.visibleInEditor;
       obj3d.userData.id = obj.id;
       obj3d.userData.receivesProjection = obj.receivesProjection;
-      const blocksProjection = effectiveBlocksProjection(obj);
-      obj3d.userData.blocksProjection = blocksProjection;
+      obj3d.userData.blocksProjection = obj.blocksProjection;
       if (obj.type === 'ledWall') {
         const mesh = obj3d as THREE.Mesh;
         if (mesh.material instanceof THREE.ShaderMaterial) {
@@ -783,7 +770,7 @@ export class SceneEngine {
         syncReceiverMeshHooks(
           obj3d,
           obj.id,
-          blocksProjection,
+          obj.blocksProjection,
           sidesInt,
           (key, multi) => this.resolveOcclusionDepth(key, multi),
         );
@@ -828,7 +815,7 @@ export class SceneEngine {
     if (projectors.length === 1) {
       if (!this.depthPass) return false;
       const projector = projectors[0];
-      const worldMatrix = projectorWorldMatrix(projector);
+      const worldMatrix = getProjectorWorldMatrix(projector);
       const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
       for (const key of keys) {
         const meshes = collectBlockerMeshes(
@@ -864,7 +851,7 @@ export class SceneEngine {
           pass = new DepthPass();
           this.depthPassByProjector.set(projector.id, pass);
         }
-        const worldMatrix = projectorWorldMatrix(projector);
+        const worldMatrix = getProjectorWorldMatrix(projector);
         const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
         textures.push(pass.render(this.renderer!, this.editorScene, projectorCamera, meshes));
       }
@@ -974,7 +961,7 @@ export class SceneEngine {
         continue;
       }
 
-      const worldMatrix = projectorWorldMatrix(projector);
+      const worldMatrix = getProjectorWorldMatrix(projector);
       if (!skipTransforms) {
         const position = new THREE.Vector3().setFromMatrixPosition(worldMatrix);
         const quaternion = new THREE.Quaternion().setFromRotationMatrix(worldMatrix);
@@ -1061,7 +1048,7 @@ export class SceneEngine {
   }
 
   private applyProjectiveUniforms(projector: ProjectorConfig): void {
-    const worldMatrix = projectorWorldMatrix(projector);
+    const worldMatrix = getProjectorWorldMatrix(projector);
     const forceUv = this.materialPreviewMode === 'projectionUv' ? 1 : 0;
     const falloff = this.materialPreviewMode === 'falloff' ? 1 : 0;
     this.projectiveMaterial.uniforms.forceUvPreview.value = forceUv;

@@ -6,6 +6,7 @@ import { FIT_MODE_INT } from '../media/MediaTextureCache';
 import { patternToInt } from './ProjectiveMaterial';
 import { falloffReferenceDistance } from '../optics/falloff';
 import { getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
+import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 import { mediaTextureCache } from '../media';
 
 const MAX = 4;
@@ -121,17 +122,10 @@ export function updateMultiProjectiveMaterial(
   for (let i = 0; i < MAX; i++) {
     if (i >= count) break;
     const proj = projectors[i];
-    const worldMatrix = new THREE.Matrix4();
-    const pos = new THREE.Vector3(
-      proj.transform.position.x,
-      proj.transform.position.y,
-      proj.transform.position.z,
-    );
-    const quat = new THREE.Quaternion(...proj.transform.quaternion);
-    worldMatrix.compose(pos, quat, new THREE.Vector3(1, 1, 1));
+    const worldMatrix = getProjectorWorldMatrix(proj);
 
     matrices[i].copy(getProjectorViewProjectionMatrix(proj.optics, worldMatrix));
-    projectorWorldPos[i].copy(pos);
+    projectorWorldPos[i].setFromMatrixPosition(worldMatrix);
     falloffRefDistance[i] = falloffReferenceDistance(proj);
     brightness[i] = proj.brightness;
     patternTypes[i] = PATTERN_MAP[proj.testPattern];

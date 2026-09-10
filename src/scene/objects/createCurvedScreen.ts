@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { effectiveBlocksProjection } from '../blocksProjectionPolicy';
 import type { SceneObject } from '../../types';
 import { createCurvedScreenGeometry } from '../ModelLoader';
 
@@ -13,7 +12,7 @@ export function createCurvedScreen(obj: SceneObject): THREE.Mesh {
   mesh.userData = {
     id: obj.id,
     receivesProjection: obj.receivesProjection,
-    blocksProjection: effectiveBlocksProjection(obj),
+    blocksProjection: obj.blocksProjection,
   };
   return mesh;
 }

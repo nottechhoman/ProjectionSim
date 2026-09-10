@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { effectiveBlocksProjection } from '../blocksProjectionPolicy';
 import { createLedWallMaterial } from '../../projection/LedWallMaterial';
 import type { SceneObject } from '../../types';
 
@@ -13,7 +12,7 @@ export function createLedWall(obj: SceneObject): THREE.Mesh {
     id: obj.id,
     isLedWall: true,
     receivesProjection: false,
-    blocksProjection: effectiveBlocksProjection(obj),
+    blocksProjection: obj.blocksProjection,
   };
   return mesh;
 }

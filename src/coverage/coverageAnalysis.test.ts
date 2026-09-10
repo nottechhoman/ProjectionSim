@@ -93,11 +93,11 @@ describe('Coverage reliability — sampled analysis', () => {
     expect(obstructed.visibleCoveredArea).toBeGreaterThan(unobstructed.visibleCoveredArea * 0.2);
   });
 
-  it('5. blockable geometry always occludes even when stored flag is false', () => {
+  it('5. blocksProjection=false does not reduce visible coverage', () => {
     const scene = structuredClone(DEFAULT_SCENE_OBJECTS);
     scene.push({
       id: 'blocker-off',
-      name: 'Stored non-blocking box',
+      name: 'Non-blocking box',
       type: 'box',
       transform: {
         position: { x: 0, y: 1.5, z: 3 },
@@ -110,7 +110,7 @@ describe('Coverage reliability — sampled analysis', () => {
     });
     const baseline = analyze(DEFAULT_SCENE_OBJECTS, DEFAULT_PROJECTORS);
     const withBox = analyze(scene, DEFAULT_PROJECTORS);
-    expect(withBox.visibleCoveredArea).toBeLessThan(baseline.visibleCoveredArea * 0.75);
+    expect(withBox.visibleCoveredArea).toBeCloseTo(baseline.visibleCoveredArea, 2);
   });
 
   it('6. two identical projectors: union does not double; overlap equals covered area', () => {

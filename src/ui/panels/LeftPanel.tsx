@@ -1,4 +1,5 @@
 import { useAppStore } from '../../store';
+import { ContentPanel } from './ContentPanel';
 import styles from './LeftPanel.module.css';
 
 export function LeftPanel() {
@@ -90,6 +91,8 @@ export function LeftPanel() {
           ))}
         </ul>
       </div>
+
+      <ContentPanel />
     </div>
   );
 }

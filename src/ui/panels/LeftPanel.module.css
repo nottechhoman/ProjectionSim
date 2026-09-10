@@ -141,3 +141,47 @@
   opacity: 0.25;
   cursor: not-allowed;
 }
+
+.contentActions {
+  display: flex;
+  gap: 6px;
+  padding: 4px 10px 8px;
+}
+
+.contentItem {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 10px;
+  border-left: 2px solid transparent;
+}
+
+.contentMeta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.contentMedia {
+  font-size: 10px;
+  color: #9ec9e0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.contentBtn {
+  align-self: flex-start;
+  font: inherit;
+  font-size: 10px;
+  color: #ccc;
+  background: #333;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.contentBtn:hover {
+  background: #3a3a3a;
+}

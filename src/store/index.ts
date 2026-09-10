@@ -89,7 +89,7 @@ interface AppState extends PersistedStateSlice {
   updateSceneObjectFlags: (
     id: string,
     patch: Partial<
-      Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'projectionSides'>
+      Pick<SceneObject, 'visibleInEditor' | 'receivesProjection' | 'blocksProjection' | 'projectionSides'>
     >,
   ) => void;
   updateSceneObjectDimensions: (
@@ -480,6 +480,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       mediaFit: 'contain',
       blendEdges: { ...DEFAULT_BLEND_EDGES },
       outerEdgeFade: false,
+      lookAtEnabled: true,
+      lookAtTarget: { x: 0, y: 1.5, z: 0 },
     };
     const switchToMultiView =
       state.projectors.length === 1 && state.projectionCompositeMode === 'solo';
@@ -748,7 +750,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           },
           visibleInEditor: true,
           receivesProjection: true,
-          blocksProjection: true,
+          blocksProjection: false,
           dimensions: { width: 6, height: 3.375 },
           curved: { radius: 4, arcAngleDeg: 90, height: 3.375 },
         },

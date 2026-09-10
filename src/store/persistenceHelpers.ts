@@ -12,7 +12,6 @@ import type {
   AnalysisQuality,
   CalculationTargetSide,
 } from '../types';
-import { normalizeSceneObjectBlocksProjection } from '../scene/blocksProjectionPolicy';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
 import {
   clampPanelWidth,
@@ -102,7 +101,7 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
 
 export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice {
   const projectors = snapshot.projectors;
-  const sceneObjects = snapshot.sceneObjects.map(normalizeSceneObjectBlocksProjection);
+  const sceneObjects = snapshot.sceneObjects;
   const selectedProjectorId = snapshot.selectedProjectorId;
 
   const explicitSharedSource =

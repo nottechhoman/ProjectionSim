@@ -422,6 +422,19 @@ export function Inspector() {
               Receives projection
             </label>
           )}
+          {sceneObject.type !== 'ledWall' && (
+            <label className={styles.checkRow}>
+              <input
+                type="checkbox"
+                data-testid="blocks-projection-checkbox"
+                checked={sceneObject.blocksProjection}
+                onChange={(e) =>
+                  updateSceneObjectFlags(sceneObject.id, { blocksProjection: e.target.checked })
+                }
+              />
+              Blocks projection
+            </label>
+          )}
           {((sceneObject.receivesProjection && supportsProjectionSides(sceneObject.type)) ||
             sceneObject.type === 'ledWall') && (
             <div className={styles.row}>
