@@ -36,7 +36,7 @@ describe('reportExport', () => {
       projectors: DEFAULT_PROJECTORS,
       calculationResults,
     });
-    expect(csv).toContain('Not that useful Projection Tool — Calculation Report');
+    expect(csv).toContain('Not a Projection Tool — Calculation Report');
     expect(csv).toContain('Width,4.000 m');
     expect(csv).toContain('Calculation target,Screen (screen)');
   });
@@ -49,7 +49,7 @@ describe('reportExport', () => {
       calculationResults,
     });
     expect(html).toContain('<!DOCTYPE html>');
-    expect(html).toContain('Not that useful Projection Tool — Report');
+    expect(html).toContain('Not a Projection Tool — Report');
     expect(html).toContain('Calculation target');
     expect(html).toContain('Screen (screen)');
   });

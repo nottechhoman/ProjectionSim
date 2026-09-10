@@ -1,2 +1,2 @@
-export const APP_NAME = 'Not that useful Projection Tool';
-export const APP_NAME_SHORT = 'NTUPT';
+export const APP_NAME = 'Not a Projection Tool';
+export const APP_NAME_SHORT = 'NAPT';
