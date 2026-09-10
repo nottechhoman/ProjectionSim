@@ -4,7 +4,10 @@ import type { DisplayUnit, MappingMode, ProjectionCompositeMode, ViewPreset } fr
 import { MAX_PROJECTORS } from '../../types';
 import { resolveSharedCanvasSupport } from '../../projection/sharedCanvasMapping';
 import { listSharedContentSourceProjectors } from '../../store/reliabilitySettings';
+import { APP_NAME, APP_NAME_SHORT } from '../../branding/appName';
 import styles from './Toolbar.module.css';
+
+const LOGO_URL = `${import.meta.env.BASE_URL}logo.svg`;
 
 const UNITS: DisplayUnit[] = ['m', 'cm', 'mm'];
 const VIEW_PRESETS: { id: ViewPreset; label: string }[] = [
@@ -84,6 +87,12 @@ export function Toolbar() {
 
   return (
     <div className={styles.toolbar}>
+      <div className={styles.brand} title={APP_NAME}>
+        <img src={LOGO_URL} alt="" className={styles.brandLogo} width={28} height={28} />
+        <span className={styles.brandShort}>{APP_NAME_SHORT}</span>
+        <span className={styles.brandFull}>{APP_NAME}</span>
+      </div>
+      <div className={styles.separator} />
       <div className={styles.group}>
         <span className={styles.label}>Units</span>
         <select

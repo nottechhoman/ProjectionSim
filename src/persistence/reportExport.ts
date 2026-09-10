@@ -23,7 +23,7 @@ function escapeCsv(value: string | number | null | undefined): string {
 export function buildCalculationCsv(ctx: ReportContext): string {
   const { nominal, footprint, overlap, coverageAnalysis } = ctx.calculationResults;
   const rows: string[][] = [
-    ['ProjectionLab Calculation Report'],
+    ['Not that useful Projection Tool — Calculation Report'],
     ['Project', ctx.projectName],
     ['Exported', ctx.exportedAt ?? new Date().toISOString()],
     ['Display unit', ctx.displayUnit],
@@ -208,7 +208,7 @@ export function buildCalculationHtml(ctx: ReportContext): string {
   const row = (label: string, value: string) =>
     `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`;
 
-  let body = `<h1>ProjectionLab Report</h1>
+  let body = `<h1>Not that useful Projection Tool — Report</h1>
 <p><strong>Project:</strong> ${escapeHtml(ctx.projectName)}<br/>
 <strong>Exported:</strong> ${escapeHtml(exportedAt)}<br/>
 <strong>Display unit:</strong> ${escapeHtml(ctx.displayUnit)}<br/>
@@ -324,7 +324,7 @@ ${row('Occlusion loss', `${coverageAnalysis.occlusionLossArea.toFixed(2)} m² ($
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(ctx.projectName)} — ProjectionLab Report</title>
+  <title>${escapeHtml(ctx.projectName)} — NTUPT Report</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 32px; color: #222; }
     h1, h2, h3 { margin-top: 1.5em; }
