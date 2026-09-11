@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import vert from './shaders/projection.vert.glsl?raw';
+import multiVert from './shaders/multiProjection.vert.glsl?raw';
 import multiFrag from './shaders/multiProjection.frag.glsl?raw';
 import type { MediaFitMode, ProjectionCompositeMode, ProjectorConfig, TestPattern } from '../types';
 import { FIT_MODE_INT } from '../media/MediaTextureCache';
@@ -38,6 +38,7 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
   }
 
   return new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
     uniforms: {
       projectorMatrices: { value: Array.from({ length: MAX }, () => new THREE.Matrix4()) },
       depthMaps: { value: depthMaps },
@@ -79,7 +80,7 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       },
       falloffRefDistance: { value: new Float32Array(MAX) },
     },
-    vertexShader: vert,
+    vertexShader: multiVert,
     fragmentShader: multiFrag,
     side: THREE.DoubleSide,
   });
@@ -120,7 +121,10 @@ export function updateMultiProjectiveMaterial(
   const falloffRefDistance = material.uniforms.falloffRefDistance.value as Float32Array;
 
   for (let i = 0; i < MAX; i++) {
-    if (i >= count) break;
+    if (i >= count) {
+      useMediaTexture[i] = 0;
+      continue;
+    }
     const proj = projectors[i];
     const worldMatrix = getProjectorWorldMatrix(proj);
 
@@ -138,7 +142,7 @@ export function updateMultiProjectiveMaterial(
       proj.blendEdges.bottom,
     );
     outerEdgeFade[i] = proj.outerEdgeFade ? 1 : 0;
-    depthMaps[i] = depthTextures[i] ?? depthMaps[i];
+    depthMaps[i] = depthTextures[i] ?? depthMaps[i] ?? depthMaps[0];
 
     const useMedia =
       (proj.mediaSource === 'image' || proj.mediaSource === 'video') && proj.mediaAssetId;

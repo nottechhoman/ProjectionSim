@@ -37,8 +37,9 @@ uniform int falloffPreview;
 uniform vec3 projectorWorldPos[MAX_P];
 uniform float falloffRefDistance[MAX_P];
 
-varying vec3 vWorldPos;
-varying vec2 vSurfaceUv;
+in vec3 vWorldPos;
+in vec2 vSurfaceUv;
+out vec4 fragColor;
 
 bool receivesOnThisFace() {
   if (projectionSides >= 2) return true;
@@ -102,12 +103,12 @@ vec2 sharedContentUv() {
 }
 
 vec3 sampleSharedContent(vec2 contentUv) {
-  if (sharedUseMediaTexture > 0.5) {
+  if (sharedUseMediaTexture == 1) {
     vec2 mediaUv = applyFit(contentUv, sharedFitMode, sharedMediaAspect, sharedRasterAspect);
     if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) {
       return vec3(0.0);
     }
-    return texture2D(sharedMediaMap, mediaUv).rgb;
+    return texture(sharedMediaMap, mediaUv).rgb;
   }
   if (sharedPatternType < 0.5) {
     float v = checker(contentUv);
@@ -122,7 +123,22 @@ vec3 sampleSharedContent(vec2 contentUv) {
   return sharedProjectorColor;
 }
 
-vec3 sampleProjectorColor(int idx, vec2 uv) {
+// WebGL2 requires constant sampler indices — branch on projector slot instead of mediaMaps[idx].
+vec3 sampleMediaAt(int idx, vec2 mediaUv) {
+  if (idx == 0) return texture(mediaMaps[0], mediaUv).rgb;
+  if (idx == 1) return texture(mediaMaps[1], mediaUv).rgb;
+  if (idx == 2) return texture(mediaMaps[2], mediaUv).rgb;
+  return texture(mediaMaps[3], mediaUv).rgb;
+}
+
+float sampleDepthAt(int idx, vec2 uv) {
+  if (idx == 0) return texture(depthMaps[0], uv).r;
+  if (idx == 1) return texture(depthMaps[1], uv).r;
+  if (idx == 2) return texture(depthMaps[2], uv).r;
+  return texture(depthMaps[3], uv).r;
+}
+
+vec3 sampleProjectorColorAt(int idx, vec2 uv) {
   float pType = patternTypes[idx];
   float useMedia = useMediaTexture[idx];
   if (useMedia > 0.5) {
@@ -130,7 +146,7 @@ vec3 sampleProjectorColor(int idx, vec2 uv) {
     if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) {
       return vec3(0.0);
     }
-    return texture2D(mediaMaps[idx], mediaUv).rgb;
+    return sampleMediaAt(idx, mediaUv);
   }
   if (pType < 0.5) {
     float v = checker(uv);
@@ -145,9 +161,9 @@ vec3 sampleProjectorColor(int idx, vec2 uv) {
   return projectorColors[idx];
 }
 
-bool projectorVisible(int idx, vec2 uv, float fragDepth) {
+bool projectorVisibleAt(int idx, vec2 uv, float fragDepth) {
   if (useOcclusion == 0) return true;
-  float sceneDepth = texture2D(depthMaps[idx], uv).r;
+  float sceneDepth = sampleDepthAt(idx, uv);
   return fragDepth <= sceneDepth + depthBias;
 }
 
@@ -172,32 +188,71 @@ vec3 heatmapColor(int count) {
   return vec3(0.95, 0.3, 0.25);
 }
 
+void accumulateFalloffAt(int idx, inout float bestIntensity) {
+  if (idx >= projectorCount) return;
+  vec4 projClip = projectorMatrices[idx] * vec4(vWorldPos, 1.0);
+  if (projClip.w <= 0.0) return;
+  vec3 projNDC = projClip.xyz / projClip.w;
+  if (abs(projNDC.x) > 1.0 || abs(projNDC.y) > 1.0 || abs(projNDC.z) > 1.0) return;
+  vec2 uv = projNDC.xy * 0.5 + 0.5;
+  float fragDepth = projNDC.z * 0.5 + 0.5;
+  if (!projectorVisibleAt(idx, uv, fragDepth)) return;
+  float dist = length(vWorldPos - projectorWorldPos[idx]);
+  float intensity = distanceFalloffIntensity(dist, falloffRefDistance[idx]) * brightness[idx];
+  bestIntensity = max(bestIntensity, intensity);
+}
+
+void accumulateProjectionAt(int idx, inout vec3 sumColor, inout float sumWeight, inout int hitCount) {
+  if (idx >= projectorCount) return;
+
+  vec4 projClip = projectorMatrices[idx] * vec4(vWorldPos, 1.0);
+  if (projClip.w <= 0.0) return;
+
+  vec3 projNDC = projClip.xyz / projClip.w;
+  if (abs(projNDC.x) > 1.0 || abs(projNDC.y) > 1.0 || abs(projNDC.z) > 1.0) return;
+
+  vec2 uv = projNDC.xy * 0.5 + 0.5;
+  vec2 contentUv = mappingMode == 1 ? sharedContentUv() : uv;
+  float fragDepth = projNDC.z * 0.5 + 0.5;
+  if (!projectorVisibleAt(idx, uv, fragDepth)) return;
+
+  hitCount += 1;
+  vec3 color;
+  if (forceUvPreview == 1) {
+    color = mappingMode == 1 ? vec3(contentUv, 0.2) : vec3(uv, 0.2);
+  } else if (mappingMode == 1) {
+    color = sampleSharedContent(contentUv) * sharedBrightness;
+  } else {
+    color = sampleProjectorColorAt(idx, uv) * brightness[idx];
+  }
+  float w = rawBlendWeight(uv, blendEdges[idx], outerEdgeFade[idx]);
+
+  if (compositeMode == 0) {
+    sumColor += color;
+    sumWeight += 1.0;
+  } else if (compositeMode == 1) {
+    sumColor += color * w;
+    sumWeight += w;
+  }
+}
+
 void main() {
   if (!receivesOnThisFace()) {
-    gl_FragColor = vec4(surfaceBaseColor, 1.0);
+    fragColor = vec4(surfaceBaseColor, 1.0);
     return;
   }
 
   if (falloffPreview == 1) {
     float bestIntensity = 0.0;
-    for (int i = 0; i < MAX_P; i++) {
-      if (i >= projectorCount) break;
-      vec4 projClip = projectorMatrices[i] * vec4(vWorldPos, 1.0);
-      if (projClip.w <= 0.0) continue;
-      vec3 projNDC = projClip.xyz / projClip.w;
-      if (abs(projNDC.x) > 1.0 || abs(projNDC.y) > 1.0 || abs(projNDC.z) > 1.0) continue;
-      vec2 uv = projNDC.xy * 0.5 + 0.5;
-      float fragDepth = projNDC.z * 0.5 + 0.5;
-      if (!projectorVisible(i, uv, fragDepth)) continue;
-      float dist = length(vWorldPos - projectorWorldPos[i]);
-      float intensity = distanceFalloffIntensity(dist, falloffRefDistance[i]) * brightness[i];
-      bestIntensity = max(bestIntensity, intensity);
-    }
+    accumulateFalloffAt(0, bestIntensity);
+    accumulateFalloffAt(1, bestIntensity);
+    accumulateFalloffAt(2, bestIntensity);
+    accumulateFalloffAt(3, bestIntensity);
     if (bestIntensity <= 0.0) {
-      gl_FragColor = vec4(surfaceBaseColor, 1.0);
+      fragColor = vec4(surfaceBaseColor, 1.0);
       return;
     }
-    gl_FragColor = vec4(falloffHeatmap(bestIntensity), 1.0);
+    fragColor = vec4(falloffHeatmap(bestIntensity), 1.0);
     return;
   }
 
@@ -205,54 +260,25 @@ void main() {
   float sumWeight = 0.0;
   int hitCount = 0;
 
-  for (int i = 0; i < MAX_P; i++) {
-    if (i >= projectorCount) break;
-
-    vec4 projClip = projectorMatrices[i] * vec4(vWorldPos, 1.0);
-    if (projClip.w <= 0.0) continue;
-
-    vec3 projNDC = projClip.xyz / projClip.w;
-    if (abs(projNDC.x) > 1.0 || abs(projNDC.y) > 1.0 || abs(projNDC.z) > 1.0) continue;
-
-    vec2 uv = projNDC.xy * 0.5 + 0.5;
-    vec2 contentUv = mappingMode == 1 ? sharedContentUv() : uv;
-    float fragDepth = projNDC.z * 0.5 + 0.5;
-    if (!projectorVisible(i, uv, fragDepth)) continue;
-
-    hitCount++;
-    vec3 color;
-    if (forceUvPreview == 1) {
-      color = mappingMode == 1 ? vec3(contentUv, 0.2) : vec3(uv, 0.2);
-    } else if (mappingMode == 1) {
-      color = sampleSharedContent(contentUv) * sharedBrightness;
-    } else {
-      color = sampleProjectorColor(i, uv) * brightness[i];
-    }
-    float w = rawBlendWeight(uv, blendEdges[i], outerEdgeFade[i]);
-
-    if (compositeMode == 0) {
-      sumColor += color;
-      sumWeight += 1.0;
-    } else if (compositeMode == 1) {
-      sumColor += color * w;
-      sumWeight += w;
-    }
-  }
+  accumulateProjectionAt(0, sumColor, sumWeight, hitCount);
+  accumulateProjectionAt(1, sumColor, sumWeight, hitCount);
+  accumulateProjectionAt(2, sumColor, sumWeight, hitCount);
+  accumulateProjectionAt(3, sumColor, sumWeight, hitCount);
 
   if (compositeMode == 2) {
     if (hitCount == 0) {
-      gl_FragColor = vec4(surfaceBaseColor, 1.0);
+      fragColor = vec4(surfaceBaseColor, 1.0);
       return;
     }
-    gl_FragColor = vec4(heatmapColor(hitCount), 1.0);
+    fragColor = vec4(heatmapColor(hitCount), 1.0);
     return;
   }
 
   if (sumWeight <= 0.0) {
-    gl_FragColor = vec4(surfaceBaseColor, 1.0);
+    fragColor = vec4(surfaceBaseColor, 1.0);
     return;
   }
 
   vec3 projected = compositeMode == 1 ? sumColor / sumWeight : sumColor;
-  gl_FragColor = vec4(mix(surfaceBaseColor * 0.3, projected, 1.0), 1.0);
+  fragColor = vec4(mix(surfaceBaseColor * 0.3, projected, 1.0), 1.0);
 }

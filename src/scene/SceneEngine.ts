@@ -131,8 +131,12 @@ function attachReceiverShaderHooks(
     const multi = mat.uniforms.depthMaps != null;
     const depth = resolveOcclusionDepth(key, multi);
     if (multi && Array.isArray(depth) && mat.uniforms.depthMaps) {
-      mat.uniforms.depthMaps.value = depth;
-      mat.uniforms.useOcclusion.value = 1;
+      const depthMaps = mat.uniforms.depthMaps.value as THREE.Texture[];
+      const fallback = depthMaps[0];
+      for (let slot = 0; slot < depthMaps.length; slot++) {
+        depthMaps[slot] = slot < depth.length ? depth[slot] : fallback;
+      }
+      mat.uniforms.useOcclusion.value = depth.length > 0 ? 1 : 0;
     } else if (!multi && depth instanceof THREE.Texture && mat.uniforms.depthMap) {
       mat.uniforms.depthMap.value = depth;
       mat.uniforms.useOcclusion.value = 1;
@@ -303,9 +307,11 @@ export class SceneEngine {
       canvas,
       context: gl as WebGL2RenderingContext,
       antialias: true,
+      preserveDrawingBuffer: true,
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
+    this.renderer.debug.checkShaderErrors = true;
 
     this.editorScene.background = new THREE.Color(0x1a1a1a);
     this.editorScene.add(this.contentGroup);
