@@ -23,6 +23,11 @@ import {
   FLOATING_PANEL_HEIGHT,
   type PanelFloatPosition,
 } from '../ui/panelLayout';
+import {
+  getDeviceProfile,
+  responsivePanelWidths,
+  shouldStartWithPanelsHidden,
+} from '../ui/deviceProfile';
 import { readAutosave } from '../persistence/autosave';
 import {
   legacyDefaultCalculationTargetId,
@@ -189,11 +194,11 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     displayUnit: 'm',
     viewPreset: 'persp',
     transformMode: 'translate',
-    leftPanelVisible: true,
-    rightPanelVisible: true,
+    leftPanelVisible: !shouldStartWithPanelsHidden(getDeviceProfile()),
+    rightPanelVisible: !shouldStartWithPanelsHidden(getDeviceProfile()),
     bottomPanelVisible: true,
-    leftPanelWidth: DEFAULT_LEFT_PANEL_WIDTH,
-    rightPanelWidth: DEFAULT_RIGHT_PANEL_WIDTH,
+    leftPanelWidth: responsivePanelWidths(getDeviceProfile()).left,
+    rightPanelWidth: responsivePanelWidths(getDeviceProfile()).right,
     leftPanelPoppedOut: false,
     rightPanelPoppedOut: false,
     leftPanelFloat: defaultLeftPanelFloat(DEFAULT_LEFT_PANEL_WIDTH),

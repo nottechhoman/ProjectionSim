@@ -185,3 +185,15 @@
 .contentBtn:hover {
   background: #3a3a3a;
 }
+
+@media (max-width: 1100px) {
+  .item {
+    min-height: 40px;
+    padding: 8px 10px;
+  }
+
+  .deleteBtn {
+    width: 32px;
+    height: 32px;
+  }
+}

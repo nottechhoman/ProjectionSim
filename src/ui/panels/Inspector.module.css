@@ -159,3 +159,25 @@
 .dangerBtn:hover {
   background: #4a2828;
 }
+
+@media (max-width: 1100px) {
+  .row {
+    grid-template-columns: 72px 1fr;
+    gap: 10px;
+    margin-bottom: 8px;
+  }
+
+  .row input,
+  .row select {
+    min-height: 36px;
+    padding: 6px 8px;
+  }
+
+  .checkRow {
+    min-height: 36px;
+  }
+
+  .dangerBtn {
+    min-height: 40px;
+  }
+}

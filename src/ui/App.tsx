@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useAppStore } from '../store';
 import styles from './App.module.css';
 import { Viewport } from './Viewport';
@@ -7,8 +8,12 @@ import { Inspector } from './panels/Inspector';
 import { BottomPanel } from './panels/BottomPanel';
 import { PanelResizeHandle } from './components/PanelResizeHandle';
 import { FloatingPanel } from './components/FloatingPanel';
+import { isCompactLayout } from './deviceProfile';
+import { useDeviceProfile } from './useDeviceProfile';
 
 export default function App() {
+  const deviceProfile = useDeviceProfile();
+  const compact = isCompactLayout(deviceProfile);
   const leftPanelVisible = useAppStore((s) => s.leftPanelVisible);
   const rightPanelVisible = useAppStore((s) => s.rightPanelVisible);
   const bottomPanelVisible = useAppStore((s) => s.bottomPanelVisible);
@@ -21,6 +26,8 @@ export default function App() {
   const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
+  const setLeftPanelVisible = useAppStore((s) => s.setLeftPanelVisible);
+  const setRightPanelVisible = useAppStore((s) => s.setRightPanelVisible);
   const resizeLeftPanelBy = useAppStore((s) => s.resizeLeftPanelBy);
   const resizeRightPanelBy = useAppStore((s) => s.resizeRightPanelBy);
   const moveLeftPanelFloat = useAppStore((s) => s.moveLeftPanelFloat);
@@ -32,18 +39,42 @@ export default function App() {
   const hasVideoTimeline =
     selectedProjector?.mediaSource === 'video' && !!selectedProjector.mediaAssetId;
 
-  const leftDocked = leftPanelVisible && !leftPanelPoppedOut;
-  const rightDocked = rightPanelVisible && !rightPanelPoppedOut;
+  const leftDocked = leftPanelVisible && !leftPanelPoppedOut && !compact;
+  const rightDocked = rightPanelVisible && !rightPanelPoppedOut && !compact;
+  const leftDrawer = compact && leftPanelVisible && !leftPanelPoppedOut;
+  const rightDrawer = compact && rightPanelVisible && !rightPanelPoppedOut;
 
-  const style = {
-    gridTemplateColumns: `${leftDocked ? `${leftPanelWidth}px` : '0px'} 1fr ${rightDocked ? `${rightPanelWidth}px` : '0px'}`,
-    gridTemplateRows: `40px 1fr ${bottomPanelVisible ? (hasVideoTimeline ? '56px' : '28px') : '0px'}`,
-  } as const;
+  useEffect(() => {
+    if (!compact) return;
+    document.body.dataset.compactLayout = deviceProfile;
+    return () => {
+      delete document.body.dataset.compactLayout;
+    };
+  }, [compact, deviceProfile]);
+
+  const closeDrawers = () => {
+    setLeftPanelVisible(false);
+    setRightPanelVisible(false);
+  };
+
+  const style = compact
+    ? ({
+        gridTemplateColumns: '1fr',
+        gridTemplateRows: `auto 1fr auto ${bottomPanelVisible ? (hasVideoTimeline ? '56px' : '28px') : '0px'}`,
+      } as const)
+    : ({
+        gridTemplateColumns: `${leftDocked ? `${leftPanelWidth}px` : '0px'} 1fr ${rightDocked ? `${rightPanelWidth}px` : '0px'}`,
+        gridTemplateRows: `40px 1fr ${bottomPanelVisible ? (hasVideoTimeline ? '56px' : '28px') : '0px'}`,
+      } as const);
 
   return (
-    <div className={styles.app} style={style}>
+    <div
+      className={`${styles.app} ${compact ? styles.compact : ''}`}
+      style={style}
+      data-device={deviceProfile}
+    >
       <div className={styles.toolbar}>
-        <Toolbar />
+        <Toolbar compact={compact} />
       </div>
       <div className={`${styles.left} ${!leftDocked ? styles.collapsed : ''}`}>
         {leftDocked ? (
@@ -52,7 +83,8 @@ export default function App() {
             <PanelResizeHandle edge="left" onResize={resizeLeftPanelBy} />
           </>
         ) : (
-          !leftPanelVisible && (
+          !leftPanelVisible &&
+          !compact && (
             <button type="button" className={styles.expandEdge} onClick={toggleLeftPanel} title="Show scene panel">
               Scene ›
             </button>
@@ -69,13 +101,47 @@ export default function App() {
             <Inspector />
           </>
         ) : (
-          !rightPanelVisible && (
+          !rightPanelVisible &&
+          !compact && (
             <button type="button" className={styles.expandEdgeRight} onClick={toggleRightPanel} title="Show inspector">
               ‹ Inspector
             </button>
           )
         )}
       </div>
+
+      {compact ? (
+        <div className={styles.mobileNav}>
+          <button
+            type="button"
+            className={leftPanelVisible ? styles.mobileNavActive : undefined}
+            onClick={() => {
+              setRightPanelVisible(false);
+              toggleLeftPanel();
+            }}
+          >
+            Scene
+          </button>
+          <button
+            type="button"
+            className={!leftPanelVisible && !rightPanelVisible ? styles.mobileNavActive : undefined}
+            onClick={closeDrawers}
+          >
+            Viewport
+          </button>
+          <button
+            type="button"
+            className={rightPanelVisible ? styles.mobileNavActive : undefined}
+            onClick={() => {
+              setLeftPanelVisible(false);
+              toggleRightPanel();
+            }}
+          >
+            Inspector
+          </button>
+        </div>
+      ) : null}
+
       <div className={`${styles.bottom} ${!bottomPanelVisible ? styles.collapsed : ''}`}>
         {bottomPanelVisible ? (
           <BottomPanel />
@@ -85,6 +151,24 @@ export default function App() {
           </button>
         )}
       </div>
+
+      {leftDrawer ? (
+        <>
+          <button type="button" className={styles.drawerBackdrop} onClick={toggleLeftPanel} aria-label="Close scene panel" />
+          <div className={styles.drawerLeft} style={{ width: leftPanelWidth }}>
+            <LeftPanel />
+          </div>
+        </>
+      ) : null}
+
+      {rightDrawer ? (
+        <>
+          <button type="button" className={styles.drawerBackdrop} onClick={toggleRightPanel} aria-label="Close inspector" />
+          <div className={styles.drawerRight} style={{ width: rightPanelWidth }}>
+            <Inspector />
+          </div>
+        </>
+      ) : null}
 
       {leftPanelVisible && leftPanelPoppedOut ? (
         <FloatingPanel

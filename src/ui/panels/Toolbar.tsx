@@ -17,7 +17,11 @@ const VIEW_PRESETS: { id: ViewPreset; label: string }[] = [
   { id: 'side', label: 'Side' },
 ];
 
-export function Toolbar() {
+interface ToolbarProps {
+  compact?: boolean;
+}
+
+export function Toolbar({ compact = false }: ToolbarProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const importInputRef = useRef<HTMLInputElement>(null);
   const displayUnit = useAppStore((s) => s.displayUnit);
@@ -87,7 +91,7 @@ export function Toolbar() {
   };
 
   return (
-    <div className={styles.toolbar}>
+    <div className={`${styles.toolbar} ${compact ? styles.compact : ''}`}>
       <div className={styles.brand} title={APP_NAME}>
         <img src={LOGO_URL} alt="" className={styles.brandLogo} width={28} height={28} />
         <span className={styles.brandShort}>{APP_NAME_SHORT}</span>

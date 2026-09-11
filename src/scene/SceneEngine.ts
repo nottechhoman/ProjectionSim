@@ -10,6 +10,7 @@ import {
 } from '../projection/MultiProjectiveMaterial';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 import { DepthPass } from '../visibility/DepthPass';
+import { depthPassResolution, targetPixelRatio } from '../ui/deviceProfile';
 import {
   collectBlockerMeshes,
   excludeObjectIdFromDepthKey,
@@ -284,6 +285,7 @@ export class SceneEngine {
   private readonly measureMarkers: THREE.Mesh[] = [];
   private readonly occlusionDepthSingle = new Map<OcclusionDepthKey, THREE.Texture | null>();
   private readonly occlusionDepthMulti = new Map<OcclusionDepthKey, THREE.Texture[] | null>();
+  private currentDepthResolution = depthPassResolution();
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -309,9 +311,10 @@ export class SceneEngine {
       antialias: true,
       preserveDrawingBuffer: true,
     });
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.setPixelRatio(targetPixelRatio());
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.debug.checkShaderErrors = true;
+    this.canvas.style.touchAction = 'none';
 
     this.editorScene.background = new THREE.Color(0x1a1a1a);
     this.editorScene.add(this.contentGroup);
@@ -331,6 +334,10 @@ export class SceneEngine {
     this.editorCamera.lookAt(0, 1.5, 0);
 
     this.controls = new OrbitControls(this.editorCamera, canvas);
+    this.controls.enableDamping = true;
+    this.controls.dampingFactor = 0.08;
+    this.controls.rotateSpeed = 0.7;
+    this.controls.panSpeed = 0.8;
     this.controls.target.set(0, 1.5, 0);
     this.controls.update();
 
@@ -376,11 +383,8 @@ export class SceneEngine {
 
     canvas.addEventListener('pointerdown', this.onPointerDown);
 
-    this.depthPass = new DepthPass();
-    this.projectiveMaterial.uniforms.depthMapSize.value.set(
-      this.depthPass.target.width,
-      this.depthPass.target.height,
-    );
+    this.depthPass = new DepthPass(this.currentDepthResolution, this.currentDepthResolution);
+    this.applyDepthMapUniformSize(this.currentDepthResolution);
 
     this.resize();
     window.addEventListener('resize', this.onResize);
@@ -427,6 +431,7 @@ export class SceneEngine {
 
   private resize(): void {
     if (!this.renderer || !this.editorCamera) return;
+    this.syncRenderQuality();
     const parent = this.canvas.parentElement;
     const width = parent?.clientWidth ?? this.canvas.clientWidth;
     const height = parent?.clientHeight ?? this.canvas.clientHeight;
@@ -434,6 +439,30 @@ export class SceneEngine {
     this.renderer.setSize(width, height, false);
     this.editorCamera.aspect = width / height;
     this.editorCamera.updateProjectionMatrix();
+  }
+
+  private syncRenderQuality(): void {
+    if (!this.renderer) return;
+
+    const pixelRatio = targetPixelRatio();
+    if (this.renderer.getPixelRatio() !== pixelRatio) {
+      this.renderer.setPixelRatio(pixelRatio);
+    }
+
+    const depthSize = depthPassResolution();
+    if (depthSize === this.currentDepthResolution) return;
+
+    this.currentDepthResolution = depthSize;
+    this.depthPass?.dispose();
+    this.depthPass = new DepthPass(depthSize, depthSize);
+    for (const pass of this.depthPassByProjector.values()) pass.dispose();
+    this.depthPassByProjector.clear();
+    this.applyDepthMapUniformSize(depthSize);
+  }
+
+  private applyDepthMapUniformSize(size: number): void {
+    this.projectiveMaterial.uniforms.depthMapSize.value.set(size, size);
+    this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(size, size);
   }
 
   sync(state: AppState): void {
@@ -854,7 +883,7 @@ export class SceneEngine {
       for (const projector of projectors.slice(0, 4)) {
         let pass = this.depthPassByProjector.get(projector.id);
         if (!pass) {
-          pass = new DepthPass();
+          pass = new DepthPass(this.currentDepthResolution, this.currentDepthResolution);
           this.depthPassByProjector.set(projector.id, pass);
         }
         const worldMatrix = getProjectorWorldMatrix(projector);
