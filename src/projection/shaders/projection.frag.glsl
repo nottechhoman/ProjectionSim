@@ -17,6 +17,9 @@ uniform int screenMapKind;
 uniform mat4 screenMapMatrixInv;
 uniform vec4 screenMapParams;
 
+uniform int useContentCanvas;
+uniform sampler2D canvasMap;
+
 uniform int projectionSides;
 uniform int falloffPreview;
 uniform vec3 projectorWorldPos;
@@ -81,6 +84,12 @@ vec3 falloffHeatmap(float intensity) {
 }
 
 vec3 sampleContent(vec2 contentUv) {
+  if (useContentCanvas == 1) {
+    if (contentUv.x < 0.0 || contentUv.x > 1.0 || contentUv.y < 0.0 || contentUv.y > 1.0) {
+      return vec3(0.0);
+    }
+    return texture2D(canvasMap, contentUv).rgb;
+  }
   if (useMediaTexture == 1) {
     vec2 mediaUv = applyFit(contentUv);
     if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) discard;

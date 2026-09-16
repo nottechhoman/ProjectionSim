@@ -42,6 +42,7 @@ export function listLedWallVideoSources(sceneObjects: SceneObject[]): VideoSourc
 export function listSceneVideoSources(
   projectors: ProjectorConfig[],
   sceneObjects: SceneObject[] = [],
+  contentCanvas?: { layers: { kind: string; mediaAssetId: string | null; name: string }[] },
 ): VideoSourceRef[] {
   const byAsset = new Map<string, string>();
   for (const source of [
@@ -50,6 +51,13 @@ export function listSceneVideoSources(
   ]) {
     const existing = byAsset.get(source.assetId);
     byAsset.set(source.assetId, existing ? `${existing}, ${source.label}` : source.label);
+  }
+  if (contentCanvas) {
+    for (const layer of contentCanvas.layers) {
+      if (layer.kind !== 'video' || !layer.mediaAssetId) continue;
+      const existing = byAsset.get(layer.mediaAssetId);
+      byAsset.set(layer.mediaAssetId, existing ? `${existing}, ${layer.name}` : layer.name);
+    }
   }
   return [...byAsset.entries()].map(([assetId, label]) => ({ assetId, label }));
 }

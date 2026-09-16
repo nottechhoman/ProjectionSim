@@ -25,6 +25,34 @@ export type ProjectionCompositeMode = 'solo' | 'unblended' | 'heatmap' | 'blende
 
 export type MappingMode = 'raw' | 'sharedCanvas';
 
+export type ContentLayerKind = 'image' | 'video' | 'pattern' | 'solid';
+
+export interface ContentCanvasLayer {
+  id: string;
+  name: string;
+  kind: ContentLayerKind;
+  mediaAssetId: string | null;
+  pattern: TestPattern | null;
+  color: string;
+  /** Layer rect in canvas pixels, top-left origin. */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotationDeg: number;
+  opacity: number;
+  fit: MediaFitMode;
+  visible: boolean;
+}
+
+export interface ContentCanvas {
+  enabled: boolean;
+  widthPx: number;
+  heightPx: number;
+  /** Render order: index 0 is the bottom layer. */
+  layers: ContentCanvasLayer[];
+}
+
 export type AnalysisQuality = 'draft' | 'high';
 
 export type ProjectionSides = 'front' | 'back' | 'both';

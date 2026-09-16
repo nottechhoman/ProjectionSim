@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { appendHistory, captureSceneHistory, historySnapshotsEqual } from '../store/history';
+import { DEFAULT_CONTENT_CANVAS } from '../projection/contentCanvas';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
 
 describe('scene history', () => {
@@ -8,6 +9,7 @@ describe('scene history', () => {
       sceneObjects: DEFAULT_SCENE_OBJECTS,
       projectors: DEFAULT_PROJECTORS,
       mediaAssets: [],
+      contentCanvas: DEFAULT_CONTENT_CANVAS,
       sharedContentSourceProjectorId: 'proj-1',
       calculationTargetId: 'screen-1',
     };
@@ -21,6 +23,7 @@ describe('scene history', () => {
       sceneObjects: DEFAULT_SCENE_OBJECTS,
       projectors: DEFAULT_PROJECTORS,
       mediaAssets: [],
+      contentCanvas: DEFAULT_CONTENT_CANVAS,
       sharedContentSourceProjectorId: 'proj-1',
       calculationTargetId: 'screen-1',
     };

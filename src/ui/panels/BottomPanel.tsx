@@ -25,12 +25,13 @@ export function BottomPanel() {
   const selectedProjectorId = useAppStore((s) => s.selectedProjectorId);
   const projectors = useAppStore((s) => s.projectors);
   const sceneObjects = useAppStore((s) => s.sceneObjects);
+  const contentCanvas = useAppStore((s) => s.contentCanvas);
   const projector = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
   const playAllSceneVideos = useAppStore((s) => s.playAllSceneVideos);
   const pauseAllSceneVideos = useAppStore((s) => s.pauseAllSceneVideos);
   const videoSources = useMemo(
-    () => listSceneVideoSources(projectors, sceneObjects),
-    [projectors, sceneObjects],
+    () => listSceneVideoSources(projectors, sceneObjects, contentCanvas),
+    [projectors, sceneObjects, contentCanvas],
   );
 
   const webglStatus =

@@ -15,6 +15,8 @@ import {
   toggleVideo,
 } from '../media/videoPlayback';
 import type {
+  ContentCanvasLayer,
+  ContentLayerKind,
   CalculationResults,
   DisplayUnit,
   MaterialPreviewMode,
@@ -45,6 +47,7 @@ import {
   computeSampledCoverageAnalysis,
 } from '../coverage';
 import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA, MAX_PROJECTORS, PROJECTOR_PALETTE } from '../types';
+import { createContentLayer } from '../projection/contentCanvas';
 import { deriveAutoBlendEdgesFromOverlap } from '../blending/autoBlend';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import {
@@ -73,6 +76,8 @@ import {
 } from './reliabilitySettings';
 
 interface AppState extends PersistedStateSlice {
+  selectedContentLayerId: string | null;
+  contentCanvasPanelVisible: boolean;
   projectMessage: string | null;
   measureMode: boolean;
   measurePoints: [Vec3 | null, Vec3 | null];
@@ -113,6 +118,16 @@ interface AppState extends PersistedStateSlice {
   setViewPreset: (preset: ViewPreset) => void;
   setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
   setMappingMode: (mode: MappingMode) => void;
+  setContentCanvasEnabled: (enabled: boolean) => void;
+  setContentCanvasSize: (widthPx: number, heightPx: number) => void;
+  addContentCanvasLayer: (kind: ContentLayerKind) => void;
+  updateContentCanvasLayer: (id: string, patch: Partial<ContentCanvasLayer>) => void;
+  removeContentCanvasLayer: (id: string) => void;
+  moveContentCanvasLayer: (id: string, direction: 'up' | 'down') => void;
+  importContentCanvasMedia: (file: File, kind: 'image' | 'video') => Promise<void>;
+  setSelectedContentLayerId: (id: string | null) => void;
+  setContentCanvasPanelVisible: (visible: boolean) => void;
+  toggleContentCanvasPanel: () => void;
   setSharedContentSourceProjectorId: (id: string | null) => void;
   setCalculationTargetId: (id: string | null) => void;
   setAnalysisQuality: (quality: AnalysisQuality) => void;
@@ -208,6 +223,7 @@ function restoreSceneHistory(
     sceneObjects: snapshot.sceneObjects,
     projectors: snapshot.projectors,
     mediaAssets: snapshot.mediaAssets,
+    contentCanvas: snapshot.contentCanvas,
     sharedContentSourceProjectorId: snapshot.sharedContentSourceProjectorId,
     calculationTargetId: snapshot.calculationTargetId,
   });
@@ -242,6 +258,7 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     materialPreviewMode: state.materialPreviewMode,
     projectionCompositeMode: state.projectionCompositeMode,
     mappingMode: state.mappingMode,
+    contentCanvas: state.contentCanvas,
     sharedContentSourceProjectorId: state.sharedContentSourceProjectorId,
     calculationTargetId: state.calculationTargetId,
     analysisQuality: state.analysisQuality,
@@ -274,6 +291,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   materialPreviewMode: initial.materialPreviewMode,
   projectionCompositeMode: initial.projectionCompositeMode,
   mappingMode: initial.mappingMode,
+  contentCanvas: initial.contentCanvas,
+  selectedContentLayerId: initial.contentCanvas.layers[0]?.id ?? null,
+  contentCanvasPanelVisible: false,
   sharedContentSourceProjectorId: initial.sharedContentSourceProjectorId,
   calculationTargetId: initial.calculationTargetId,
   analysisQuality: initial.analysisQuality,
@@ -430,6 +450,86 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ mappingMode: mode });
   },
+  setContentCanvasEnabled: (enabled) => {
+    pushSceneHistory(get, set);
+    const support = resolveSharedCanvasSupport(get().sceneObjects);
+    set((s) => ({
+      contentCanvas: { ...s.contentCanvas, enabled },
+      mappingMode: enabled && support.supported ? 'sharedCanvas' : s.mappingMode,
+    }));
+  },
+  setContentCanvasSize: (widthPx, heightPx) => {
+    const w = Math.max(1, Math.round(widthPx));
+    const h = Math.max(1, Math.round(heightPx));
+    pushSceneHistory(get, set);
+    set((s) => ({ contentCanvas: { ...s.contentCanvas, widthPx: w, heightPx: h } }));
+  },
+  addContentCanvasLayer: (kind) => {
+    pushSceneHistory(get, set);
+    const layer = createContentLayer(kind, get().contentCanvas);
+    set((s) => ({
+      contentCanvas: { ...s.contentCanvas, layers: [...s.contentCanvas.layers, layer] },
+      selectedContentLayerId: layer.id,
+    }));
+  },
+  updateContentCanvasLayer: (id, patch) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      contentCanvas: {
+        ...s.contentCanvas,
+        layers: s.contentCanvas.layers.map((layer) =>
+          layer.id === id ? { ...layer, ...patch } : layer,
+        ),
+      },
+    }));
+  },
+  removeContentCanvasLayer: (id) => {
+    pushSceneHistory(get, set);
+    set((s) => {
+      const layers = s.contentCanvas.layers.filter((layer) => layer.id !== id);
+      return {
+        contentCanvas: { ...s.contentCanvas, layers },
+        selectedContentLayerId:
+          s.selectedContentLayerId === id ? (layers[layers.length - 1]?.id ?? null) : s.selectedContentLayerId,
+      };
+    });
+  },
+  moveContentCanvasLayer: (id, direction) => {
+    pushSceneHistory(get, set);
+    set((s) => {
+      const layers = [...s.contentCanvas.layers];
+      const index = layers.findIndex((layer) => layer.id === id);
+      if (index < 0) return s;
+      const target = direction === 'up' ? index + 1 : index - 1;
+      if (target < 0 || target >= layers.length) return s;
+      const [item] = layers.splice(index, 1);
+      layers.splice(target, 0, item);
+      return { contentCanvas: { ...s.contentCanvas, layers } };
+    });
+  },
+  importContentCanvasMedia: async (file, kind) => {
+    try {
+      const record = await importMediaBlob(file, file.name, kind, file.type || 'application/octet-stream');
+      pushSceneHistory(get, set);
+      const layer = createContentLayer(kind, get().contentCanvas, {
+        name: file.name,
+        mediaAssetId: record.id,
+        fit: 'contain',
+      });
+      set((s) => ({
+        mediaAssets: [...s.mediaAssets, record],
+        contentCanvas: { ...s.contentCanvas, layers: [...s.contentCanvas.layers, layer] },
+        selectedContentLayerId: layer.id,
+        projectMessage: `Added ${kind} "${file.name}" to canvas`,
+      }));
+    } catch (err) {
+      set({ projectMessage: err instanceof Error ? err.message : 'Import failed' });
+    }
+  },
+  setSelectedContentLayerId: (id) => set({ selectedContentLayerId: id }),
+  setContentCanvasPanelVisible: (visible) => set({ contentCanvasPanelVisible: visible }),
+  toggleContentCanvasPanel: () =>
+    set((s) => ({ contentCanvasPanelVisible: !s.contentCanvasPanelVisible })),
   setSharedContentSourceProjectorId: (id) => {
     pushSceneHistory(get, set);
     set({ sharedContentSourceProjectorId: id });
@@ -938,7 +1038,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ videoPlaybackRevision: s.videoPlaybackRevision + 1 }));
   },
   playAllSceneVideos: () => {
-    const assetIds = listSceneVideoSources(get().projectors, get().sceneObjects).map(
+    const assetIds = listSceneVideoSources(get().projectors, get().sceneObjects, get().contentCanvas).map(
       (source) => source.assetId,
     );
     const started = playVideos(assetIds);
@@ -950,7 +1050,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
   pauseAllSceneVideos: () => {
-    const assetIds = listSceneVideoSources(get().projectors, get().sceneObjects).map(
+    const assetIds = listSceneVideoSources(get().projectors, get().sceneObjects, get().contentCanvas).map(
       (source) => source.assetId,
     );
     pauseVideos(assetIds);
@@ -976,6 +1076,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     const defaults = defaultPersistedSlice();
     set({
       ...defaults,
+      selectedContentLayerId: defaults.contentCanvas.layers[0]?.id ?? null,
+      contentCanvasPanelVisible: false,
       projectMessage: 'New project created',
       calculationResults: {
         nominal: null,
@@ -992,7 +1094,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       historyFuture: [],
     });
     pauseVideos(
-      listSceneVideoSources(get().projectors, get().sceneObjects).map((source) => source.assetId),
+      listSceneVideoSources(get().projectors, get().sceneObjects, get().contentCanvas).map((source) => source.assetId),
     );
     clearAutosave();
     get().recomputeCalculations();
@@ -1010,6 +1112,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       const slice = snapshotToSlice(snapshot);
       set({
         ...slice,
+        selectedContentLayerId: slice.contentCanvas.layers[0]?.id ?? null,
+        contentCanvasPanelVisible: get().contentCanvasPanelVisible,
         projectMessage:
           missing.length > 0
             ? `Loaded "${snapshot.name}" — missing assets: ${missing.join(', ')}`
@@ -1029,7 +1133,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         historyFuture: [],
       });
       pauseVideos(
-        listSceneVideoSources(get().projectors, get().sceneObjects).map((source) => source.assetId),
+        listSceneVideoSources(get().projectors, get().sceneObjects, get().contentCanvas).map((source) => source.assetId),
       );
       writeAutosave(snapshot);
       get().recomputeCalculations();

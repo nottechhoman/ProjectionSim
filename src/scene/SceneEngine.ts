@@ -10,7 +10,7 @@ import {
 } from '../projection/MultiProjectiveMaterial';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 import { DepthPass } from '../visibility/DepthPass';
-import { depthPassResolution, targetPixelRatio } from '../ui/deviceProfile';
+import { depthPassResolution, getDeviceProfile, targetPixelRatio } from '../ui/deviceProfile';
 import {
   collectBlockerMeshes,
   excludeObjectIdFromDepthKey,
@@ -19,6 +19,7 @@ import {
   type OcclusionDepthKey,
 } from '../visibility/projectionOcclusion';
 import type {
+  ContentCanvas,
   MappingMode,
   MaterialPreviewMode,
   ProjectionCompositeMode,
@@ -53,6 +54,7 @@ import {
   buildScreenMapUniforms,
   resolveSharedCanvasSupport,
 } from '../projection/sharedCanvasMapping';
+import { ContentCanvasRenderer } from '../projection/ContentCanvasRenderer';
 
 const CORNER_UV = [
   [0, 0],
@@ -262,6 +264,13 @@ export class SceneEngine {
   private materialPreviewMode: MaterialPreviewMode = 'projectionPreview';
   private projectionCompositeMode: ProjectionCompositeMode = 'unblended';
   private mappingMode: MappingMode = 'raw';
+  private contentCanvas: ContentCanvas = {
+    enabled: false,
+    widthPx: 3840,
+    heightPx: 1080,
+    layers: [],
+  };
+  private readonly contentCanvasRenderer = new ContentCanvasRenderer();
   private sharedContentSourceProjectorId: string | null = null;
   private sceneObjects: SceneObject[] = [];
   private animationId: number | null = null;
@@ -399,6 +408,14 @@ export class SceneEngine {
     callbacks.onWebglStatus?.(this.webglAvailable);
   }
 
+  get maxTextureSize(): number {
+    return this.renderer?.capabilities.maxTextureSize ?? 16384;
+  }
+
+  get contentCanvasEffectiveSize() {
+    return this.contentCanvasRenderer.effectiveSize;
+  }
+
   setViewPreset(preset: ViewPreset): void {
     if (!this.editorCamera || !this.controls || this.currentViewPreset === preset) return;
     this.currentViewPreset = preset;
@@ -482,6 +499,7 @@ export class SceneEngine {
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
     this.mappingMode = state.mappingMode;
+    this.contentCanvas = state.contentCanvas;
     this.sharedContentSourceProjectorId = state.sharedContentSourceProjectorId;
     this.showProjectionBeam = state.showProjectionBeam;
     this.calculationTargetId = state.calculationTargetId;
@@ -1061,9 +1079,14 @@ export class SceneEngine {
     mappingMode: MappingMode,
   ): number {
     const support = resolveSharedCanvasSupport(sceneObjects);
-    const active = mappingMode === 'sharedCanvas' && support.supported;
+    const canvasActive = this.contentCanvas.enabled && support.supported;
+    const active = (mappingMode === 'sharedCanvas' || canvasActive) && support.supported;
     const mappingInt = active ? 1 : 0;
     material.uniforms.mappingMode.value = mappingInt;
+    material.uniforms.useContentCanvas.value = canvasActive ? 1 : 0;
+    material.uniforms.canvasMap.value = canvasActive
+      ? this.contentCanvasRenderer.texture
+      : material.uniforms.canvasMap.value;
 
     if (!active || !support.primaryReceiver) {
       material.uniforms.screenMapKind.value = 0;
@@ -1142,6 +1165,9 @@ export class SceneEngine {
     const frameStart = performance.now();
 
     mediaTextureCache.updateVideos();
+    if (this.contentCanvas.enabled && this.renderer) {
+      this.contentCanvasRenderer.composite(this.renderer, this.contentCanvas, getDeviceProfile());
+    }
     this.controls?.update();
     this.resize();
     this.updateGizmoScale();
@@ -1270,6 +1296,7 @@ export class SceneEngine {
     this.depthPassByProjector.clear();
     this.projectiveMaterial.dispose();
     this.multiProjectiveMaterial.dispose();
+    this.contentCanvasRenderer.dispose();
     this.depthPass?.dispose();
     this.transformControls?.dispose();
     this.controls?.dispose();

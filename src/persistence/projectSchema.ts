@@ -19,6 +19,7 @@ export interface ProjectSnapshotV2 {
   materialPreviewMode: import('../types').MaterialPreviewMode;
   projectionCompositeMode: import('../types').ProjectionCompositeMode;
   mappingMode?: import('../types').MappingMode;
+  contentCanvas?: import('../types').ContentCanvas;
   sharedContentSourceProjectorId?: string | null;
   calculationTargetId?: string | null;
   analysisQuality?: import('../types').AnalysisQuality;

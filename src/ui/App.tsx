@@ -6,6 +6,7 @@ import { Toolbar } from './panels/Toolbar';
 import { LeftPanel } from './panels/LeftPanel';
 import { Inspector } from './panels/Inspector';
 import { BottomPanel } from './panels/BottomPanel';
+import { ContentCanvasPanel } from './panels/ContentCanvasPanel';
 import { PanelResizeHandle } from './components/PanelResizeHandle';
 import { FloatingPanel } from './components/FloatingPanel';
 import { isCompactLayout } from './deviceProfile';
@@ -26,6 +27,8 @@ export default function App() {
   const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
+  const contentCanvasPanelVisible = useAppStore((s) => s.contentCanvasPanelVisible);
+  const setContentCanvasPanelVisible = useAppStore((s) => s.setContentCanvasPanelVisible);
   const setLeftPanelVisible = useAppStore((s) => s.setLeftPanelVisible);
   const setRightPanelVisible = useAppStore((s) => s.setRightPanelVisible);
   const resizeLeftPanelBy = useAppStore((s) => s.resizeLeftPanelBy);
@@ -55,6 +58,7 @@ export default function App() {
   const closeDrawers = () => {
     setLeftPanelVisible(false);
     setRightPanelVisible(false);
+    setContentCanvasPanelVisible(false);
   };
 
   const style = compact
@@ -93,6 +97,7 @@ export default function App() {
       </div>
       <div className={styles.center}>
         <Viewport />
+        {!compact ? <ContentCanvasPanel /> : null}
       </div>
       <div className={`${styles.right} ${!rightDocked ? styles.collapsed : ''}`}>
         {rightDocked ? (
@@ -117,6 +122,7 @@ export default function App() {
             className={leftPanelVisible ? styles.mobileNavActive : undefined}
             onClick={() => {
               setRightPanelVisible(false);
+              setContentCanvasPanelVisible(false);
               toggleLeftPanel();
             }}
           >
@@ -124,16 +130,28 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={!leftPanelVisible && !rightPanelVisible ? styles.mobileNavActive : undefined}
+            className={!leftPanelVisible && !rightPanelVisible && !contentCanvasPanelVisible ? styles.mobileNavActive : undefined}
             onClick={closeDrawers}
           >
             Viewport
           </button>
           <button
             type="button"
+            className={contentCanvasPanelVisible ? styles.mobileNavActive : undefined}
+            onClick={() => {
+              setLeftPanelVisible(false);
+              setRightPanelVisible(false);
+              setContentCanvasPanelVisible(true);
+            }}
+          >
+            Canvas
+          </button>
+          <button
+            type="button"
             className={rightPanelVisible ? styles.mobileNavActive : undefined}
             onClick={() => {
               setLeftPanelVisible(false);
+              setContentCanvasPanelVisible(false);
               toggleRightPanel();
             }}
           >
@@ -151,6 +169,8 @@ export default function App() {
           </button>
         )}
       </div>
+
+      {compact && contentCanvasPanelVisible ? <ContentCanvasPanel /> : null}
 
       {leftDrawer ? (
         <>

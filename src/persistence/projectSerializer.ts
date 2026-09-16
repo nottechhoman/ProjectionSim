@@ -1,6 +1,7 @@
 import { validateOptics } from '../optics/validate';
 import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, ProjectionSides, SceneObject } from '../types';
 import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA } from '../types';
+import { normalizeContentCanvas } from '../projection/contentCanvas';
 import {
   clampPanelWidth,
   clampFloatPosition,
@@ -190,6 +191,7 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     materialPreviewMode,
     projectionCompositeMode,
     mappingMode,
+    contentCanvas: normalizeContentCanvas(data.contentCanvas),
     sharedContentSourceProjectorId,
     calculationTargetId,
     analysisQuality,

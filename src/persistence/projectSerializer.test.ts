@@ -41,6 +41,42 @@ describe('projectSerializer', () => {
     expect(loaded.projectors[0].optics.throwRatio).toBe(1.5);
     expect(loaded.sceneObjects).toHaveLength(2);
     expect(loaded.version).toBe(2);
+    expect(loaded.contentCanvas?.enabled).toBe(false);
+    expect(loaded.contentCanvas?.layers).toEqual([]);
+  });
+
+  it('round-trips a content canvas', () => {
+    const withCanvas = {
+      ...sample,
+      contentCanvas: {
+        enabled: true,
+        widthPx: 3840,
+        heightPx: 1080,
+        layers: [
+          {
+            id: 'layer-1',
+            name: 'Grid',
+            kind: 'pattern' as const,
+            mediaAssetId: null,
+            pattern: 'uvGrid' as const,
+            color: '#ffffff',
+            x: 0,
+            y: 0,
+            width: 3840,
+            height: 1080,
+            rotationDeg: 0,
+            opacity: 1,
+            fit: 'stretch' as const,
+            visible: true,
+          },
+        ],
+      },
+    };
+    const loaded = parseProjectJson(JSON.stringify(withCanvas));
+    expect(loaded.contentCanvas?.enabled).toBe(true);
+    expect(loaded.contentCanvas?.widthPx).toBe(3840);
+    expect(loaded.contentCanvas?.layers).toHaveLength(1);
+    expect(loaded.contentCanvas?.layers[0].pattern).toBe('uvGrid');
   });
 
   it('loads custom panel widths and clamps invalid values', () => {

@@ -75,6 +75,8 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       sharedRasterAspect: { value: 16 / 9 },
       sharedProjectorColor: { value: new THREE.Color('#ffffff') },
       sharedBrightness: { value: 1.0 },
+      useContentCanvas: { value: 0 },
+      canvasMap: { value: fallback },
       projectionSides: { value: 0 },
       falloffPreview: { value: 0 },
       projectorWorldPos: {

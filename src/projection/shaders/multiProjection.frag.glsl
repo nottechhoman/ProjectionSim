@@ -33,6 +33,9 @@ uniform float sharedRasterAspect;
 uniform vec3 sharedProjectorColor;
 uniform float sharedBrightness;
 
+uniform int useContentCanvas;
+uniform sampler2D canvasMap;
+
 uniform int projectionSides;
 uniform int falloffPreview;
 uniform vec3 projectorWorldPos[MAX_P];
@@ -104,6 +107,11 @@ vec2 sharedContentUv() {
 }
 
 vec3 sampleSharedContent(vec2 contentUv) {
+  if (useContentCanvas == 1) {
+    if (contentUv.x < 0.0 || contentUv.x > 1.0 ||
+        contentUv.y < 0.0 || contentUv.y > 1.0) return vec3(0.0);
+    return texture(canvasMap, contentUv).rgb;
+  }
   if (sharedUseMediaTexture == 1) {
     vec2 mediaUv = applyFit(contentUv, sharedFitMode, sharedMediaAspect, sharedRasterAspect);
     if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) {
@@ -222,7 +230,12 @@ void accumulateProjectionAt(int idx, inout vec3 sumColor, inout float sumWeight,
   if (forceUvPreview == 1) {
     color = mappingMode == 1 ? vec3(contentUv, 0.2) : vec3(uv, 0.2);
   } else if (mappingMode == 1) {
-    color = sampleSharedContent(contentUv) * sharedBrightness;
+    color = sampleSharedContent(contentUv);
+    if (useContentCanvas == 1) {
+      color *= brightness[idx];
+    } else {
+      color *= sharedBrightness;
+    }
   } else {
     color = sampleProjectorColorAt(idx, uv) * brightness[idx];
   }

@@ -30,6 +30,9 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const materialPreviewMode = useAppStore((s) => s.materialPreviewMode);
   const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
   const mappingMode = useAppStore((s) => s.mappingMode);
+  const contentCanvasPanelVisible = useAppStore((s) => s.contentCanvasPanelVisible);
+  const toggleContentCanvasPanel = useAppStore((s) => s.toggleContentCanvasPanel);
+  const contentCanvasEnabled = useAppStore((s) => s.contentCanvas.enabled);
   const sharedContentSourceProjectorId = useAppStore((s) => s.sharedContentSourceProjectorId);
   const sceneObjects = useAppStore((s) => s.sceneObjects);
   const projectors = useAppStore((s) => s.projectors);
@@ -207,7 +210,12 @@ export function Toolbar({ compact = false }: ToolbarProps) {
             {mode === 'raw' ? 'Raw' : 'Shared'}
           </button>
         ))}
-        {mappingMode === 'sharedCanvas' && (
+        {mappingMode === 'sharedCanvas' && contentCanvasEnabled && (
+          <span className={styles.label} style={{ marginLeft: 8 }}>
+            Content from canvas
+          </span>
+        )}
+        {mappingMode === 'sharedCanvas' && !contentCanvasEnabled && (
           <label className={styles.label} style={{ marginLeft: 8 }}>
             Shared content source
             <select
@@ -229,6 +237,20 @@ export function Toolbar({ compact = false }: ToolbarProps) {
             </select>
           </label>
         )}
+      </div>
+
+      <div className={styles.separator} />
+
+      <div className={styles.group}>
+        <button
+          type="button"
+          className={contentCanvasPanelVisible ? styles.active : undefined}
+          onClick={toggleContentCanvasPanel}
+          data-testid="content-canvas-toggle"
+          title="Author shared content on a canvas mapped to the receiving surface"
+        >
+          Canvas
+        </button>
       </div>
 
       <div className={styles.separator} />

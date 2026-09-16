@@ -113,3 +113,19 @@ export function worldToPlanarContentUv(
   if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
   return new THREE.Vector2(u, v);
 }
+
+/** Curved screen content UV using the same atan/arc formula as the fragment shaders. */
+export function worldToCurvedContentUv(
+  world: THREE.Vector3,
+  receiver: SceneObject,
+): THREE.Vector2 | null {
+  if (receiver.type !== 'curvedScreen' || !receiver.curved) return null;
+  const { matrixInv, params } = buildScreenMapUniforms(receiver, 'curved');
+  const local = world.clone().applyMatrix4(matrixInv);
+  const theta = Math.atan2(local.z, local.x);
+  const arcRad = params.z * 0.01745329252;
+  const u = (theta + arcRad * 0.5) / arcRad;
+  const v = (local.y + params.y * 0.5) / params.y;
+  if (!Number.isFinite(u) || !Number.isFinite(v)) return null;
+  return new THREE.Vector2(u, v);
+}

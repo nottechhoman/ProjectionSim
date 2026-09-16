@@ -2,6 +2,7 @@ import type { ProjectSnapshot } from '../persistence/projectSchema';
 import type {
   DisplayUnit,
   MaterialPreviewMode,
+  ContentCanvas,
   MappingMode,
   ProjectionCompositeMode,
   MediaAssetRecord,
@@ -13,6 +14,7 @@ import type {
   CalculationTargetSide,
 } from '../types';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
+import { DEFAULT_CONTENT_CANVAS, normalizeContentCanvas } from '../projection/contentCanvas';
 import {
   clampPanelWidth,
   clampFloatPosition,
@@ -44,6 +46,7 @@ export interface PersistedStateSlice {
   materialPreviewMode: MaterialPreviewMode;
   projectionCompositeMode: ProjectionCompositeMode;
   mappingMode: MappingMode;
+  contentCanvas: ContentCanvas;
   sharedContentSourceProjectorId: string | null;
   calculationTargetId: string | null;
   analysisQuality: AnalysisQuality;
@@ -83,6 +86,7 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     materialPreviewMode: slice.materialPreviewMode,
     projectionCompositeMode: slice.projectionCompositeMode,
     mappingMode: slice.mappingMode,
+    contentCanvas: slice.contentCanvas,
     sharedContentSourceProjectorId: slice.sharedContentSourceProjectorId,
     calculationTargetId: slice.calculationTargetId,
     analysisQuality: slice.analysisQuality,
@@ -134,6 +138,7 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
     materialPreviewMode: snapshot.materialPreviewMode ?? 'projectionPreview',
     projectionCompositeMode: snapshot.projectionCompositeMode ?? 'unblended',
     mappingMode: snapshot.mappingMode === 'sharedCanvas' ? 'sharedCanvas' : 'raw',
+    contentCanvas: normalizeContentCanvas(snapshot.contentCanvas),
     sharedContentSourceProjectorId,
     calculationTargetId,
     analysisQuality: snapshot.analysisQuality === 'high' ? 'high' : 'draft',
@@ -185,6 +190,7 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     materialPreviewMode: 'projectionPreview',
     projectionCompositeMode: 'unblended',
     mappingMode: 'raw',
+    contentCanvas: structuredClone(DEFAULT_CONTENT_CANVAS),
     sharedContentSourceProjectorId: 'proj-1',
     calculationTargetId: 'screen-1',
     analysisQuality: 'draft',

@@ -97,6 +97,7 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     materialPreviewMode: state.materialPreviewMode,
     projectionCompositeMode: state.projectionCompositeMode,
     mappingMode: state.mappingMode,
+    contentCanvas: state.contentCanvas,
     sharedContentSourceProjectorId: state.sharedContentSourceProjectorId,
     measureMode: state.measureMode,
     measurePoints: state.measurePoints,
