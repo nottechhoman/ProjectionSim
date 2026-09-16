@@ -7,6 +7,7 @@ import { LeftPanel } from './panels/LeftPanel';
 import { Inspector } from './panels/Inspector';
 import { BottomPanel } from './panels/BottomPanel';
 import { ContentCanvasPanel } from './panels/ContentCanvasPanel';
+import { RasterPreviewPanel } from './panels/RasterPreviewPanel';
 import { PanelResizeHandle } from './components/PanelResizeHandle';
 import { FloatingPanel } from './components/FloatingPanel';
 import { isCompactLayout } from './deviceProfile';
@@ -29,6 +30,8 @@ export default function App() {
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
   const contentCanvasPanelVisible = useAppStore((s) => s.contentCanvasPanelVisible);
   const setContentCanvasPanelVisible = useAppStore((s) => s.setContentCanvasPanelVisible);
+  const rasterPreviewPanelVisible = useAppStore((s) => s.rasterPreviewPanelVisible);
+  const setRasterPreviewPanelVisible = useAppStore((s) => s.setRasterPreviewPanelVisible);
   const setLeftPanelVisible = useAppStore((s) => s.setLeftPanelVisible);
   const setRightPanelVisible = useAppStore((s) => s.setRightPanelVisible);
   const resizeLeftPanelBy = useAppStore((s) => s.resizeLeftPanelBy);
@@ -59,6 +62,7 @@ export default function App() {
     setLeftPanelVisible(false);
     setRightPanelVisible(false);
     setContentCanvasPanelVisible(false);
+    setRasterPreviewPanelVisible(false);
   };
 
   const style = compact
@@ -98,6 +102,7 @@ export default function App() {
       <div className={styles.center}>
         <Viewport />
         {!compact ? <ContentCanvasPanel /> : null}
+        {!compact ? <RasterPreviewPanel /> : null}
       </div>
       <div className={`${styles.right} ${!rightDocked ? styles.collapsed : ''}`}>
         {rightDocked ? (
@@ -123,6 +128,7 @@ export default function App() {
             onClick={() => {
               setRightPanelVisible(false);
               setContentCanvasPanelVisible(false);
+              setRasterPreviewPanelVisible(false);
               toggleLeftPanel();
             }}
           >
@@ -130,7 +136,14 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={!leftPanelVisible && !rightPanelVisible && !contentCanvasPanelVisible ? styles.mobileNavActive : undefined}
+            className={
+              !leftPanelVisible &&
+              !rightPanelVisible &&
+              !contentCanvasPanelVisible &&
+              !rasterPreviewPanelVisible
+                ? styles.mobileNavActive
+                : undefined
+            }
             onClick={closeDrawers}
           >
             Viewport
@@ -141,6 +154,7 @@ export default function App() {
             onClick={() => {
               setLeftPanelVisible(false);
               setRightPanelVisible(false);
+              setRasterPreviewPanelVisible(false);
               setContentCanvasPanelVisible(true);
             }}
           >
@@ -148,10 +162,23 @@ export default function App() {
           </button>
           <button
             type="button"
+            className={rasterPreviewPanelVisible ? styles.mobileNavActive : undefined}
+            onClick={() => {
+              setLeftPanelVisible(false);
+              setRightPanelVisible(false);
+              setContentCanvasPanelVisible(false);
+              setRasterPreviewPanelVisible(true);
+            }}
+          >
+            Output
+          </button>
+          <button
+            type="button"
             className={rightPanelVisible ? styles.mobileNavActive : undefined}
             onClick={() => {
               setLeftPanelVisible(false);
               setContentCanvasPanelVisible(false);
+              setRasterPreviewPanelVisible(false);
               toggleRightPanel();
             }}
           >
@@ -171,6 +198,7 @@ export default function App() {
       </div>
 
       {compact && contentCanvasPanelVisible ? <ContentCanvasPanel /> : null}
+      {compact && rasterPreviewPanelVisible ? <RasterPreviewPanel /> : null}
 
       {leftDrawer ? (
         <>

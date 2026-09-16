@@ -73,7 +73,7 @@
 
 .compact .mobileNav {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 6px;
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0));
   background: #252525;

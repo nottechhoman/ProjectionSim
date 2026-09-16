@@ -1,7 +1,7 @@
 # ProjectionLab — Project Summary
 
 **Branch:** `feat/reliability-shared-source-target`  
-**Last updated:** 2026-09-09  
+**Last updated:** 2026-09-16  
 **Stack:** React 19 · Three.js · Zustand · Vite · TypeScript · Vitest · Playwright
 
 ProjectionLab is a browser-based 3D projection planning simulator. It lets you place projectors, screens, and occluders in a metric scene, preview projected content with realistic lens geometry, calculate footprints and overlap, and export planning reports.
@@ -13,7 +13,7 @@ ProjectionLab is a browser-based 3D projection planning simulator. It lets you p
 ```bash
 npm install
 npm run dev        # http://127.0.0.1:5173
-npm test           # 69 Vitest tests
+npm test           # 109 Vitest tests
 npm run test:e2e   # 7 Playwright tests (smoke + spill occlusion)
 npm run build      # Production build
 ```
@@ -33,6 +33,9 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 | **Post-M4** | Curved beam, curved overlap, shared-canvas mapping | Done |
 | **Reliability** | Explicit shared content source and calculation target | Done |
 | **Coverage reliability** | Sampled geometric/visible coverage, occlusion, reports | Done |
+| **Blending correctness** | Additive blend, blend gamma, auto blend from overlap | Done |
+| **Content canvas** | Author once, map 1:1 to the surface, per-projector slices | Done |
+| **Raster preview** | Per-projector output frame with blend ramp applied | Done |
 
 ---
 
@@ -73,8 +76,10 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 ### Multi-Projector (M3)
 
 - Up to 4 projectors, each with independent optics, media, color, transform
-- Composite modes: **Solo**, **Raw** (additive), **Blend** (edge weights), **Coverage Count** (overlap count heatmap — not lux)
+- Composite modes: **Solo**, **Raw** (true additive, no blend weights), **Blend** (physical additive `Σ(cᵢ · wᵢ)` — not a normalized average), **Coverage Count** (overlap count heatmap — not lux)
 - Per-edge blend feathering (left/right/top/bottom in projector UV space)
+- **Blend gamma** per projector (default 1.0; higher values simulate uncorrected crossover)
+- **Auto blend from overlap** derives inward-facing feather widths from measured pairwise overlap so matched ramps reconstruct full brightness in Blend
 - Overlap calculations:
   - **Planar screens** — pairwise area, union, multi-coverage, horizontal overlap, overlap pixels
   - **Curved screens** — same stats mapped to arc-length × height space on the cylinder
@@ -88,13 +93,32 @@ If the browser shows `ERR_CONNECTION_REFUSED`, the dev server is not running —
 
 Toolbar: **Mapping → Raw / Shared**
 
-When **Shared** is active, a **Shared content source** dropdown lists all projectors by name. The chosen projector owns the media/pattern used for shared mapping. This is independent of the currently selected object. **Disabled projectors may remain the content source** — content ownership is separate from projection participation.
+When **Shared** is active and the content canvas is **off**, a **Shared content source** dropdown lists all projectors by name. The chosen projector owns the media/pattern used for shared mapping. This is independent of the currently selected object. **Disabled projectors may remain the content source** — content ownership is separate from projection participation.
+
+When the **content canvas** is on, Mapping is forced to Shared, the Raw button is disabled, and the toolbar shows **Content from canvas** instead of the projector picker. Disabling the canvas restores the mapping mode that was active when it was turned on (session-only; not persisted). If the canvas is already Shared when enabled, disable leaves Shared.
+
+### Content canvas
+
+Author content once on a pixel canvas that maps 1:1 onto the primary receiving surface. Every enabled projector samples that canvas in **surface UV**, so overlapping projectors show one continuous aligned image (Phase 2+3 of `docs/spec-content-canvas.md`).
+
+- Toolbar **Canvas** opens the panel (also on compact layouts via bottom nav)
+- Canvas size is clamped by device profile (`phone` 2048 / `tablet` 3072 / `desktop` 4096) and `maxTextureSize`
+- Layers: pattern, solid, image, video; fit contain/cover/stretch
+- Enabling the canvas switches mapping to Shared; see mapping restore above
+
+### Per-projector raster preview
+
+Toolbar **Output** (compact nav: **Output**) shows each enabled projector's **fed frame**: render-to-texture from `buildProjectorCamera`, surface-UV content (canvas when enabled, otherwise that projector's media/pattern), multiplied by `rawBlendWeight` with `blendGamma` and `brightness`.
+
+- Thumbnails keep the projector's aspect ratio and are labelled `Name — 1920×1080`
+- Passes run **only while the panel is visible**, throttled to 4 fps (`250 ms`), with a modest long-edge cap (`phone` 256 / `tablet` 320 / `desktop` 384)
+- With two projectors and matched feather, projector 1 falls off toward its right edge and projector 2 toward its left — the ramp must be visible or the feature is not working
 
 ### Reliability Settings
 
 | Setting | Location | Behavior |
 |---------|----------|----------|
-| **Shared content source** | Toolbar (when Mapping = Shared) | Explicit projector ID for shared-canvas media/pattern. Unaffected by object selection. |
+| **Shared content source** | Toolbar (when Mapping = Shared and canvas is off) | Explicit projector ID for shared-canvas media/pattern. Unaffected by object selection. Hidden while the content canvas is the source. |
 | **Calculation target** | Inspector → Calculation target | Explicit flat or curved screen for footprint/overlap math. Unaffected by object selection. |
 
 **Migration (legacy projects without these fields):**
@@ -251,7 +275,9 @@ src/
 | Curved overlap | `src/coverage/curvedOverlap.ts` |
 | Sampled coverage analysis | `src/coverage/coverageAnalysis.ts`, `src/coverage/occlusion.ts` |
 | Raw spill / projector occlusion | `src/visibility/projectionOcclusion.ts`, `src/visibility/DepthPass.ts` |
-| Shared-canvas mapping | `src/projection/sharedCanvasMapping.ts` |
+| Shared-canvas mapping | `src/projection/sharedCanvasMapping.ts`, `src/projection/contentCanvas.ts`, `src/projection/ContentCanvasRenderer.ts` |
+| Per-projector raster preview | `src/projection/rasterPreview.ts`, `src/projection/RasterPreviewPass.ts` |
+| Blend weights / auto blend | `src/blending/blendWeights.ts`, `src/blending/autoBlend.ts` |
 | Single-projector shader | `src/projection/shaders/projection.frag.glsl` |
 | Multi-projector shader | `src/projection/shaders/multiProjection.frag.glsl` |
 | App state | `src/store/index.ts` |
@@ -269,22 +295,9 @@ Shared-canvas **rendering** still uses `resolveSharedCanvasSupport()` for surfac
 
 ## Tests
 
-### Vitest (69 tests)
+### Vitest (109 tests)
 
-| Test | File | Description |
-|------|------|-------------|
-| 1 | `src/optics/optics.test.ts` | Nominal 4.0 × 2.25 m at D=6 m, density, invalid throw ratio |
-| 2 | `src/optics/optics.test.ts` | Lens shift moves image center |
-| 3 | `src/coverage/coverage.test.ts` | 20° yaw footprint matches ray–plane math |
-| 4 | `src/coverage/overlap.test.ts` | Pairwise overlap, union, triple-region math |
-| 4 | `src/coverage/curvedOverlap.test.ts` | Curved-screen overlap for dual projectors |
-| 4 | `src/projection/sharedCanvasMapping.test.ts` | Shared-canvas screen UV mapping |
-| R | `src/store/reliabilitySettings.test.ts` | Source/target resolution and fallback |
-| R | `src/store/reliabilityState.test.ts` | Store selection independence, undo, serialization |
-| CR | `src/coverage/coverageAnalysis.test.ts` | Sampled geometric/visible coverage, occlusion, curved, convergence |
-| 5 | `src/blending/blendWeights.test.ts` | Blend weights sum to 1; no double brightness |
-
-Additional unit tests: `clipFootprint`, `curvedFootprint`, `history`, `reportExport`, `projectSerializer`, `projectionOcclusion` (blocker flags, exclude-self depth keys, collinear UV continuity).
+Unit tests cover optics, footprints, overlap, blending (additive sum, gamma, auto-blend from overlap), shared-canvas mapping, content canvas (size clamp, layer fit, footprints), raster-preview ramp agreement with `blendWeights.ts`, reliability settings, sampled coverage, persistence, and occlusion.
 
 ### Playwright
 
@@ -316,7 +329,8 @@ Annotated tags for rollback:
 - `backup-2026-09-07-pre-m4`
 - `backup-2026-09-07-pre-panel-ux`
 - `backup-2026-09-07-pre-projection-ux`
-- `backup-2026-09-08-pre-curved-overlap`
+- `backup-2026-09-16-pre-raster-preview` (`66b9abe`)
+- `backup-2026-09-16-pre-blend-canvas`
 
 ---
 
@@ -324,7 +338,6 @@ Annotated tags for rollback:
 
 | Feature | Status |
 |---------|--------|
-| Per-projector raster preview panel | Deferred |
 | Brightness/lux photometry estimates | Deferred |
 | Curved footprint area (analytic beam) | Approximate (`radius × arcSpan × heightSpan`) |
 | Sampled coverage accuracy | Resolution-dependent; no guaranteed error bound |

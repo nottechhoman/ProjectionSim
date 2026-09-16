@@ -55,6 +55,7 @@ import {
   resolveSharedCanvasSupport,
 } from '../projection/sharedCanvasMapping';
 import { ContentCanvasRenderer } from '../projection/ContentCanvasRenderer';
+import { RasterPreviewPass } from '../projection/RasterPreviewPass';
 
 const CORNER_UV = [
   [0, 0],
@@ -72,6 +73,7 @@ export interface SceneEngineCallbacks {
   onTransformChange?: (id: string, patch: { position?: Transform['position']; quaternion?: Transform['quaternion'] }) => void;
   onMeasurePoint?: (point: { x: number; y: number; z: number }) => void;
   onHistoryCheckpoint?: () => void;
+  onRasterPreview?: () => void;
 }
 
 function dimensionsKey(obj: SceneObject): string {
@@ -271,6 +273,9 @@ export class SceneEngine {
     layers: [],
   };
   private readonly contentCanvasRenderer = new ContentCanvasRenderer();
+  private readonly rasterPreviewPass = new RasterPreviewPass();
+  private rasterPreviewPanelVisible = false;
+  private rasterPreviewWasVisible = false;
   private sharedContentSourceProjectorId: string | null = null;
   private sceneObjects: SceneObject[] = [];
   private animationId: number | null = null;
@@ -412,8 +417,24 @@ export class SceneEngine {
     return this.renderer?.capabilities.maxTextureSize ?? 16384;
   }
 
-  get contentCanvasEffectiveSize() {
-    return this.contentCanvasRenderer.effectiveSize;
+  getRasterPreviewCanvas(projectorId: string): HTMLCanvasElement | null {
+    return this.rasterPreviewPass.getCanvas(projectorId);
+  }
+
+  /** Read one preview pixel (top-left canvas origin). */
+  readRasterPreviewPixel(
+    projectorId: string,
+    x: number,
+    y: number,
+  ): [number, number, number, number] | null {
+    const canvas = this.rasterPreviewPass.getCanvas(projectorId);
+    if (!canvas) return null;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    const px = Math.max(0, Math.min(canvas.width - 1, Math.floor(x)));
+    const py = Math.max(0, Math.min(canvas.height - 1, Math.floor(y)));
+    const data = ctx.getImageData(px, py, 1, 1).data;
+    return [data[0], data[1], data[2], data[3]];
   }
 
   setViewPreset(preset: ViewPreset): void {
@@ -503,6 +524,7 @@ export class SceneEngine {
     this.sharedContentSourceProjectorId = state.sharedContentSourceProjectorId;
     this.showProjectionBeam = state.showProjectionBeam;
     this.calculationTargetId = state.calculationTargetId;
+    this.rasterPreviewPanelVisible = state.rasterPreviewPanelVisible;
     this.syncProjectors(
       state.projectors,
       state.selectedProjectorId,
@@ -996,6 +1018,7 @@ export class SceneEngine {
         this.projectorVisuals.delete(id);
         this.depthPassByProjector.get(id)?.dispose();
         this.depthPassByProjector.delete(id);
+        this.rasterPreviewPass.disposeProjector(id);
       }
     }
 
@@ -1257,7 +1280,34 @@ export class SceneEngine {
       mesh.material = material;
     }
 
+    this.renderRasterPreviews();
+
     this.callbacks.onFrameTime?.(performance.now() - frameStart);
+  }
+
+  private renderRasterPreviews(): void {
+    if (!this.renderer) return;
+    if (!this.rasterPreviewPanelVisible) {
+      if (this.rasterPreviewWasVisible) this.rasterPreviewPass.releaseTargets();
+      this.rasterPreviewWasVisible = false;
+      return;
+    }
+
+    const force = !this.rasterPreviewWasVisible;
+    this.rasterPreviewWasVisible = true;
+    const meshes = this.getReceiverRoots().flatMap((root) => collectMeshes(root));
+    const updated = this.rasterPreviewPass.render(
+      this.renderer,
+      this.editorScene,
+      this.allProjectors,
+      this.sceneObjects,
+      meshes,
+      this.contentCanvas,
+      this.contentCanvasRenderer.texture,
+      force,
+      getDeviceProfile(),
+    );
+    if (updated) this.callbacks.onRasterPreview?.();
   }
 
   private getReceiverRoots(): THREE.Object3D[] {
@@ -1297,6 +1347,7 @@ export class SceneEngine {
     this.projectiveMaterial.dispose();
     this.multiProjectiveMaterial.dispose();
     this.contentCanvasRenderer.dispose();
+    this.rasterPreviewPass.dispose();
     this.depthPass?.dispose();
     this.transformControls?.dispose();
     this.controls?.dispose();

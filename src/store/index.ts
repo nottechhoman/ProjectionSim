@@ -78,6 +78,10 @@ import {
 interface AppState extends PersistedStateSlice {
   selectedContentLayerId: string | null;
   contentCanvasPanelVisible: boolean;
+  rasterPreviewPanelVisible: boolean;
+  rasterPreviewRevision: number;
+  /** Session-only: mapping mode captured when the content canvas is turned on. */
+  mappingModeBeforeCanvas: MappingMode | null;
   projectMessage: string | null;
   measureMode: boolean;
   measurePoints: [Vec3 | null, Vec3 | null];
@@ -128,6 +132,9 @@ interface AppState extends PersistedStateSlice {
   setSelectedContentLayerId: (id: string | null) => void;
   setContentCanvasPanelVisible: (visible: boolean) => void;
   toggleContentCanvasPanel: () => void;
+  setRasterPreviewPanelVisible: (visible: boolean) => void;
+  toggleRasterPreviewPanel: () => void;
+  bumpRasterPreviewRevision: () => void;
   setSharedContentSourceProjectorId: (id: string | null) => void;
   setCalculationTargetId: (id: string | null) => void;
   setAnalysisQuality: (quality: AnalysisQuality) => void;
@@ -294,6 +301,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   contentCanvas: initial.contentCanvas,
   selectedContentLayerId: initial.contentCanvas.layers[0]?.id ?? null,
   contentCanvasPanelVisible: false,
+  rasterPreviewPanelVisible: false,
+  rasterPreviewRevision: 0,
+  mappingModeBeforeCanvas: null,
   sharedContentSourceProjectorId: initial.sharedContentSourceProjectorId,
   calculationTargetId: initial.calculationTargetId,
   analysisQuality: initial.analysisQuality,
@@ -453,10 +463,26 @@ export const useAppStore = create<AppState>((set, get) => ({
   setContentCanvasEnabled: (enabled) => {
     pushSceneHistory(get, set);
     const support = resolveSharedCanvasSupport(get().sceneObjects);
-    set((s) => ({
-      contentCanvas: { ...s.contentCanvas, enabled },
-      mappingMode: enabled && support.supported ? 'sharedCanvas' : s.mappingMode,
-    }));
+    set((s) => {
+      if (enabled) {
+        if (s.contentCanvas.enabled) {
+          return {
+            contentCanvas: { ...s.contentCanvas, enabled: true },
+            mappingMode: support.supported ? 'sharedCanvas' : s.mappingMode,
+          };
+        }
+        return {
+          contentCanvas: { ...s.contentCanvas, enabled: true },
+          mappingModeBeforeCanvas: s.mappingMode,
+          mappingMode: support.supported ? 'sharedCanvas' : s.mappingMode,
+        };
+      }
+      return {
+        contentCanvas: { ...s.contentCanvas, enabled: false },
+        mappingMode: s.mappingModeBeforeCanvas ?? s.mappingMode,
+        mappingModeBeforeCanvas: null,
+      };
+    });
   },
   setContentCanvasSize: (widthPx, heightPx) => {
     const w = Math.max(1, Math.round(widthPx));
@@ -530,6 +556,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   setContentCanvasPanelVisible: (visible) => set({ contentCanvasPanelVisible: visible }),
   toggleContentCanvasPanel: () =>
     set((s) => ({ contentCanvasPanelVisible: !s.contentCanvasPanelVisible })),
+  setRasterPreviewPanelVisible: (visible) => set({ rasterPreviewPanelVisible: visible }),
+  toggleRasterPreviewPanel: () =>
+    set((s) => ({ rasterPreviewPanelVisible: !s.rasterPreviewPanelVisible })),
+  bumpRasterPreviewRevision: () =>
+    set((s) => ({ rasterPreviewRevision: s.rasterPreviewRevision + 1 })),
   setSharedContentSourceProjectorId: (id) => {
     pushSceneHistory(get, set);
     set({ sharedContentSourceProjectorId: id });
@@ -1078,6 +1109,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       ...defaults,
       selectedContentLayerId: defaults.contentCanvas.layers[0]?.id ?? null,
       contentCanvasPanelVisible: false,
+      rasterPreviewPanelVisible: false,
+      rasterPreviewRevision: 0,
+      mappingModeBeforeCanvas: null,
       projectMessage: 'New project created',
       calculationResults: {
         nominal: null,
@@ -1114,6 +1148,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...slice,
         selectedContentLayerId: slice.contentCanvas.layers[0]?.id ?? null,
         contentCanvasPanelVisible: get().contentCanvasPanelVisible,
+        rasterPreviewPanelVisible: get().rasterPreviewPanelVisible,
+        mappingModeBeforeCanvas: null,
         projectMessage:
           missing.length > 0
             ? `Loaded "${snapshot.name}" — missing assets: ${missing.join(', ')}`

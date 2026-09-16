@@ -35,6 +35,13 @@ export function depthPassResolution(profile: DeviceProfile = getDeviceProfile())
   return 512;
 }
 
+/** Long-edge cap for per-projector output raster preview targets. */
+export function rasterPreviewResolution(profile: DeviceProfile = getDeviceProfile()): number {
+  if (profile === 'phone') return 256;
+  if (profile === 'tablet') return 320;
+  return 384;
+}
+
 export function responsivePanelWidths(
   profile: DeviceProfile,
   viewportWidth = typeof window !== 'undefined' ? window.innerWidth : 390,

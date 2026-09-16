@@ -32,6 +32,8 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const mappingMode = useAppStore((s) => s.mappingMode);
   const contentCanvasPanelVisible = useAppStore((s) => s.contentCanvasPanelVisible);
   const toggleContentCanvasPanel = useAppStore((s) => s.toggleContentCanvasPanel);
+  const rasterPreviewPanelVisible = useAppStore((s) => s.rasterPreviewPanelVisible);
+  const toggleRasterPreviewPanel = useAppStore((s) => s.toggleRasterPreviewPanel);
   const contentCanvasEnabled = useAppStore((s) => s.contentCanvas.enabled);
   const sharedContentSourceProjectorId = useAppStore((s) => s.sharedContentSourceProjectorId);
   const sceneObjects = useAppStore((s) => s.sceneObjects);
@@ -197,14 +199,19 @@ export function Toolbar({ compact = false }: ToolbarProps) {
             type="button"
             className={mappingMode === mode ? styles.active : undefined}
             onClick={() => setMappingMode(mode)}
-            disabled={mode === 'sharedCanvas' && !sharedCanvasSupport.supported}
+            disabled={
+              (mode === 'sharedCanvas' && !sharedCanvasSupport.supported) ||
+              (mode === 'raw' && contentCanvasEnabled)
+            }
             data-testid={mode === 'sharedCanvas' ? 'mapping-shared-button' : `mapping-${mode}-button`}
             title={
-              mode === 'sharedCanvas' && !sharedCanvasSupport.supported
-                ? sharedCanvasSupport.reason ?? 'Shared canvas unavailable'
-                : mode === 'sharedCanvas'
-                  ? 'Align content to the receiving surface coordinate system'
-                  : 'Each projector uses its own raster coordinates'
+              mode === 'raw' && contentCanvasEnabled
+                ? 'Disable the content canvas to return to Raw mapping'
+                : mode === 'sharedCanvas' && !sharedCanvasSupport.supported
+                  ? sharedCanvasSupport.reason ?? 'Shared canvas unavailable'
+                  : mode === 'sharedCanvas'
+                    ? 'Align content to the receiving surface coordinate system'
+                    : 'Each projector uses its own raster coordinates'
             }
           >
             {mode === 'raw' ? 'Raw' : 'Shared'}
@@ -250,6 +257,15 @@ export function Toolbar({ compact = false }: ToolbarProps) {
           title="Author shared content on a canvas mapped to the receiving surface"
         >
           Canvas
+        </button>
+        <button
+          type="button"
+          className={rasterPreviewPanelVisible ? styles.active : undefined}
+          onClick={toggleRasterPreviewPanel}
+          data-testid="raster-preview-toggle"
+          title="Show each projector's output raster with blend ramp applied"
+        >
+          Output
         </button>
       </div>
 

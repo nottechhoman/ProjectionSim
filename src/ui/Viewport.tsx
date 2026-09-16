@@ -45,6 +45,9 @@ export function Viewport() {
       onHistoryCheckpoint: () => {
         useAppStore.getState().pushSceneHistoryCheckpoint();
       },
+      onRasterPreview: () => {
+        useAppStore.getState().bumpRasterPreviewRevision();
+      },
     });
 
     let lastSync = '';
@@ -57,7 +60,8 @@ export function Viewport() {
     engine.sync(useAppStore.getState());
     engine.start();
 
-    (window as Window & { __projectionLabEngine?: SceneEngine }).__projectionLabEngine = engine;
+    (window as Window & { __projectionLabEngine?: SceneEngine; __projectionLabStore?: typeof useAppStore }).__projectionLabEngine = engine;
+    (window as Window & { __projectionLabEngine?: SceneEngine; __projectionLabStore?: typeof useAppStore }).__projectionLabStore = useAppStore;
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
@@ -76,7 +80,8 @@ export function Viewport() {
 
     return () => {
       window.removeEventListener('keydown', onKeyDown);
-      delete (window as Window & { __projectionLabEngine?: SceneEngine }).__projectionLabEngine;
+      delete (window as Window & { __projectionLabEngine?: SceneEngine; __projectionLabStore?: typeof useAppStore }).__projectionLabEngine;
+      delete (window as Window & { __projectionLabEngine?: SceneEngine; __projectionLabStore?: typeof useAppStore }).__projectionLabStore;
       unsub();
       engine.dispose();
       engineRef.current = null;
@@ -103,5 +108,6 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     measurePoints: state.measurePoints,
     showProjectionBeam: state.showProjectionBeam,
     calculationTargetId: state.calculationTargetId,
+    rasterPreviewPanelVisible: state.rasterPreviewPanelVisible,
   };
 }
