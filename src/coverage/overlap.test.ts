@@ -43,6 +43,7 @@ describe('Acceptance Test 4: Overlap (Milestone 3)', () => {
       mediaAssetId: null,
       mediaFit: 'contain' as const,
       blendEdges: { left: 0, right: 0, top: 0, bottom: 0 },
+      blendGamma: 1,
       outerEdgeFade: false,
     });
 

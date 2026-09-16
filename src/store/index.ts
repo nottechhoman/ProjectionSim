@@ -36,8 +36,16 @@ import type {
 import { applyLookAtToProjector } from '../optics/lookAt';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
-import { computePlanarFootprint, computeCurvedFootprint, computeAlignedOverlap, computeCurvedOverlap, computeSampledCoverageAnalysis } from '../coverage';
-import { DEFAULT_BLEND_EDGES, MAX_PROJECTORS, PROJECTOR_PALETTE } from '../types';
+import {
+  collectAlignedProjectorLayouts,
+  computePlanarFootprint,
+  computeCurvedFootprint,
+  computeAlignedOverlap,
+  computeCurvedOverlap,
+  computeSampledCoverageAnalysis,
+} from '../coverage';
+import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA, MAX_PROJECTORS, PROJECTOR_PALETTE } from '../types';
+import { deriveAutoBlendEdgesFromOverlap } from '../blending/autoBlend';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import {
   buildInitialPersistedState,
@@ -114,6 +122,7 @@ interface AppState extends PersistedStateSlice {
   toggleProjectionBeam: () => void;
   setProjectionCompositeMode: (mode: ProjectionCompositeMode) => void;
   addProjector: () => void;
+  autoBlendFromOverlap: () => void;
   removeProjector: (id: string) => void;
   setMeasureMode: (enabled: boolean) => void;
   addMeasurePoint: (point: Vec3) => void;
@@ -479,6 +488,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       mediaAssetId: null,
       mediaFit: 'contain',
       blendEdges: { ...DEFAULT_BLEND_EDGES },
+      blendGamma: DEFAULT_BLEND_GAMMA,
       outerEdgeFade: false,
       lookAtEnabled: true,
       lookAtTarget: { x: 0, y: 1.5, z: 0 },
@@ -493,6 +503,50 @@ export const useAppStore = create<AppState>((set, get) => ({
       projectMessage: switchToMultiView
         ? `Added ${newProjector.name} — switched Composite to Raw (all projectors visible)`
         : `Added ${newProjector.name}`,
+    }));
+    get().recomputeCalculations();
+  },
+  autoBlendFromOverlap: () => {
+    const state = get();
+    const enabled = state.projectors.filter((p) => p.enabled);
+    if (enabled.length < 2) {
+      set({ projectMessage: 'Auto blend needs at least 2 enabled projectors' });
+      return;
+    }
+
+    const screen = getCalculationTargetObject(state.sceneObjects, state.calculationTargetId);
+    if (!screen || screen.type !== 'screen') {
+      set({ projectMessage: 'Auto blend requires a flat screen as the calculation target' });
+      return;
+    }
+
+    const screenMatrix = buildWorldMatrix(screen.transform);
+    const center = new THREE.Vector3().setFromMatrixPosition(screenMatrix);
+    const normal = new THREE.Vector3(0, 0, 1)
+      .applyQuaternion(new THREE.Quaternion().setFromRotationMatrix(screenMatrix))
+      .normalize();
+    const screenParams = {
+      center,
+      normal,
+      width: screen.dimensions.width,
+      height: screen.dimensions.height,
+      matrix: screenMatrix,
+    };
+
+    const layouts = collectAlignedProjectorLayouts(state.projectors, screenParams);
+    const overlap = computeAlignedOverlap(state.projectors, screenParams);
+    const patch = deriveAutoBlendEdgesFromOverlap(layouts, overlap?.pairwise ?? []);
+    if (Object.keys(patch).length === 0) {
+      set({ projectMessage: 'No measurable overlap on the calculation target' });
+      return;
+    }
+
+    pushSceneHistory(get, set);
+    set((s) => ({
+      projectors: s.projectors.map((p) =>
+        patch[p.id] ? { ...p, blendEdges: patch[p.id] } : p,
+      ),
+      projectMessage: 'Applied auto blend edges from overlap',
     }));
     get().recomputeCalculations();
   },

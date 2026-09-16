@@ -14,6 +14,7 @@ uniform float rasterAspects[MAX_P];
 uniform vec3 projectorColors[MAX_P];
 uniform vec4 blendEdges[MAX_P];
 uniform float outerEdgeFade[MAX_P];
+uniform float blendGamma[MAX_P];
 uniform vec2 depthMapSize;
 uniform int projectorCount;
 uniform int compositeMode;
@@ -226,6 +227,8 @@ void accumulateProjectionAt(int idx, inout vec3 sumColor, inout float sumWeight,
     color = sampleProjectorColorAt(idx, uv) * brightness[idx];
   }
   float w = rawBlendWeight(uv, blendEdges[idx], outerEdgeFade[idx]);
+  // Linear-light output: gamma 1 keeps matched ramps seamless; higher simulates uncorrected crossover.
+  w = pow(w, blendGamma[idx]);
 
   if (compositeMode == 0) {
     sumColor += color;
@@ -274,11 +277,15 @@ void main() {
     return;
   }
 
-  if (sumWeight <= 0.0) {
+  if (hitCount == 0) {
     fragColor = vec4(surfaceBaseColor, 1.0);
     return;
   }
 
-  vec3 projected = compositeMode == 1 ? sumColor / sumWeight : sumColor;
-  fragColor = vec4(mix(surfaceBaseColor * 0.3, projected, 1.0), 1.0);
+  if (compositeMode == 1 && sumWeight <= 0.00001) {
+    fragColor = vec4(surfaceBaseColor, 1.0);
+    return;
+  }
+
+  fragColor = vec4(sumColor, 1.0);
 }

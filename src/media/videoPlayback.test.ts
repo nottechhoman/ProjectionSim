@@ -24,6 +24,7 @@ function projector(id: string, mediaAssetId: string | null): ProjectorConfig {
     mediaAssetId,
     mediaFit: 'contain',
     blendEdges: { left: 0, right: 0, top: 0, bottom: 0 },
+    blendGamma: 1,
     outerEdgeFade: false,
   };
 }

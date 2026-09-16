@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blendLinearColors, normalizeBlendWeights, rawBlendWeight } from './BlendWeights';
+import { blendLinearColors, normalizeBlendWeights, rawBlendWeight } from './blendWeights';
 
 describe('Acceptance Test 5: Blending weights', () => {
   it('normalizes equal overlap weights to sum to 1', () => {

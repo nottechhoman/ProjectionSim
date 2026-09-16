@@ -47,6 +47,11 @@ export const DEFAULT_BLEND_EDGES: BlendEdges = {
   bottom: 0,
 };
 
+/** 1.0 = linear ramp, seamless matched ramps in linear-light output. */
+export const DEFAULT_BLEND_GAMMA = 1;
+export const MIN_BLEND_GAMMA = 0.5;
+export const MAX_BLEND_GAMMA = 3;
+
 export const PROJECTOR_PALETTE = ['#4fc3f7', '#ff7043', '#66bb6a', '#ab47bc'] as const;
 
 export const MAX_PROJECTORS = 4;
@@ -122,6 +127,8 @@ export interface ProjectorConfig {
   mediaAssetId: string | null;
   mediaFit: MediaFitMode;
   blendEdges: BlendEdges;
+  /** Ramp exponent (0.5–3); 1 = linear/seamless, higher = darker crossover. */
+  blendGamma: number;
   outerEdgeFade: boolean;
   /** When true, projector orientation aims at lookAtTarget (orbit on rotate). */
   lookAtEnabled?: boolean;

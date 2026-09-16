@@ -1,4 +1,5 @@
 import type { BlendEdges } from '../types';
+import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../types';
 
 function smoothstep(edge0: number, edge1: number, x: number): number {
   if (edge1 <= edge0) return x >= edge1 ? 1 : 0;
@@ -26,6 +27,28 @@ export function rawBlendWeight(
   }
 
   return w;
+}
+
+export function clampBlendGamma(gamma: number): number {
+  return Math.min(MAX_BLEND_GAMMA, Math.max(MIN_BLEND_GAMMA, gamma));
+}
+
+/** Ramp weight with optional gamma (matches shader; 1.0 is identity). */
+export function blendWeightWithGamma(
+  u: number,
+  v: number,
+  edges: BlendEdges,
+  outerEdgeFade: boolean,
+  blendGamma = DEFAULT_BLEND_GAMMA,
+): number {
+  const raw = rawBlendWeight(u, v, edges, outerEdgeFade);
+  const g = clampBlendGamma(blendGamma);
+  return Math.pow(raw, g);
+}
+
+/** Physical additive brightness for unit content and per-projector weights. */
+export function additiveBlendBrightness(weights: number[], contentLevel = 1): number {
+  return weights.reduce((sum, w) => sum + contentLevel * w, 0);
 }
 
 export function normalizeBlendWeights(weights: number[]): number[] {

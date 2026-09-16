@@ -1,6 +1,7 @@
 import { useAppStore } from '../../store';
 import { getCalculationTargetObject } from '../../store/reliabilitySettings';
 import type { ProjectionSides, TestPattern, Vec3 } from '../../types';
+import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../../types';
 import { computeProjectorLookAtQuaternion, defaultLookAtTarget } from '../../optics/lookAt';
 import { supportsProjectionSides } from '../../projection/projectionSides';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../../utils/euler';
@@ -39,6 +40,8 @@ export function Inspector() {
   const mediaAssets = useAppStore((s) => s.mediaAssets);
   const setProjectorMedia = useAppStore((s) => s.setProjectorMedia);
   const calculationTargetId = useAppStore((s) => s.calculationTargetId);
+  const overlap = useAppStore((s) => s.calculationResults.overlap);
+  const autoBlendFromOverlap = useAppStore((s) => s.autoBlendFromOverlap);
 
   const projector = projectors.find((p) => p.id === selectedObjectId);
   const sceneObject = sceneObjects.find((o) => o.id === selectedObjectId);
@@ -576,6 +579,42 @@ export function Inspector() {
           <div className={styles.section}>
             <div className={styles.sectionTitle}>Blend edges</div>
             <p className={styles.hint}>Feather width as fraction of image (0–0.5)</p>
+            {(() => {
+              const enabledCount = projectors.filter((p) => p.enabled).length;
+              const hasOverlap =
+                overlap?.pairwise?.some((p) => (p.overlapWidthM ?? 0) > 0) ?? false;
+              const autoDisabled = enabledCount < 2 || !hasOverlap;
+              const autoTitle =
+                enabledCount < 2
+                  ? 'Enable at least 2 projectors'
+                  : !hasOverlap
+                    ? 'No measurable overlap on the calculation target'
+                    : 'Set facing blend edges from overlap on the calculation target';
+              return (
+                <button
+                  type="button"
+                  className={styles.actionBtn}
+                  disabled={autoDisabled}
+                  title={autoTitle}
+                  onClick={() => autoBlendFromOverlap()}
+                >
+                  Auto blend from overlap
+                </button>
+              );
+            })()}
+            <p className={styles.hint}>
+              Blend gamma: 1.0 = linear, seamless crossover; higher simulates an uncorrected (darker) seam.
+            </p>
+            <NumInput
+              label="Blend gamma"
+              value={projector.blendGamma ?? DEFAULT_BLEND_GAMMA}
+              step={0.1}
+              onChange={(v) =>
+                patchProjector({
+                  blendGamma: Math.min(MAX_BLEND_GAMMA, Math.max(MIN_BLEND_GAMMA, v)),
+                })
+              }
+            />
             <NumInput
               label="Left"
               value={projector.blendEdges.left}

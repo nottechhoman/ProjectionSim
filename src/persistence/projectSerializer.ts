@@ -1,6 +1,6 @@
 import { validateOptics } from '../optics/validate';
 import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, ProjectionSides, SceneObject } from '../types';
-import { DEFAULT_BLEND_EDGES } from '../types';
+import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA } from '../types';
 import {
   clampPanelWidth,
   clampFloatPosition,
@@ -78,6 +78,7 @@ function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
     mediaAssetId: raw.mediaAssetId ?? null,
     mediaFit: raw.mediaFit ?? 'contain',
     blendEdges: raw.blendEdges ?? { ...DEFAULT_BLEND_EDGES },
+    blendGamma: raw.blendGamma ?? DEFAULT_BLEND_GAMMA,
     outerEdgeFade: raw.outerEdgeFade ?? false,
     lookAtEnabled: raw.lookAtEnabled ?? false,
     lookAtTarget: raw.lookAtTarget ?? { x: 0, y: 1.5, z: 0 },

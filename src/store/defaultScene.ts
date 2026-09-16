@@ -1,4 +1,5 @@
 import type { SceneObject, ProjectorConfig } from '../types';
+import { DEFAULT_BLEND_GAMMA } from '../types';
 import { eulerYXZToQuaternion } from '../utils/euler';
 
 export const DEFAULT_SCENE_OBJECTS: SceneObject[] = [
@@ -56,6 +57,7 @@ export const DEFAULT_PROJECTORS: ProjectorConfig[] = [
     mediaAssetId: null,
     mediaFit: 'contain',
     blendEdges: { left: 0, right: 0, top: 0, bottom: 0 },
+    blendGamma: DEFAULT_BLEND_GAMMA,
     outerEdgeFade: false,
     lookAtEnabled: true,
     lookAtTarget: { x: 0, y: 1.5, z: 0 },

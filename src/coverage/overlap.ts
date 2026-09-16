@@ -101,6 +101,54 @@ export function multiCoverageArea(rects: Rect2D[]): number {
   return Math.max(0, total);
 }
 
+export interface AlignedProjectorLayout {
+  id: string;
+  rect: Rect2D;
+  widthM: number;
+}
+
+export function collectAlignedProjectorLayouts(
+  projectors: ProjectorConfig[],
+  screen: {
+    center: THREE.Vector3;
+    normal: THREE.Vector3;
+    width: number;
+    height: number;
+    matrix: THREE.Matrix4;
+  },
+): AlignedProjectorLayout[] {
+  const enabled = projectors.filter((p) => p.enabled);
+  const layouts: AlignedProjectorLayout[] = [];
+
+  for (const proj of enabled) {
+    const worldMatrix = new THREE.Matrix4();
+    const pos = new THREE.Vector3(
+      proj.transform.position.x,
+      proj.transform.position.y,
+      proj.transform.position.z,
+    );
+    const quat = new THREE.Quaternion(...proj.transform.quaternion);
+    worldMatrix.compose(pos, quat, new THREE.Vector3(1, 1, 1));
+
+    const footprint = computePlanarFootprint(proj.optics, worldMatrix, {
+      center: screen.center,
+      normal: screen.normal,
+      width: screen.width,
+      height: screen.height,
+    });
+    const rect = footprintToAlignedRect(footprint, screen.matrix);
+    if (!rect) continue;
+
+    layouts.push({
+      id: proj.id,
+      rect,
+      widthM: rect.maxX - rect.minX,
+    });
+  }
+
+  return layouts;
+}
+
 export function footprintToAlignedRect(
   footprint: FootprintResult,
   screenMatrix: THREE.Matrix4,
@@ -139,35 +187,11 @@ export function computeAlignedOverlap(
     matrix: THREE.Matrix4;
   },
 ): OverlapResults | null {
+  const layouts = collectAlignedProjectorLayouts(projectors, screen);
+  if (layouts.length === 0) return null;
+
+  const rects = layouts.map((l) => ({ id: l.id, rect: l.rect, widthM: l.widthM }));
   const enabled = projectors.filter((p) => p.enabled);
-  if (enabled.length === 0) return null;
-
-  const rects: { id: string; rect: Rect2D; footprint: FootprintResult; widthM: number }[] = [];
-
-  for (const proj of enabled) {
-    const worldMatrix = new THREE.Matrix4();
-    const pos = new THREE.Vector3(
-      proj.transform.position.x,
-      proj.transform.position.y,
-      proj.transform.position.z,
-    );
-    const quat = new THREE.Quaternion(...proj.transform.quaternion);
-    worldMatrix.compose(pos, quat, new THREE.Vector3(1, 1, 1));
-
-    const footprint = computePlanarFootprint(proj.optics, worldMatrix, {
-      center: screen.center,
-      normal: screen.normal,
-      width: screen.width,
-      height: screen.height,
-    });
-    const rect = footprintToAlignedRect(footprint, screen.matrix);
-    if (!rect) continue;
-
-    const widthM = rect.maxX - rect.minX;
-    rects.push({ id: proj.id, rect, footprint, widthM });
-  }
-
-  if (rects.length === 0) return null;
 
   const perProjectorAreaM2: Record<string, number> = {};
   for (const { id, rect } of rects) {

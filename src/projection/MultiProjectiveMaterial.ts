@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import multiVert from './shaders/multiProjection.vert.glsl?raw';
 import multiFrag from './shaders/multiProjection.frag.glsl?raw';
 import type { MediaFitMode, ProjectionCompositeMode, ProjectorConfig, TestPattern } from '../types';
+import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../types';
 import { FIT_MODE_INT } from '../media/MediaTextureCache';
 import { patternToInt } from './ProjectiveMaterial';
 import { falloffReferenceDistance } from '../optics/falloff';
@@ -56,6 +57,7 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       },
       blendEdges: { value: Array.from({ length: MAX }, () => new THREE.Vector4()) },
       outerEdgeFade: { value: new Float32Array(MAX) },
+      blendGamma: { value: new Float32Array(MAX) },
       depthMapSize: { value: new THREE.Vector2(512, 512) },
       projectorCount: { value: 0 },
       compositeMode: { value: 0 },
@@ -115,6 +117,7 @@ export function updateMultiProjectiveMaterial(
   const projectorColors = material.uniforms.projectorColors.value as THREE.Color[];
   const blendEdges = material.uniforms.blendEdges.value as THREE.Vector4[];
   const outerEdgeFade = material.uniforms.outerEdgeFade.value as Float32Array;
+  const blendGamma = material.uniforms.blendGamma.value as Float32Array;
   const depthMaps = material.uniforms.depthMaps.value as THREE.Texture[];
   const mediaMaps = material.uniforms.mediaMaps.value as THREE.Texture[];
   const projectorWorldPos = material.uniforms.projectorWorldPos.value as THREE.Vector3[];
@@ -142,6 +145,10 @@ export function updateMultiProjectiveMaterial(
       proj.blendEdges.bottom,
     );
     outerEdgeFade[i] = proj.outerEdgeFade ? 1 : 0;
+    blendGamma[i] = Math.min(
+      MAX_BLEND_GAMMA,
+      Math.max(MIN_BLEND_GAMMA, proj.blendGamma ?? DEFAULT_BLEND_GAMMA),
+    );
     depthMaps[i] = depthTextures[i] ?? depthMaps[i] ?? depthMaps[0];
 
     const useMedia =
