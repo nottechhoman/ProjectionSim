@@ -11,7 +11,7 @@ const samplePath = join(
 async function loadSpillSample(page: import('@playwright/test').Page): Promise<void> {
   const projectJson = readFileSync(samplePath, 'utf8');
   await page.addInitScript((json: string) => {
-    localStorage.setItem('projectionlab-autosave-v1', json);
+    localStorage.setItem('projectionlab-advanced-autosave-v1', json);
   }, projectJson);
   await page.goto('/');
   await expect(page.locator('canvas')).toHaveCount(1);

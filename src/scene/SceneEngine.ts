@@ -5,9 +5,23 @@ import type { useAppStore } from '../store';
 import { buildProjectorCamera, getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { createProjectiveMaterial, fitModeToInt, patternToInt } from '../projection/ProjectiveMaterial';
 import {
+  applyAdvancedBlendUniforms,
   createMultiProjectiveMaterial,
   updateMultiProjectiveMaterial,
+  type PreviewKind,
 } from '../projection/MultiProjectiveMaterial';
+import type { BlendSettings, SurfaceUvMapping } from '../types';
+import { DEFAULT_BLEND_SETTINGS } from '../types';
+import {
+  computeSurfaceUvFrame,
+  normalizeSurfaceUvMapping,
+  projectSurfaceUv,
+  PROJECTION_INT,
+  WRAP_INT,
+  type SurfaceUvFrame,
+} from '../uvmapping/surfaceUv';
+import { ProjectorFeedPass, type FeedKind } from '../projection/ProjectorFeedPass';
+import { outputWindows } from '../output/outputWindows';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 import { DepthPass } from '../visibility/DepthPass';
 import { depthPassResolution, getDeviceProfile, targetPixelRatio } from '../ui/deviceProfile';
@@ -55,7 +69,6 @@ import {
   resolveSharedCanvasSupport,
 } from '../projection/sharedCanvasMapping';
 import { ContentCanvasRenderer } from '../projection/ContentCanvasRenderer';
-import { RasterPreviewPass } from '../projection/RasterPreviewPass';
 
 const CORNER_UV = [
   [0, 0],
@@ -117,6 +130,46 @@ function createObjectMesh(obj: SceneObject): THREE.Object3D {
 
 type OcclusionDepthResolver = (key: OcclusionDepthKey, multi: boolean) => THREE.Texture | THREE.Texture[] | null;
 
+interface SurfaceHookData {
+  mapping: SurfaceUvMapping;
+  frame: SurfaceUvFrame;
+  root: THREE.Object3D;
+  baseColor: THREE.Color;
+}
+
+const scratchRootInv = new THREE.Matrix4();
+
+function applySurfaceUniforms(mat: THREE.ShaderMaterial, data: SurfaceHookData | undefined): void {
+  const u = mat.uniforms;
+  if (!u.surfMap) return;
+  if (!data || !data.mapping.enabled) {
+    u.surfMap.value = 0;
+    return;
+  }
+  const { mapping, frame, root } = data;
+  u.surfMap.value = 1;
+  u.surfProj.value = PROJECTION_INT[mapping.projection];
+  u.surfAxes.value = frame.planarAxes;
+  (u.surfRootInv.value as THREE.Matrix4).copy(scratchRootInv.copy(root.matrixWorld).invert());
+  (u.surfBoundsMin.value as THREE.Vector3).set(frame.boundsMin.x, frame.boundsMin.y, frame.boundsMin.z);
+  (u.surfBoundsSize.value as THREE.Vector3).set(frame.boundsSize.x, frame.boundsSize.y, frame.boundsSize.z);
+  (u.surfTheta.value as THREE.Vector3).set(frame.thetaRef, frame.thetaMin, frame.thetaMax);
+  (u.surfPhi.value as THREE.Vector2).set(frame.phiMin, frame.phiMax);
+  (u.surfRegion.value as THREE.Vector4).set(
+    mapping.region.x,
+    mapping.region.y,
+    mapping.region.width,
+    mapping.region.height,
+  );
+  (u.surfXform.value as THREE.Vector4).set(
+    THREE.MathUtils.degToRad(mapping.rotationDeg),
+    mapping.flipU ? 1 : 0,
+    mapping.flipV ? 1 : 0,
+    WRAP_INT[mapping.wrap],
+  );
+  (u.surfRepeat.value as THREE.Vector2).set(mapping.repeatU, mapping.repeatV);
+}
+
 function attachReceiverShaderHooks(
   mesh: THREE.Mesh,
   objectId: string,
@@ -129,8 +182,16 @@ function attachReceiverShaderHooks(
   mesh.onBeforeRender = (_renderer, _scene, _camera, _geometry, material) => {
     const mat = material as THREE.ShaderMaterial;
     if (!mat.uniforms) return;
+    // Per-mesh values on a shared material: force a uniform upload for every mesh
+    // (three.js only refreshes uniforms automatically when the material changes).
+    mat.uniformsNeedUpdate = true;
     if (mat.uniforms.projectionSides) {
       mat.uniforms.projectionSides.value = mesh.userData.projectionSides ?? 0;
+    }
+    const surf = mesh.userData.surfaceHook as SurfaceHookData | undefined;
+    applySurfaceUniforms(mat, surf);
+    if (surf && mat.uniforms.surfaceBaseColor && mat.uniforms.feedIndex) {
+      (mat.uniforms.surfaceBaseColor.value as THREE.Color).copy(surf.baseColor);
     }
     const key = mesh.userData.occlusionDepthKey as OcclusionDepthKey;
     const multi = mat.uniforms.depthMaps != null;
@@ -151,15 +212,46 @@ function attachReceiverShaderHooks(
   };
 }
 
+/** Root-local vertex sample used to fit planar / cylindrical / spherical UV frames. */
+function computeRootSurfaceFrame(root: THREE.Object3D): SurfaceUvFrame {
+  root.updateMatrixWorld(true);
+  const rootInv = root.matrixWorld.clone().invert();
+  const points: { x: number; y: number; z: number }[] = [];
+  const v = new THREE.Vector3();
+  const m = new THREE.Matrix4();
+  for (const mesh of collectMeshes(root)) {
+    const pos = mesh.geometry.getAttribute('position');
+    if (!pos) continue;
+    m.multiplyMatrices(rootInv, mesh.matrixWorld);
+    const step = Math.max(1, Math.floor(pos.count / 4000));
+    for (let i = 0; i < pos.count; i += step) {
+      v.fromBufferAttribute(pos, i).applyMatrix4(m);
+      points.push({ x: v.x, y: v.y, z: v.z });
+    }
+  }
+  return computeSurfaceUvFrame(points);
+}
+
 function syncReceiverMeshHooks(
   root: THREE.Object3D,
-  objectId: string,
-  blocksProjection: boolean,
+  obj: SceneObject,
   sidesInt: number,
   resolveOcclusionDepth: OcclusionDepthResolver,
 ): void {
+  const mapping = normalizeSurfaceUvMapping(obj.uvMapping);
+  if (mapping.enabled && mapping.projection !== 'meshUv' && !root.userData.surfaceFrame) {
+    root.userData.surfaceFrame = computeRootSurfaceFrame(root);
+  }
+  const frame = (root.userData.surfaceFrame as SurfaceUvFrame | undefined) ?? computeSurfaceUvFrame([]);
   for (const mesh of collectMeshes(root)) {
-    attachReceiverShaderHooks(mesh, objectId, blocksProjection, sidesInt, resolveOcclusionDepth);
+    attachReceiverShaderHooks(mesh, obj.id, obj.blocksProjection, sidesInt, resolveOcclusionDepth);
+    const prev = mesh.userData.surfaceHook as SurfaceHookData | undefined;
+    mesh.userData.surfaceHook = {
+      mapping,
+      frame,
+      root,
+      baseColor: prev?.baseColor ?? meshBaseColor(mesh),
+    } satisfies SurfaceHookData;
   }
 }
 
@@ -273,7 +365,20 @@ export class SceneEngine {
     layers: [],
   };
   private readonly contentCanvasRenderer = new ContentCanvasRenderer();
-  private readonly rasterPreviewPass = new RasterPreviewPass();
+  private readonly feedPass = new ProjectorFeedPass();
+  private blendSettings: BlendSettings = DEFAULT_BLEND_SETTINGS;
+  private lastFrameAt = 0;
+  private readonly outputTargets = new Map<
+    string,
+    {
+      target: THREE.WebGLRenderTarget;
+      pixels: Uint8Array;
+      pbo: WebGLBuffer | null;
+      sync: WebGLSync | null;
+      issuedAt: number;
+    }
+  >();
+  private maxOverlap = 1;
   private rasterPreviewPanelVisible = false;
   private rasterPreviewWasVisible = false;
   private sharedContentSourceProjectorId: string | null = null;
@@ -418,7 +523,7 @@ export class SceneEngine {
   }
 
   getRasterPreviewCanvas(projectorId: string): HTMLCanvasElement | null {
-    return this.rasterPreviewPass.getCanvas(projectorId);
+    return this.feedPass.getCanvas(projectorId);
   }
 
   /** Read one preview pixel (top-left canvas origin). */
@@ -427,7 +532,7 @@ export class SceneEngine {
     x: number,
     y: number,
   ): [number, number, number, number] | null {
-    const canvas = this.rasterPreviewPass.getCanvas(projectorId);
+    const canvas = this.feedPass.getCanvas(projectorId);
     if (!canvas) return null;
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
@@ -525,6 +630,8 @@ export class SceneEngine {
     this.showProjectionBeam = state.showProjectionBeam;
     this.calculationTargetId = state.calculationTargetId;
     this.rasterPreviewPanelVisible = state.rasterPreviewPanelVisible;
+    this.blendSettings = state.blendSettings;
+    this.maxOverlap = state.blendAnalysis?.maxOverlap ?? Math.min(2, state.projectors.filter((p) => p.enabled).length);
     this.syncProjectors(
       state.projectors,
       state.selectedProjectorId,
@@ -844,8 +951,7 @@ export class SceneEngine {
           : 0;
         syncReceiverMeshHooks(
           obj3d,
-          obj.id,
-          obj.blocksProjection,
+          obj,
           sidesInt,
           (key, multi) => this.resolveOcclusionDepth(key, multi),
         );
@@ -887,28 +993,7 @@ export class SceneEngine {
     }));
     const keys = requiredOcclusionDepthKeys(receiverEntries);
 
-    if (projectors.length === 1) {
-      if (!this.depthPass) return false;
-      const projector = projectors[0];
-      const worldMatrix = getProjectorWorldMatrix(projector);
-      const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
-      for (const key of keys) {
-        const meshes = collectBlockerMeshes(
-          blockerEntries,
-          excludeObjectIdFromDepthKey(key),
-        );
-        if (meshes.length === 0) {
-          this.occlusionDepthSingle.set(key, null);
-          continue;
-        }
-        this.occlusionDepthSingle.set(
-          key,
-          this.depthPass.render(this.renderer!, this.editorScene, projectorCamera, meshes),
-        );
-      }
-      return true;
-    }
-
+    // v2: every projector count goes through the unified multi-projector shader.
     const texturesByKey = new Map<OcclusionDepthKey, THREE.Texture[]>();
     for (const key of keys) {
       const meshes = collectBlockerMeshes(
@@ -1018,7 +1103,7 @@ export class SceneEngine {
         this.projectorVisuals.delete(id);
         this.depthPassByProjector.get(id)?.dispose();
         this.depthPassByProjector.delete(id);
-        this.rasterPreviewPass.disposeProjector(id);
+        this.feedPass.disposeProjector(id);
       }
     }
 
@@ -1174,6 +1259,9 @@ export class SceneEngine {
 
   start(): void {
     if (!this.webglAvailable || this.disposed) return;
+    outputWindows.setFrameDriver(() => {
+      if (!this.disposed && performance.now() - this.lastFrameAt > 45) this.render();
+    });
     const loop = () => {
       if (this.disposed) return;
       this.animationId = requestAnimationFrame(loop);
@@ -1186,6 +1274,7 @@ export class SceneEngine {
     if (!this.renderer || !this.editorCamera || !this.depthPass || this.disposed) return;
 
     const frameStart = performance.now();
+    this.lastFrameAt = frameStart;
 
     mediaTextureCache.updateVideos();
     if (this.contentCanvas.enabled && this.renderer) {
@@ -1208,36 +1297,10 @@ export class SceneEngine {
 
     const savedMaterials = new Map<THREE.Mesh, THREE.Material | THREE.Material[]>();
 
-    if (
-      (this.materialPreviewMode === 'projectionPreview' ||
-        this.materialPreviewMode === 'projectionUv' ||
-        this.materialPreviewMode === 'falloff') &&
-      projectorsToRender.length > 0
-    ) {
+    if (this.materialPreviewMode !== 'original' && projectorsToRender.length > 0) {
       const hasOcclusion = this.buildOcclusionDepthMaps(projectorsToRender);
 
-      if (projectorsToRender.length === 1) {
-        const projector = projectorsToRender[0];
-        this.applyProjectiveUniforms(projector);
-        this.projectiveMaterial.uniforms.useOcclusion.value = hasOcclusion ? 1 : 0;
-        const defaultDepth = this.occlusionDepthSingle.get('all');
-        if (defaultDepth) {
-          this.projectiveMaterial.uniforms.depthMap.value = defaultDepth;
-        }
-
-        for (const root of receivers) {
-          const meshes = collectMeshes(root);
-          if (meshes.length > 0) {
-            (this.projectiveMaterial.uniforms.surfaceBaseColor.value as THREE.Color).copy(
-              meshBaseColor(meshes[0]),
-            );
-          }
-          for (const mesh of meshes) {
-            savedMaterials.set(mesh, mesh.material);
-            mesh.material = this.projectiveMaterial;
-          }
-        }
-      } else {
+      {
         const defaultDepths = this.occlusionDepthMulti.get('all');
         updateMultiProjectiveMaterial(
           this.multiProjectiveMaterial,
@@ -1253,6 +1316,13 @@ export class SceneEngine {
           ),
           this.materialPreviewMode === 'falloff',
         );
+        applyAdvancedBlendUniforms(
+          this.multiProjectiveMaterial,
+          this.blendSettings,
+          this.maxOverlap,
+          this.previewKind(),
+        );
+        this.multiProjectiveMaterial.uniforms.feedIndex.value = -1;
         this.multiProjectiveMaterial.uniforms.useOcclusion.value = hasOcclusion ? 1 : 0;
         this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(
           this.depthPass!.target.width,
@@ -1281,33 +1351,305 @@ export class SceneEngine {
     }
 
     this.renderRasterPreviews();
+    this.renderOutputWindows();
 
     this.callbacks.onFrameTime?.(performance.now() - frameStart);
+  }
+
+  private previewKind(): PreviewKind {
+    if (this.materialPreviewMode === 'blendSum') return 'blendSum';
+    if (this.materialPreviewMode === 'surfaceUv') return 'surfaceUv';
+    return 'normal';
+  }
+
+  /** Projectors participating in compositing (same set as the viewport). */
+  private compositedProjectors(): ProjectorConfig[] {
+    if (this.projectionCompositeMode === 'solo') {
+      const selected =
+        this.allProjectors.find((p) => p.id === this.selectedProjectorId && p.enabled) ??
+        this.activeProjectors[0];
+      return selected ? [selected] : [];
+    }
+    return this.activeProjectors.slice(0, 4);
+  }
+
+  private prepareFeedMaterial(material: THREE.ShaderMaterial, projectors: ProjectorConfig[], forceBlend: boolean): void {
+    const compositeMode = forceBlend ? 'blended' : this.projectionCompositeMode;
+    updateMultiProjectiveMaterial(
+      material,
+      projectors,
+      this.occlusionDepthMulti.get('all') ?? [],
+      compositeMode === 'heatmap' ? 'blended' : compositeMode,
+      false,
+      this.contentSourceProjector(this.allProjectors),
+      this.applyMappingUniforms(material, this.sceneObjects, this.mappingMode),
+      false,
+    );
+    applyAdvancedBlendUniforms(material, this.blendSettings, this.maxOverlap, 'normal');
+    material.uniforms.depthMapSize.value.set(this.currentDepthResolution, this.currentDepthResolution);
   }
 
   private renderRasterPreviews(): void {
     if (!this.renderer) return;
     if (!this.rasterPreviewPanelVisible) {
-      if (this.rasterPreviewWasVisible) this.rasterPreviewPass.releaseTargets();
+      if (this.rasterPreviewWasVisible) this.feedPass.releaseTargets();
       this.rasterPreviewWasVisible = false;
       return;
     }
 
     const force = !this.rasterPreviewWasVisible;
     this.rasterPreviewWasVisible = true;
+    const projectors = this.compositedProjectors();
+    if (projectors.length === 0) return;
+    this.buildOcclusionDepthMaps(projectors);
     const meshes = this.getReceiverRoots().flatMap((root) => collectMeshes(root));
-    const updated = this.rasterPreviewPass.render(
+    const updated = this.feedPass.renderPreviews(
       this.renderer,
-      this.editorScene,
-      this.allProjectors,
-      this.sceneObjects,
+      projectors,
       meshes,
-      this.contentCanvas,
-      this.contentCanvasRenderer.texture,
+      (material) => this.prepareFeedMaterial(material, projectors, false),
       force,
       getDeviceProfile(),
     );
     if (updated) this.callbacks.onRasterPreview?.();
+  }
+
+  /**
+   * v2: stream projector feeds / masks to open output windows (other displays).
+   * GPU → async readback (no pipeline stall) → the popup's canvas. A window whose
+   * previous frame is still in flight skips this frame.
+   */
+  private renderOutputWindows(): void {
+    const entries = outputWindows.list();
+    this.collectOutputFrames();
+    for (const id of [...this.outputTargets.keys()]) {
+      if (!outputWindows.get(id)) this.disposeOutputSlot(id);
+    }
+    if (!this.renderer || entries.length === 0) return;
+    const projectors = this.activeProjectors.slice(0, 4);
+    let depthBuilt = false;
+    let meshes: THREE.Mesh[] | null = null;
+    for (const entry of entries) {
+      if (entry.win.closed) continue;
+      const projector = this.allProjectors.find((p) => p.id === entry.config.projectorId);
+      if (!projector) continue;
+      if (projector.name !== entry.title) outputWindows.update(entry.id, { title: projector.name });
+      const scale = entry.config.scale;
+      const width = Math.max(1, Math.round(projector.optics.resolution.width * scale));
+      const height = Math.max(1, Math.round(projector.optics.resolution.height * scale));
+      if (entry.config.content === 'grid') {
+        if (!entry.frameSize || entry.frameSize.width !== width || entry.frameSize.height !== height) {
+          outputWindows.drawGrid(entry, width, height);
+        }
+        continue;
+      }
+      if (entry.pending) continue;
+      const index = projectors.findIndex((p) => p.id === projector.id);
+      let slot = this.outputTargets.get(entry.id);
+      if (!slot || slot.target.width !== width || slot.target.height !== height) {
+        if (slot) this.disposeOutputSlot(entry.id);
+        entry.pending = false;
+        slot = {
+          target: new THREE.WebGLRenderTarget(width, height, {
+            minFilter: THREE.LinearFilter,
+            magFilter: THREE.LinearFilter,
+            format: THREE.RGBAFormat,
+            type: THREE.UnsignedByteType,
+          }),
+          pixels: new Uint8Array(width * height * 4),
+          pbo: null,
+          sync: null,
+          issuedAt: 0,
+        };
+        this.outputTargets.set(entry.id, slot);
+      }
+      const renderer = this.renderer;
+      if (index < 0) {
+        // Disabled projector: output black.
+        const prev = renderer.getRenderTarget();
+        const prevColor = renderer.getClearColor(new THREE.Color());
+        const prevAlpha = renderer.getClearAlpha();
+        renderer.setRenderTarget(slot.target);
+        renderer.setClearColor(0x000000, 1);
+        renderer.clear();
+        renderer.setRenderTarget(prev);
+        renderer.setClearColor(prevColor, prevAlpha);
+      } else {
+        if (!depthBuilt) {
+          this.buildOcclusionDepthMaps(projectors);
+          depthBuilt = true;
+        }
+        meshes ??= this.getReceiverRoots().flatMap((root) => collectMeshes(root));
+        this.feedPass.renderToTarget(
+          renderer,
+          projectors,
+          index,
+          entry.config.content === 'mask' ? 'mask' : 'color',
+          meshes,
+          (material) => this.prepareFeedMaterial(material, projectors, entry.config.content === 'mask'),
+          slot.target,
+        );
+      }
+      // Non-blocking readback: copy into a pixel-pack buffer now, collect it on a later
+      // frame once the GPU fence has signalled (polled from whichever window animates).
+      const gl = renderer.getContext() as WebGL2RenderingContext;
+      const prevTarget = renderer.getRenderTarget();
+      renderer.setRenderTarget(slot.target);
+      if (!slot.pbo) slot.pbo = gl.createBuffer();
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, slot.pbo);
+      gl.bufferData(gl.PIXEL_PACK_BUFFER, width * height * 4, gl.STREAM_READ);
+      gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, 0);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      renderer.setRenderTarget(prevTarget);
+      slot.sync = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+      slot.issuedAt = performance.now();
+      gl.flush();
+      entry.pending = true;
+    }
+  }
+
+  private disposeOutputSlot(id: string): void {
+    const slot = this.outputTargets.get(id);
+    if (!slot) return;
+    const gl = this.renderer?.getContext() as WebGL2RenderingContext | undefined;
+    if (gl) {
+      if (slot.sync) gl.deleteSync(slot.sync);
+      if (slot.pbo) gl.deleteBuffer(slot.pbo);
+    }
+    slot.target.dispose();
+    this.outputTargets.delete(id);
+  }
+
+  /** Collect finished output readbacks and paint them into their windows. */
+  private collectOutputFrames(): void {
+    if (!this.renderer || this.outputTargets.size === 0) return;
+    const gl = this.renderer.getContext() as WebGL2RenderingContext;
+    for (const [id, slot] of this.outputTargets) {
+      if (!slot.sync || !slot.pbo) continue;
+      // Normally the fence has signalled by the next frame. Some browsers only update
+      // fence status while the main window is presenting frames (not when it is hidden
+      // behind a full-screen output), so after a short grace period read anyway —
+      // getBufferSubData then waits for the copy, which is still just one frame late.
+      const signalled = gl.getSyncParameter(slot.sync, gl.SYNC_STATUS) === gl.SIGNALED;
+      if (!signalled && performance.now() - slot.issuedAt < 30) continue;
+      gl.deleteSync(slot.sync);
+      slot.sync = null;
+      const { width, height } = slot.target;
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, slot.pbo);
+      gl.getBufferSubData(gl.PIXEL_PACK_BUFFER, 0, slot.pixels, 0, width * height * 4);
+      gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+      const entry = outputWindows.get(id);
+      if (entry) {
+        entry.pending = false;
+        if (entry.config.content !== 'grid') outputWindows.pushFrame(id, slot.pixels, width, height);
+      }
+    }
+  }
+
+  /**
+   * v2: render one projector's full-resolution feed or blend mask and return it as a
+   * canvas (top-left origin). Masks are always computed with blending on.
+   */
+  renderProjectorFeed(projectorId: string, kind: FeedKind, maxLongEdge = 4096): HTMLCanvasElement | null {
+    if (!this.renderer) return null;
+    const projectors = this.activeProjectors.slice(0, 4);
+    if (!projectors.some((p) => p.id === projectorId)) return null;
+    this.editorScene.updateMatrixWorld(true);
+    this.buildOcclusionDepthMaps(projectors);
+    const meshes = this.getReceiverRoots().flatMap((root) => collectMeshes(root));
+    return this.feedPass.renderFull(
+      this.renderer,
+      projectors,
+      projectorId,
+      kind,
+      meshes,
+      (material) => this.prepareFeedMaterial(material, projectors, kind === 'mask'),
+      maxLongEdge,
+    );
+  }
+
+  /**
+   * v2: wireframe of a receiving object's raw surface UV layout for the UV editor
+   * (segments in 0–1 surface UV, before region / flip / rotate).
+   */
+  getSurfaceUvSegments(objectId: string, projection: SurfaceUvMapping['projection'], maxSegments = 2500): [number, number, number, number][] {
+    const root = this.objectMeshes.get(objectId);
+    if (!root) return [];
+    root.updateMatrixWorld(true);
+    const frame = (root.userData.surfaceFrame as SurfaceUvFrame | undefined) ?? computeRootSurfaceFrame(root);
+    root.userData.surfaceFrame = frame;
+    const rootInv = root.matrixWorld.clone().invert();
+    const out: [number, number, number, number][] = [];
+    const v = new THREE.Vector3();
+    const m = new THREE.Matrix4();
+    for (const mesh of collectMeshes(root)) {
+      const geo = mesh.geometry;
+      const pos = geo.getAttribute('position');
+      const uvAttr = geo.getAttribute('uv');
+      if (!pos) continue;
+      m.multiplyMatrices(rootInv, mesh.matrixWorld);
+      const uvAt = (i: number): [number, number] => {
+        if (projection === 'meshUv') {
+          return uvAttr ? [uvAttr.getX(i), uvAttr.getY(i)] : [0, 0];
+        }
+        v.fromBufferAttribute(pos, i).applyMatrix4(m);
+        const p = projectSurfaceUv({ x: v.x, y: v.y, z: v.z }, projection, frame);
+        return [p.x, p.y];
+      };
+      const index = geo.getIndex();
+      const triCount = index ? index.count / 3 : pos.count / 3;
+      const step = Math.max(1, Math.ceil((triCount * 3) / maxSegments));
+      for (let t = 0; t < triCount; t += step) {
+        const ids = [0, 1, 2].map((k) => (index ? index.getX(t * 3 + k) : t * 3 + k));
+        const uvs = ids.map(uvAt);
+        for (let k = 0; k < 3; k++) {
+          const a = uvs[k];
+          const b = uvs[(k + 1) % 3];
+          // Skip seam-wrapping edges of cylindrical / spherical projections.
+          if (projection !== 'meshUv' && projection !== 'planar' && Math.abs(a[0] - b[0]) > 0.5) continue;
+          out.push([a[0], a[1], b[0], b[1]]);
+        }
+      }
+    }
+    return out;
+  }
+
+  /** v2: raster-UV points (0–1, bottom-left) of the calculation target's four corners. */
+  projectTargetCornersToRaster(projectorId: string): ({ x: number; y: number } | null)[] | null {
+    const projector = this.allProjectors.find((p) => p.id === projectorId);
+    const target = getCalculationTargetObject(this.sceneObjects, this.calculationTargetId);
+    if (!projector || !target) return null;
+    const world = objectWorldMatrix(target.transform);
+    const local: THREE.Vector3[] = [];
+    if (target.type === 'curvedScreen' && target.curved) {
+      const { radius, arcAngleDeg, height } = target.curved;
+      const half = THREE.MathUtils.degToRad(arcAngleDeg) / 2;
+      // Cylinder geometry azimuth: x = r·sin(θ), z = r·cos(θ).
+      const pt = (theta: number, y: number) =>
+        new THREE.Vector3(radius * Math.sin(theta), y, radius * Math.cos(theta));
+      local.push(pt(-half, -height / 2), pt(half, -height / 2), pt(half, height / 2), pt(-half, height / 2));
+    } else {
+      const w = target.dimensions.width / 2;
+      const h = target.dimensions.height / 2;
+      local.push(
+        new THREE.Vector3(-w, -h, 0),
+        new THREE.Vector3(w, -h, 0),
+        new THREE.Vector3(w, h, 0),
+        new THREE.Vector3(-w, h, 0),
+      );
+    }
+    const vp = getProjectorViewProjectionMatrix(projector.optics, getProjectorWorldMatrix(projector));
+    const pts = local.map((p) => {
+      const clip = new THREE.Vector4(p.x, p.y, p.z, 1).applyMatrix4(world).applyMatrix4(vp);
+      if (clip.w <= 1e-6) return null;
+      return { x: clip.x / clip.w * 0.5 + 0.5, y: clip.y / clip.w * 0.5 + 0.5 };
+    });
+    // Order corners left→right as seen by the projector so the warp is not mirrored.
+    if (pts.every((p) => p !== null)) {
+      const [a, b] = [pts[0]!, pts[1]!];
+      if (a.x > b.x) return [pts[1], pts[0], pts[3], pts[2]];
+    }
+    return pts;
   }
 
   private getReceiverRoots(): THREE.Object3D[] {
@@ -1347,7 +1689,9 @@ export class SceneEngine {
     this.projectiveMaterial.dispose();
     this.multiProjectiveMaterial.dispose();
     this.contentCanvasRenderer.dispose();
-    this.rasterPreviewPass.dispose();
+    this.feedPass.dispose();
+    outputWindows.setFrameDriver(null);
+    for (const id of [...this.outputTargets.keys()]) this.disposeOutputSlot(id);
     this.depthPass?.dispose();
     this.transformControls?.dispose();
     this.controls?.dispose();

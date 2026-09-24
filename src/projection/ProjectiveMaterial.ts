@@ -10,6 +10,8 @@ const PATTERN_MAP: Record<TestPattern, number> = {
   colorBars: 2,
   white: 3,
   projectorId: 4,
+  black: 5,
+  gray: 6,
 };
 
 export function createProjectiveMaterial(): THREE.ShaderMaterial {

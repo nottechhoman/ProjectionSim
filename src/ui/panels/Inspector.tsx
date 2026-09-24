@@ -16,6 +16,8 @@ const PATTERNS: { value: TestPattern; label: string }[] = [
   { value: 'colorBars', label: 'Color Bars' },
   { value: 'white', label: 'White' },
   { value: 'projectorId', label: 'Projector ID' },
+  { value: 'black', label: 'Black (black-level check)' },
+  { value: 'gray', label: 'Gray 50%' },
 ];
 
 export function Inspector() {
@@ -42,6 +44,8 @@ export function Inspector() {
   const calculationTargetId = useAppStore((s) => s.calculationTargetId);
   const overlap = useAppStore((s) => s.calculationResults.overlap);
   const autoBlendFromOverlap = useAppStore((s) => s.autoBlendFromOverlap);
+  const blendMode = useAppStore((s) => s.blendSettings.mode);
+  const toggleStudio = useAppStore((s) => s.toggleUvEditorPanel);
 
   const projector = projectors.find((p) => p.id === selectedObjectId);
   const sceneObject = sceneObjects.find((o) => o.id === selectedObjectId);
@@ -579,6 +583,14 @@ export function Inspector() {
           <div className={styles.section}>
             <div className={styles.sectionTitle}>Blend edges</div>
             <p className={styles.hint}>Feather width as fraction of image (0–0.5)</p>
+            {blendMode === 'auto' ? (
+              <p className={styles.hint} style={{ color: '#e0c070' }}>
+                Auto (geometry) blending is active — these manual feathers are ignored.{' '}
+                <button type="button" onClick={toggleStudio} style={{ font: 'inherit', background: 'none', border: 'none', color: '#4fc3f7', cursor: 'pointer', padding: 0 }}>
+                  Open Studio
+                </button>
+              </p>
+            ) : null}
             {(() => {
               const enabledCount = projectors.filter((p) => p.enabled).length;
               const hasOverlap =

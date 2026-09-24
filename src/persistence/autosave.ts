@@ -1,7 +1,7 @@
 import type { ProjectSnapshot } from './projectSchema';
 import { parseProjectJson, serializeProject } from './projectSerializer';
 
-const AUTOSAVE_KEY = 'projectionlab-autosave-v1';
+const AUTOSAVE_KEY = 'projectionlab-advanced-autosave-v1';
 
 export function writeAutosave(snapshot: ProjectSnapshot): void {
   try {

@@ -1,4 +1,6 @@
-# ProjectionLab
+# ProjectionLab — Advanced (v2)
+
+> **v2 Advanced copy** — adds geometry-aware auto edge blending, gamma/black-level simulation, blend-mask export, per-surface UV mapping with a 2D UV editor, and corner-pin warp. See **[ADVANCED.md](ADVANCED.md)**. The original project is left untouched in `../ProjectionSim`.
 
 Browser-based 3D projection planning simulator. Milestone 1 delivers a single-projector scene with throw-ratio optics, projective test-pattern rendering, planar footprint calculations, and occlusion shadows. Milestone 2 adds image/video media on projectors, GLB/GLTF/OBJ import, curved screens, material preview modes, and versioned project save/load with IndexedDB asset storage. Milestone 3 adds up to four projectors with overlap calculations, edge blending, and composite preview modes (raw additive, blended, heatmap). Milestone 4 adds undo/redo, a two-point measure tool, CSV/HTML calculation reports, resizable and pop-out panels, and Playwright smoke tests.
 

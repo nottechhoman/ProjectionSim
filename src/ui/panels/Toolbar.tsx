@@ -64,6 +64,8 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const exportCalculationCsv = useAppStore((s) => s.exportCalculationCsv);
   const exportCalculationHtml = useAppStore((s) => s.exportCalculationHtml);
   const showProjectionBeam = useAppStore((s) => s.showProjectionBeam);
+  const studioVisible = useAppStore((s) => s.uvEditorPanelVisible);
+  const toggleStudio = useAppStore((s) => s.toggleUvEditorPanel);
   const sharedCanvasSupport = resolveSharedCanvasSupport(sceneObjects);
 
   const handleOpenFile = (event: ChangeEvent<HTMLInputElement>) => {
@@ -101,6 +103,27 @@ export function Toolbar({ compact = false }: ToolbarProps) {
         <img src={LOGO_URL} alt="" className={styles.brandLogo} width={28} height={28} />
         <span className={styles.brandShort}>{APP_NAME_SHORT}</span>
         <span className={styles.brandFull}>{APP_NAME}</span>
+      </div>
+      <div className={styles.separator} />
+      <div className={styles.group}>
+        <button
+          type="button"
+          className={studioVisible ? styles.active : undefined}
+          onClick={toggleStudio}
+          data-testid="studio-toggle"
+          title="Mapping & Blend Studio: advanced edge blending, per-surface UV mapping, corner-pin warp"
+          style={{ fontWeight: 600 }}
+        >
+          ✦ Studio
+        </button>
+        <button
+          type="button"
+          onClick={() => useAppStore.getState().openStudioTab('outputs')}
+          data-testid="outputs-toggle"
+          title="Send projector outputs full screen to other displays"
+        >
+          ⧉ Outputs
+        </button>
       </div>
       <div className={styles.separator} />
       <div className={styles.group}>
@@ -327,6 +350,22 @@ export function Toolbar({ compact = false }: ToolbarProps) {
           title="Inverse-square brightness heatmap from projector (near = hot, far = cold)"
         >
           Falloff
+        </button>
+        <button
+          type="button"
+          className={materialPreviewMode === 'blendSum' ? styles.active : undefined}
+          onClick={() => setMaterialPreviewMode('blendSum')}
+          title="Sum of blend weights in light: green = seamless, blue = dark seam, red = hot seam"
+        >
+          Blend Σ
+        </button>
+        <button
+          type="button"
+          className={materialPreviewMode === 'surfaceUv' ? styles.active : undefined}
+          onClick={() => setMaterialPreviewMode('surfaceUv')}
+          title="Per-surface content UV grid after UV mapping"
+        >
+          Surface UV
         </button>
         <button
           type="button"

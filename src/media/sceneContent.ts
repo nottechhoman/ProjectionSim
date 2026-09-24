@@ -16,6 +16,8 @@ const PATTERN_LABELS: Record<TestPattern, string> = {
   colorBars: 'Color Bars',
   white: 'White',
   projectorId: 'Projector ID',
+  black: 'Black',
+  gray: 'Gray 50%',
 };
 
 function assetName(assets: MediaAssetRecord[], assetId: string | null): string | null {

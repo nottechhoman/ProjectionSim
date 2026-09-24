@@ -4,6 +4,14 @@ import { isCompactLayout } from '../deviceProfile';
 import { useDeviceProfile } from '../useDeviceProfile';
 import type { SceneEngine } from '../../scene/SceneEngine';
 import styles from './RasterPreviewPanel.module.css';
+import { downloadCanvas } from './StudioPanel';
+
+function exportFeed(projectorId: string, name: string, kind: 'color' | 'mask') {
+  const canvas = engine()?.renderProjectorFeed(projectorId, kind);
+  if (!canvas) return;
+  const base = name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  downloadCanvas(canvas, `${base}-${kind === 'mask' ? 'blend-mask' : 'feed'}-${canvas.width}x${canvas.height}.png`);
+}
 
 function engine(): SceneEngine | undefined {
   return (window as Window & { __projectionLabEngine?: SceneEngine }).__projectionLabEngine;
@@ -69,8 +77,14 @@ export function RasterPreviewPanel() {
               const { width, height } = projector.optics.resolution;
               return (
                 <div key={projector.id} className={styles.card}>
-                  <div className={styles.cardLabel}>
-                    {projector.name} — {width}×{height}
+                  <div className={styles.cardLabel} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                    <span style={{ flex: 1 }}>{projector.name} — {width}×{height}{projector.warp?.enabled ? ' · warped' : ''}</span>
+                    <button type="button" className={styles.collapseBtn} style={{ fontSize: 10 }} onClick={() => exportFeed(projector.id, projector.name, 'color')} title="Download full-resolution feed PNG">
+                      Feed ⤓
+                    </button>
+                    <button type="button" className={styles.collapseBtn} style={{ fontSize: 10 }} onClick={() => exportFeed(projector.id, projector.name, 'mask')} title="Download blend mask PNG">
+                      Mask ⤓
+                    </button>
                   </div>
                   <PreviewThumb
                     projectorId={projector.id}
@@ -82,8 +96,8 @@ export function RasterPreviewPanel() {
             })
           )}
           <p className={styles.hint}>
-            Each thumbnail is that projector&apos;s output raster with blend ramp and brightness
-            applied.
+            Each thumbnail is the frame fed to that projector: surface-mapped content, corner-pin
+            warp and the active blend mask (manual or auto) with brightness applied.
           </p>
         </div>
       </div>

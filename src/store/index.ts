@@ -69,6 +69,11 @@ import {
   downloadTextFile,
 } from '../persistence/reportExport';
 import { resolveSharedCanvasSupport } from '../projection/sharedCanvasMapping';
+import type { BlendSettings, ProjectorWarp, SurfaceUvMapping } from '../types';
+import { DEFAULT_PROJECTOR_WARP } from '../types';
+import { computeBlendAnalysis, type BlendAnalysisResult } from '../blending/blendAnalysis';
+import { normalizeBlendSettings } from '../blending/advancedBlend';
+import { defaultProjectionForType, normalizeSurfaceUvMapping } from '../uvmapping/surfaceUv';
 import {
   getCalculationTargetInfo,
   getCalculationTargetObject,
@@ -76,6 +81,18 @@ import {
 } from './reliabilitySettings';
 
 interface AppState extends PersistedStateSlice {
+  /** v2: sampled blend uniformity on the calculation target. */
+  blendAnalysis: BlendAnalysisResult | null;
+  uvEditorPanelVisible: boolean;
+  studioTab: 'blend' | 'uv' | 'warp' | 'outputs';
+  setStudioTab: (tab: 'blend' | 'uv' | 'warp' | 'outputs') => void;
+  openStudioTab: (tab: 'blend' | 'uv' | 'warp' | 'outputs') => void;
+  setUvEditorPanelVisible: (visible: boolean) => void;
+  toggleUvEditorPanel: () => void;
+  setBlendSettings: (patch: Partial<BlendSettings>) => void;
+  updateSceneObjectUvMapping: (id: string, patch: Partial<SurfaceUvMapping>, recordHistory?: boolean) => void;
+  updateProjectorWarp: (id: string, warp: Partial<ProjectorWarp>, recordHistory?: boolean) => void;
+  resetProjectorWarp: (id: string) => void;
   selectedContentLayerId: string | null;
   contentCanvasPanelVisible: boolean;
   rasterPreviewPanelVisible: boolean;
@@ -233,6 +250,7 @@ function restoreSceneHistory(
     contentCanvas: snapshot.contentCanvas,
     sharedContentSourceProjectorId: snapshot.sharedContentSourceProjectorId,
     calculationTargetId: snapshot.calculationTargetId,
+    blendSettings: snapshot.blendSettings,
   });
 }
 
@@ -270,6 +288,7 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     calculationTargetId: state.calculationTargetId,
     analysisQuality: state.analysisQuality,
     calculationTargetSide: state.calculationTargetSide,
+    blendSettings: state.blendSettings,
     selectedObjectId: state.selectedObjectId,
     selectedProjectorId: state.selectedProjectorId,
     displayUnit: state.displayUnit,
@@ -308,6 +327,58 @@ export const useAppStore = create<AppState>((set, get) => ({
   calculationTargetId: initial.calculationTargetId,
   analysisQuality: initial.analysisQuality,
   calculationTargetSide: initial.calculationTargetSide,
+  blendSettings: initial.blendSettings,
+  blendAnalysis: null,
+  uvEditorPanelVisible: false,
+  studioTab: 'blend',
+  setStudioTab: (tab) => set({ studioTab: tab }),
+  openStudioTab: (tab) => set({ studioTab: tab, uvEditorPanelVisible: true }),
+  setUvEditorPanelVisible: (visible) => set({ uvEditorPanelVisible: visible }),
+  toggleUvEditorPanel: () => set((s) => ({ uvEditorPanelVisible: !s.uvEditorPanelVisible })),
+  setBlendSettings: (patch) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ blendSettings: normalizeBlendSettings({ ...s.blendSettings, ...patch }) }));
+    get().recomputeCalculations();
+  },
+  updateSceneObjectUvMapping: (id, patch, recordHistory = true) => {
+    if (recordHistory) pushSceneHistory(get, set);
+    set((s) => ({
+      sceneObjects: s.sceneObjects.map((obj) => {
+        if (obj.id !== id) return obj;
+        const current = obj.uvMapping
+          ? normalizeSurfaceUvMapping(obj.uvMapping)
+          : { ...normalizeSurfaceUvMapping(undefined), projection: defaultProjectionForType(obj.type) };
+        return {
+          ...obj,
+          uvMapping: normalizeSurfaceUvMapping({
+            ...current,
+            ...patch,
+            region: patch.region ? { ...current.region, ...patch.region } : current.region,
+          }),
+        };
+      }),
+    }));
+  },
+  updateProjectorWarp: (id, warp, recordHistory = true) => {
+    if (recordHistory) pushSceneHistory(get, set);
+    set((s) => ({
+      projectors: s.projectors.map((p) => {
+        if (p.id !== id) return p;
+        const current = p.warp ?? structuredClone(DEFAULT_PROJECTOR_WARP);
+        return { ...p, warp: { ...current, ...warp } };
+      }),
+    }));
+    get().recomputeCalculations();
+  },
+  resetProjectorWarp: (id) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      projectors: s.projectors.map((p) =>
+        p.id === id ? { ...p, warp: structuredClone(DEFAULT_PROJECTOR_WARP) } : p,
+      ),
+    }));
+    get().recomputeCalculations();
+  },
   selectedObjectId: initial.selectedObjectId,
   selectedProjectorId: initial.selectedProjectorId,
   displayUnit: initial.displayUnit,
@@ -805,6 +876,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   setTransformMode: (mode) => set({ transformMode: mode }),
   recomputeCalculations: () => {
+    {
+      const st = get();
+      const target = getCalculationTargetObject(st.sceneObjects, st.calculationTargetId);
+      set({ blendAnalysis: computeBlendAnalysis(target ?? null, st.projectors, st.blendSettings) });
+    }
     const { projectors, sceneObjects, selectedProjectorId, calculationTargetId, analysisQuality, calculationTargetSide } = get();
     const proj = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
     if (!proj) {

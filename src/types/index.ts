@@ -8,7 +8,15 @@ export type SceneObjectType = 'screen' | 'floor' | 'wall' | 'box' | 'curvedScree
 
 export type LedWallMediaSource = 'image' | 'video';
 
-export type MaterialPreviewMode = 'original' | 'projectionPreview' | 'projectionUv' | 'falloff';
+export type MaterialPreviewMode =
+  | 'original'
+  | 'projectionPreview'
+  | 'projectionUv'
+  | 'falloff'
+  /** v2: per-fragment sum of light-space blend weights (1.0 = seamless). */
+  | 'blendSum'
+  /** v2: per-surface content UV (after UV mapping) as colour. */
+  | 'surfaceUv';
 
 export type MediaSourceKind = 'pattern' | 'image' | 'video';
 
@@ -19,7 +27,9 @@ export type TestPattern =
   | 'uvGrid'
   | 'colorBars'
   | 'white'
-  | 'projectorId';
+  | 'projectorId'
+  | 'black'
+  | 'gray';
 
 export type ProjectionCompositeMode = 'solo' | 'unblended' | 'heatmap' | 'blended';
 
@@ -84,6 +94,113 @@ export const PROJECTOR_PALETTE = ['#4fc3f7', '#ff7043', '#66bb6a', '#ab47bc'] as
 
 export const MAX_PROJECTORS = 4;
 
+// ---------------------------------------------------------------------------
+// v2 Advanced: UV mapping, warp, advanced edge blending
+// ---------------------------------------------------------------------------
+
+/** How a receiving surface derives its 0–1 surface UV. */
+export type SurfaceUvProjection = 'meshUv' | 'planar' | 'cylindrical' | 'spherical';
+export type UvWrapMode = 'clamp' | 'repeat' | 'mirror';
+
+/** Normalized rect in content space, top-left origin (matches the content canvas editor). */
+export interface UvRegion {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface SurfaceUvMapping {
+  /** When false the surface uses the legacy primary-receiver shared mapping. */
+  enabled: boolean;
+  projection: SurfaceUvProjection;
+  /** Which part of the shared content this surface displays. */
+  region: UvRegion;
+  /** Rotation of the surface UV around its centre, degrees. */
+  rotationDeg: number;
+  flipU: boolean;
+  flipV: boolean;
+  /** Tiling of the surface UV inside the region (1 = once). */
+  repeatU: number;
+  repeatV: number;
+  wrap: UvWrapMode;
+}
+
+export const DEFAULT_SURFACE_UV_MAPPING: SurfaceUvMapping = {
+  enabled: false,
+  projection: 'meshUv',
+  region: { x: 0, y: 0, width: 1, height: 1 },
+  rotationDeg: 0,
+  flipU: false,
+  flipV: false,
+  repeatU: 1,
+  repeatV: 1,
+  wrap: 'clamp',
+};
+
+export interface Vec2 {
+  x: number;
+  y: number;
+}
+
+/**
+ * Corner-pin (keystone) warp of the projector output. Corners are where the
+ * image corners land inside the physical raster, in raster UV (0–1, bottom-left
+ * origin). Order: bottom-left, bottom-right, top-right, top-left.
+ */
+export interface ProjectorWarp {
+  enabled: boolean;
+  corners: [Vec2, Vec2, Vec2, Vec2];
+}
+
+export const IDENTITY_WARP_CORNERS: [Vec2, Vec2, Vec2, Vec2] = [
+  { x: 0, y: 0 },
+  { x: 1, y: 0 },
+  { x: 1, y: 1 },
+  { x: 0, y: 1 },
+];
+
+export const DEFAULT_PROJECTOR_WARP: ProjectorWarp = {
+  enabled: false,
+  corners: [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 1, y: 1 },
+    { x: 0, y: 1 },
+  ],
+};
+
+/** manual = per-edge feathers; auto = geometry-aware weights from real overlap. */
+export type BlendMode = 'manual' | 'auto';
+export type BlendCurve = 'linear' | 'smoothstep' | 'cosine' | 'power';
+
+export interface BlendSettings {
+  mode: BlendMode;
+  curve: BlendCurve;
+  /** Auto: ramp width as fraction of half the image (0.05–1; 1 = ramp to image centre). */
+  width: number;
+  /** Auto: sharpening exponent on edge scores (0.5–4). */
+  exponent: number;
+  /** When true the blend mask is pre-corrected for display gamma (seamless in light). */
+  gammaCorrect: boolean;
+  displayGamma: number;
+  /** Projector native black as a fraction of full white (0–0.1). */
+  blackLevel: number;
+  /** Lift black in non-overlap regions so the whole canvas matches the overlap floor. */
+  blackLevelCompensation: boolean;
+}
+
+export const DEFAULT_BLEND_SETTINGS: BlendSettings = {
+  mode: 'manual',
+  curve: 'smoothstep',
+  width: 1,
+  exponent: 1,
+  gammaCorrect: true,
+  displayGamma: 2.2,
+  blackLevel: 0,
+  blackLevelCompensation: false,
+};
+
 export interface Vec3 {
   x: number;
   y: number;
@@ -114,6 +231,8 @@ export interface SceneObject {
   modelAssetId?: string;
   /** Scale factor applied to imported models (1 = file units as meters) */
   modelScale?: number;
+  /** v2: per-surface UV mapping of shared content. */
+  uvMapping?: SurfaceUvMapping;
   /** Direct-display LED wall settings (type ledWall only). */
   ledWall?: {
     pixelResolution: { width: number; height: number };
@@ -161,6 +280,8 @@ export interface ProjectorConfig {
   /** When true, projector orientation aims at lookAtTarget (orbit on rotate). */
   lookAtEnabled?: boolean;
   lookAtTarget?: Vec3;
+  /** v2: corner-pin output warp. */
+  warp?: ProjectorWarp;
 }
 
 export interface NominalProjection {

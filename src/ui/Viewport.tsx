@@ -109,5 +109,7 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     showProjectionBeam: state.showProjectionBeam,
     calculationTargetId: state.calculationTargetId,
     rasterPreviewPanelVisible: state.rasterPreviewPanelVisible,
+    blendSettings: state.blendSettings,
+    maxOverlap: state.blendAnalysis?.maxOverlap ?? null,
   };
 }

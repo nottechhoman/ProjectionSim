@@ -1,7 +1,16 @@
 import * as THREE from 'three';
 import multiVert from './shaders/multiProjection.vert.glsl?raw';
 import multiFrag from './shaders/multiProjection.frag.glsl?raw';
-import type { MediaFitMode, ProjectionCompositeMode, ProjectorConfig, TestPattern } from '../types';
+import type {
+  BlendSettings,
+  MediaFitMode,
+  ProjectionCompositeMode,
+  ProjectorConfig,
+  TestPattern,
+} from '../types';
+import { DEFAULT_BLEND_SETTINGS } from '../types';
+import { BLEND_CURVE_INT } from '../blending/advancedBlend';
+import { warpInverseMatrix } from '../warp/homography';
 import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../types';
 import { FIT_MODE_INT } from '../media/MediaTextureCache';
 import { patternToInt } from './ProjectiveMaterial';
@@ -18,6 +27,8 @@ const PATTERN_MAP: Record<TestPattern, number> = {
   colorBars: 2,
   white: 3,
   projectorId: 4,
+  black: 5,
+  gray: 6,
 };
 
 const COMPOSITE_INT: Record<ProjectionCompositeMode, number> = {
@@ -83,6 +94,34 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
         value: Array.from({ length: MAX }, () => new THREE.Vector3()),
       },
       falloffRefDistance: { value: new Float32Array(MAX) },
+      // v2 warp
+      warpInv: { value: Array.from({ length: MAX }, () => new THREE.Matrix3()) },
+      // v2 blending
+      blendMode: { value: 0 },
+      blendCurve: { value: 1 },
+      blendWidth: { value: 1 },
+      blendExponent: { value: 1 },
+      blendGammaCorrect: { value: 1 },
+      displayGamma: { value: 2.2 },
+      blackLevel: { value: 0 },
+      blackComp: { value: 0 },
+      maxOverlap: { value: 1 },
+      // v2 previews / feed
+      previewKind: { value: 0 },
+      feedIndex: { value: -1 },
+      feedKind: { value: 0 },
+      // v2 per-surface UV mapping (overwritten per mesh in onBeforeRender)
+      surfMap: { value: 0 },
+      surfProj: { value: 0 },
+      surfAxes: { value: 0 },
+      surfRootInv: { value: new THREE.Matrix4() },
+      surfBoundsMin: { value: new THREE.Vector3(-0.5, -0.5, -0.5) },
+      surfBoundsSize: { value: new THREE.Vector3(1, 1, 1) },
+      surfTheta: { value: new THREE.Vector3(0, -Math.PI, Math.PI) },
+      surfPhi: { value: new THREE.Vector2(-Math.PI / 2, Math.PI / 2) },
+      surfRegion: { value: new THREE.Vector4(0, 0, 1, 1) },
+      surfXform: { value: new THREE.Vector4(0, 0, 0, 0) },
+      surfRepeat: { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: multiVert,
     fragmentShader: multiFrag,
@@ -124,13 +163,17 @@ export function updateMultiProjectiveMaterial(
   const mediaMaps = material.uniforms.mediaMaps.value as THREE.Texture[];
   const projectorWorldPos = material.uniforms.projectorWorldPos.value as THREE.Vector3[];
   const falloffRefDistance = material.uniforms.falloffRefDistance.value as Float32Array;
+  const warpInv = material.uniforms.warpInv.value as THREE.Matrix3[];
 
   for (let i = 0; i < MAX; i++) {
     if (i >= count) {
       useMediaTexture[i] = 0;
+      warpInv[i].identity();
       continue;
     }
     const proj = projectors[i];
+    const inv = warpInverseMatrix(proj.warp);
+    warpInv[i].set(inv[0], inv[1], inv[2], inv[3], inv[4], inv[5], inv[6], inv[7], inv[8]);
     const worldMatrix = getProjectorWorldMatrix(proj);
 
     matrices[i].copy(getProjectorViewProjectionMatrix(proj.optics, worldMatrix));
@@ -197,6 +240,29 @@ export function updateMultiProjectiveMaterial(
   }
   material.uniforms.mappingMode.value = mappingMode;
   material.uniforms.falloffPreview.value = falloffPreview ? 1 : 0;
+}
+
+export type PreviewKind = 'normal' | 'blendSum' | 'surfaceUv';
+const PREVIEW_KIND_INT: Record<PreviewKind, number> = { normal: 0, blendSum: 1, surfaceUv: 2 };
+
+/** v2: global advanced-blend and preview uniforms. */
+export function applyAdvancedBlendUniforms(
+  material: THREE.ShaderMaterial,
+  settings: BlendSettings = DEFAULT_BLEND_SETTINGS,
+  maxOverlap = 1,
+  previewKind: PreviewKind = 'normal',
+): void {
+  const u = material.uniforms;
+  u.blendMode.value = settings.mode === 'auto' ? 1 : 0;
+  u.blendCurve.value = BLEND_CURVE_INT[settings.curve];
+  u.blendWidth.value = settings.width;
+  u.blendExponent.value = settings.exponent;
+  u.blendGammaCorrect.value = settings.gammaCorrect ? 1 : 0;
+  u.displayGamma.value = settings.displayGamma;
+  u.blackLevel.value = settings.blackLevel;
+  u.blackComp.value = settings.blackLevelCompensation ? 1 : 0;
+  u.maxOverlap.value = Math.max(1, maxOverlap);
+  u.previewKind.value = PREVIEW_KIND_INT[previewKind];
 }
 
 export { patternToInt };

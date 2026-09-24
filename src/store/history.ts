@@ -1,4 +1,5 @@
-import type { ContentCanvas, MediaAssetRecord, ProjectorConfig, SceneObject } from '../types';
+import type { BlendSettings, ContentCanvas, MediaAssetRecord, ProjectorConfig, SceneObject } from '../types';
+import { DEFAULT_BLEND_SETTINGS } from '../types';
 
 export const HISTORY_MAX = 50;
 
@@ -9,6 +10,7 @@ export interface SceneHistorySnapshot {
   contentCanvas: ContentCanvas;
   sharedContentSourceProjectorId: string | null;
   calculationTargetId: string | null;
+  blendSettings: BlendSettings;
 }
 
 export function captureSceneHistory(state: {
@@ -18,6 +20,7 @@ export function captureSceneHistory(state: {
   contentCanvas: ContentCanvas;
   sharedContentSourceProjectorId: string | null;
   calculationTargetId: string | null;
+  blendSettings?: BlendSettings;
 }): SceneHistorySnapshot {
   return {
     sceneObjects: structuredClone(state.sceneObjects),
@@ -26,6 +29,7 @@ export function captureSceneHistory(state: {
     contentCanvas: structuredClone(state.contentCanvas),
     sharedContentSourceProjectorId: state.sharedContentSourceProjectorId,
     calculationTargetId: state.calculationTargetId,
+    blendSettings: structuredClone(state.blendSettings ?? DEFAULT_BLEND_SETTINGS),
   };
 }
 
@@ -36,7 +40,8 @@ export function historySnapshotsEqual(a: SceneHistorySnapshot, b: SceneHistorySn
     JSON.stringify(a.mediaAssets) === JSON.stringify(b.mediaAssets) &&
     JSON.stringify(a.contentCanvas) === JSON.stringify(b.contentCanvas) &&
     a.sharedContentSourceProjectorId === b.sharedContentSourceProjectorId &&
-    a.calculationTargetId === b.calculationTargetId
+    a.calculationTargetId === b.calculationTargetId &&
+    JSON.stringify(a.blendSettings) === JSON.stringify(b.blendSettings)
   );
 }
 

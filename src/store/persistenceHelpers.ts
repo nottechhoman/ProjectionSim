@@ -12,7 +12,9 @@ import type {
   ViewPreset,
   AnalysisQuality,
   CalculationTargetSide,
+  BlendSettings,
 } from '../types';
+import { normalizeBlendSettings } from '../blending/advancedBlend';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
 import { DEFAULT_CONTENT_CANVAS, normalizeContentCanvas } from '../projection/contentCanvas';
 import {
@@ -51,6 +53,7 @@ export interface PersistedStateSlice {
   calculationTargetId: string | null;
   analysisQuality: AnalysisQuality;
   calculationTargetSide: CalculationTargetSide;
+  blendSettings: BlendSettings;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
@@ -91,6 +94,7 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     calculationTargetId: slice.calculationTargetId,
     analysisQuality: slice.analysisQuality,
     calculationTargetSide: slice.calculationTargetSide,
+    blendSettings: slice.blendSettings,
     selectedObjectId: slice.selectedObjectId,
     selectedProjectorId: slice.selectedProjectorId,
     displayUnit: slice.displayUnit,
@@ -146,6 +150,7 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
       snapshot.calculationTargetSide === 'back' || snapshot.calculationTargetSide === 'both'
         ? snapshot.calculationTargetSide
         : 'front',
+    blendSettings: normalizeBlendSettings(snapshot.blendSettings),
     selectedObjectId: snapshot.selectedObjectId,
     selectedProjectorId,
     displayUnit: snapshot.displayUnit,
@@ -195,6 +200,7 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     calculationTargetId: 'screen-1',
     analysisQuality: 'draft',
     calculationTargetSide: 'front',
+    blendSettings: normalizeBlendSettings(undefined),
     selectedObjectId: 'proj-1',
     selectedProjectorId: 'proj-1',
     displayUnit: 'm',

@@ -1,4 +1,4 @@
-const DB_NAME = 'projectionlab-assets';
+const DB_NAME = 'projectionlab-advanced-assets';
 const STORE_NAME = 'blobs';
 const DB_VERSION = 1;
 

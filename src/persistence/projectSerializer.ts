@@ -2,6 +2,22 @@ import { validateOptics } from '../optics/validate';
 import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, ProjectionSides, SceneObject } from '../types';
 import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA } from '../types';
 import { normalizeContentCanvas } from '../projection/contentCanvas';
+import { normalizeBlendSettings } from '../blending/advancedBlend';
+import { normalizeSurfaceUvMapping } from '../uvmapping/surfaceUv';
+import { DEFAULT_PROJECTOR_WARP, type ProjectorWarp } from '../types';
+
+function normalizeWarp(raw: unknown): ProjectorWarp {
+  const d = DEFAULT_PROJECTOR_WARP;
+  if (!isObject(raw) || !Array.isArray(raw.corners) || raw.corners.length !== 4) {
+    return structuredClone(d);
+  }
+  const corners = raw.corners.map((c: unknown, i: number) =>
+    isObject(c) && typeof c.x === 'number' && Number.isFinite(c.x) && typeof c.y === 'number' && Number.isFinite(c.y)
+      ? { x: c.x, y: c.y }
+      : { ...d.corners[i] },
+  ) as ProjectorWarp['corners'];
+  return { enabled: raw.enabled === true, corners };
+}
 import {
   clampPanelWidth,
   clampFloatPosition,
@@ -69,6 +85,9 @@ function validateSceneObject(raw: unknown): SceneObject {
   return {
     ...(raw as unknown as SceneObject),
     projectionSides,
+    ...(raw.uvMapping !== undefined
+      ? { uvMapping: normalizeSurfaceUvMapping(raw.uvMapping as never) }
+      : {}),
   };
 }
 
@@ -83,6 +102,7 @@ function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
     outerEdgeFade: raw.outerEdgeFade ?? false,
     lookAtEnabled: raw.lookAtEnabled ?? false,
     lookAtTarget: raw.lookAtTarget ?? { x: 0, y: 1.5, z: 0 },
+    warp: normalizeWarp(raw.warp),
   };
 }
 
@@ -156,6 +176,8 @@ export function parseProjectJson(text: string): ProjectSnapshot {
         ? 'projectionUv'
         : data.materialPreviewMode === 'falloff'
           ? 'falloff'
+          : data.materialPreviewMode === 'blendSum' || data.materialPreviewMode === 'surfaceUv'
+            ? data.materialPreviewMode
           : 'projectionPreview';
   const projectionCompositeMode: ProjectionCompositeMode =
     data.projectionCompositeMode === 'heatmap' ||
@@ -196,6 +218,7 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     calculationTargetId,
     analysisQuality,
     calculationTargetSide,
+    blendSettings: normalizeBlendSettings(isObject(data.blendSettings) ? (data.blendSettings as never) : undefined),
     selectedObjectId,
     selectedProjectorId,
     displayUnit: data.displayUnit === 'cm' || data.displayUnit === 'mm' ? data.displayUnit : 'm',

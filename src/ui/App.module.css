@@ -73,9 +73,9 @@
 
 .compact .mobileNav {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 6px;
-  padding: 6px 8px calc(6px + env(safe-area-inset-bottom, 0));
+  grid-template-columns: repeat(6, 1fr);
+  gap: 4px;
+  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0));
   background: #252525;
   border-top: 1px solid #333;
 }
@@ -83,9 +83,13 @@
 .mobileNav button {
   min-height: 44px;
   font: inherit;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 600;
   color: #ccc;
+  padding: 0 2px;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: #333;
   border: 1px solid #444;
   border-radius: 8px;
