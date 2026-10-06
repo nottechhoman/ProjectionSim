@@ -23,6 +23,9 @@ interface PreviewSlot {
  */
 export class ProjectorFeedPass {
   private readonly material = createMultiProjectiveMaterial();
+  /** Full-target quad for the raw-mapping full-frame background. */
+  private readonly frameQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
+  private readonly frameCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 2);
   private readonly slots = new Map<string, PreviewSlot>();
   private lastUpdate = 0;
 
@@ -128,6 +131,7 @@ export class ProjectorFeedPass {
 
   dispose(): void {
     this.releaseTargets();
+    this.frameQuad.geometry.dispose();
     this.material.dispose();
   }
 
@@ -154,6 +158,11 @@ export class ProjectorFeedPass {
     this.material.uniforms.previewKind.value = 0;
     this.material.uniforms.forceUvPreview.value = 0;
     this.material.uniforms.falloffPreview.value = 0;
+    this.material.uniforms.feedSize.value.set(target.width, target.height);
+    // Raw mapping: content is locked to the projector raster, so the feed is the whole
+    // frame (spill included). Shared/canvas mapping pins content to surfaces instead,
+    // so only pixels that land on a receiving surface carry content.
+    const fullFrame = this.material.uniforms.mappingMode.value !== 1;
     try {
       const camera = buildProjectorCamera(projector.optics, getProjectorWorldMatrix(projector));
       renderer.autoClear = false;
@@ -161,11 +170,22 @@ export class ProjectorFeedPass {
       renderer.setClearColor(0x000000, 1);
       renderer.setRenderTarget(target);
       renderer.clear();
+      if (fullFrame) {
+        this.frameQuad.position.set(0, 0, -1);
+        this.frameQuad.updateMatrixWorld();
+        this.material.uniforms.feedLayer.value = 1;
+        renderer.render(this.frameQuad, this.frameCamera);
+        renderer.clearDepth();
+        this.material.uniforms.feedLayer.value = 2;
+      } else {
+        this.material.uniforms.feedLayer.value = 0;
+      }
       for (const mesh of meshes) {
         if (!mesh.visible) continue;
         renderer.render(mesh, camera);
       }
     } finally {
+      this.material.uniforms.feedLayer.value = 0;
       for (const [mesh, material] of saved) mesh.material = material;
       this.material.uniforms.feedIndex.value = -1;
       renderer.setRenderTarget(prevTarget);

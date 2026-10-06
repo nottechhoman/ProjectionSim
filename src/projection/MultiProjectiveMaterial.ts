@@ -110,6 +110,8 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       previewKind: { value: 0 },
       feedIndex: { value: -1 },
       feedKind: { value: 0 },
+      feedLayer: { value: 0 },
+      feedSize: { value: new THREE.Vector2(1, 1) },
       // v2 per-surface UV mapping (overwritten per mesh in onBeforeRender)
       surfMap: { value: 0 },
       surfProj: { value: 0 },

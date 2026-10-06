@@ -66,6 +66,10 @@ uniform float maxOverlap;
 uniform int previewKind;        // 0 normal, 1 blend sum, 2 surface UV
 uniform int feedIndex;          // -1 scene view; >= 0 render that projector's feed
 uniform int feedKind;           // 0 colour feed, 1 blend mask only
+// v3: 0 surfaces only (black where no surface), 1 full-frame raster background,
+// 2 surfaces drawn over that background (misses are left to the background).
+uniform int feedLayer;
+uniform vec2 feedSize;          // feed render target size in pixels
 
 // ---- v2: per-surface UV mapping (set per mesh) -----------------------------
 uniform int surfMap;
@@ -367,7 +371,31 @@ float toSignal(float w) {
 }
 
 void main() {
+  // v3: raw mapping — a projector emits its whole raster no matter what it lands on,
+  // so the feed is the full content frame (warp + manual blend in raster space).
+  if (feedIndex >= 0 && feedLayer == 1) {
+    vec2 p = gl_FragCoord.xy / feedSize;
+    vec2 q;
+    if (!warpToContent(feedIndex, p, q)) {
+      fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+    bool bgBlended = compositeMode == 1;
+    float bgW = (bgBlended && blendMode == 0)
+      ? pow(rawBlendWeight(q, blendEdges[feedIndex], outerEdgeFade[feedIndex]), blendGamma[feedIndex])
+      : 1.0;
+    float bgSignal = bgBlended ? toSignal(bgW) : 1.0;
+    if (feedKind == 1) {
+      fragColor = vec4(vec3(bgSignal), 1.0);
+      return;
+    }
+    vec3 bg = sampleProjectorColorAt(feedIndex, q) * brightness[feedIndex];
+    fragColor = vec4(clamp(bg, 0.0, 1.0) * bgSignal, 1.0);
+    return;
+  }
+
   if (!receivesOnThisFace()) {
+    if (feedIndex >= 0 && feedLayer == 2) discard;
     fragColor = feedIndex >= 0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(surfaceBaseColor, 1.0);
     return;
   }
@@ -412,6 +440,7 @@ void main() {
   }
 
   if (hitCount == 0) {
+    if (feedIndex >= 0 && feedLayer == 2) discard;
     fragColor = feedIndex >= 0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(surfaceBaseColor, 1.0);
     return;
   }
@@ -445,6 +474,7 @@ void main() {
   // Per-projector feed / mask (rendered from that projector's camera).
   if (feedIndex >= 0) {
     if (!hit[feedIndex]) {
+      if (feedLayer == 2) discard;
       fragColor = vec4(0.0, 0.0, 0.0, 1.0);
       return;
     }
