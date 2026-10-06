@@ -67,11 +67,11 @@ export default function App() {
   const style = compact
     ? ({
         gridTemplateColumns: '1fr',
-        gridTemplateRows: `auto 1fr auto auto ${bottomPanelVisible ? '32px' : '0px'}`,
+        gridTemplateRows: `auto 1fr auto auto ${bottomPanelVisible ? '24px' : '0px'}`,
       } as const)
     : ({
         gridTemplateColumns: `${leftDocked ? `${leftPanelWidth}px` : '0px'} 1fr ${rightDocked ? `${rightPanelWidth}px` : '0px'}`,
-        gridTemplateRows: `56px 1fr auto ${bottomPanelVisible ? '32px' : '0px'}`,
+        gridTemplateRows: `52px 1fr auto ${bottomPanelVisible ? '28px' : '0px'}`,
       } as const);
 
   return (

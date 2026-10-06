@@ -5,6 +5,7 @@ import { MAX_PROJECTORS } from '../../types';
 import { resolveSharedCanvasSupport } from '../../projection/sharedCanvasMapping';
 import { listSharedContentSourceProjectors } from '../../store/reliabilitySettings';
 import { APP_NAME, APP_NAME_SHORT } from '../../branding/appName';
+import { Menu, MenuItem, MenuSection, MenuSegments } from '../components/Menu';
 import styles from './Toolbar.module.css';
 
 const LOGO_URL = `${import.meta.env.BASE_URL}logo.svg`;
@@ -97,336 +98,237 @@ export function Toolbar({ compact = false }: ToolbarProps) {
     event.target.value = '';
   };
 
+  const compositeOptions = (['solo', 'unblended', 'blended', 'heatmap'] as ProjectionCompositeMode[]).map(
+    (mode) => ({
+      id: mode,
+      label: mode === 'solo' ? 'Solo' : mode === 'unblended' ? 'Raw' : mode === 'blended' ? 'Blend' : 'Count',
+      title:
+        mode === 'solo'
+          ? 'Show only the selected projector on surfaces'
+          : mode === 'unblended'
+            ? 'Show every projector at once'
+            : mode === 'blended'
+              ? 'Edge-blended composite'
+              : 'Coverage count heatmap',
+    }),
+  );
+
+  const previewOptions: { id: typeof materialPreviewMode; label: string; hint?: string }[] = [
+    { id: 'projectionPreview', label: 'Projection' },
+    { id: 'projectionUv', label: 'Projector UV' },
+    { id: 'falloff', label: 'Brightness falloff' },
+    { id: 'blendSum', label: 'Blend sum', hint: 'seams' },
+    { id: 'surfaceUv', label: 'Surface UV' },
+    { id: 'original', label: 'Original material' },
+  ];
+
+  const currentView = VIEW_PRESETS.find((v) => v.id === viewPreset)?.label ?? 'View';
+
   return (
     <div className={`${styles.toolbar} ${compact ? styles.compact : ''}`}>
       <div className={styles.brand} title={APP_NAME}>
-        <img src={LOGO_URL} alt="" className={styles.brandLogo} width={28} height={28} />
-        <span className={styles.brandShort}>{APP_NAME_SHORT}</span>
-        <span className={styles.brandFull}>{APP_NAME}</span>
-      </div>
-      <div className={styles.separator} />
-      <div className={styles.group}>
-        <button
-          type="button"
-          className={studioVisible ? styles.active : undefined}
-          onClick={toggleStudio}
-          data-testid="studio-toggle"
-          title="Mapping & Blend Studio: advanced edge blending, per-surface UV mapping, corner-pin warp"
-          style={{ fontWeight: 600 }}
-        >
-          ✦ Studio
-        </button>
-        <button
-          type="button"
-          onClick={() => useAppStore.getState().openStudioTab('outputs')}
-          data-testid="outputs-toggle"
-          title="Send projector outputs full screen to other displays"
-        >
-          ⧉ Outputs
-        </button>
-      </div>
-      <div className={styles.separator} />
-      <div className={styles.group}>
-        <span className={styles.label}>Units</span>
-        <select
-          value={displayUnit}
-          onChange={(e) => setDisplayUnit(e.target.value as DisplayUnit)}
-          aria-label="Display units"
-        >
-          {UNITS.map((u) => (
-            <option key={u} value={u}>{u}</option>
-          ))}
-        </select>
+        <img src={LOGO_URL} alt="" className={styles.brandLogo} width={26} height={26} />
+        <span className={styles.brandName}>{APP_NAME_SHORT}</span>
       </div>
 
-      <div className={styles.separator} />
+      <div className={styles.cluster}>
+        <Menu label="Add" testId="add-menu" title="Add projectors, surfaces or files">
+          {(close) => (
+            <>
+              <MenuSection>
+                <MenuItem
+                  onSelect={() => { addProjector(); close(); }}
+                  disabled={projectorCount >= MAX_PROJECTORS}
+                  hint={`${projectorCount}/${MAX_PROJECTORS}`}
+                >
+                  Projector
+                </MenuItem>
+              </MenuSection>
+              <MenuSection title="Surfaces">
+                <MenuItem onSelect={() => { addBox(); close(); }}>Box</MenuItem>
+                <MenuItem onSelect={() => { addCurvedScreen(); close(); }}>Curved screen</MenuItem>
+                <MenuItem onSelect={() => { addLedWall(); close(); }}>LED wall</MenuItem>
+              </MenuSection>
+              <MenuSection>
+                <MenuItem
+                  onSelect={() => { importInputRef.current?.click(); close(); }}
+                  hint="image, video, 3D"
+                >
+                  Import file…
+                </MenuItem>
+              </MenuSection>
+            </>
+          )}
+        </Menu>
 
-      <div className={styles.group}>
-        <span className={styles.label}>View</span>
-        {VIEW_PRESETS.map(({ id, label }) => (
+        <Menu label={currentView} title="Camera view">
+          {(close) => (
+            <MenuSection title="View">
+              {VIEW_PRESETS.map(({ id, label }) => (
+                <MenuItem key={id} selected={viewPreset === id} onSelect={() => { setViewPreset(id); close(); }}>
+                  {label === 'Persp' ? 'Perspective' : label}
+                </MenuItem>
+              ))}
+            </MenuSection>
+          )}
+        </Menu>
+
+        <div className={styles.segmented} role="group" aria-label="Gizmo">
           <button
-            key={id}
             type="button"
-            className={viewPreset === id ? styles.active : undefined}
-            onClick={() => setViewPreset(id)}
+            className={transformMode === 'translate' ? styles.on : undefined}
+            onClick={() => setTransformMode('translate')}
+            title="Move (W)"
+            aria-pressed={transformMode === 'translate'}
           >
-            {label}
+            <span aria-hidden>✥</span>
+            <span className={styles.wideOnly}>Move</span>
           </button>
-        ))}
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <span className={styles.label}>Gizmo</span>
-        <button
-          type="button"
-          className={transformMode === 'translate' ? styles.active : undefined}
-          onClick={() => setTransformMode('translate')}
-          title="Move (W)"
-        >
-          Move
-        </button>
-        <button
-          type="button"
-          className={transformMode === 'rotate' ? styles.active : undefined}
-          onClick={() => setTransformMode('rotate')}
-          title="Rotate (E)"
-        >
-          Rotate
-        </button>
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <span className={styles.label}>Helpers</span>
-        <button
-          type="button"
-          className={showProjectionBeam ? styles.active : undefined}
-          onClick={() => useAppStore.getState().toggleProjectionBeam()}
-          title={
-            showProjectionBeam
-              ? 'Hide beam rays from lens to image frame'
-              : 'Show beam rays from lens to image frame'
-          }
-        >
-          Beam
-        </button>
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <button type="button" onClick={addBox}>Add Box</button>
-        <button type="button" onClick={addCurvedScreen}>Curved Screen</button>
-        <button type="button" onClick={addLedWall}>LED Wall</button>
-        <button type="button" onClick={() => importInputRef.current?.click()}>Import</button>
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <button type="button" onClick={addProjector} disabled={projectorCount >= MAX_PROJECTORS}>
-          + Projector
-        </button>
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <span className={styles.label}>Mapping</span>
-        {(['raw', 'sharedCanvas'] as MappingMode[]).map((mode) => (
           <button
-            key={mode}
             type="button"
-            className={mappingMode === mode ? styles.active : undefined}
-            onClick={() => setMappingMode(mode)}
-            disabled={
-              (mode === 'sharedCanvas' && !sharedCanvasSupport.supported) ||
-              (mode === 'raw' && contentCanvasEnabled)
-            }
-            data-testid={mode === 'sharedCanvas' ? 'mapping-shared-button' : `mapping-${mode}-button`}
-            title={
-              mode === 'raw' && contentCanvasEnabled
-                ? 'Disable the content canvas to return to Raw mapping'
-                : mode === 'sharedCanvas' && !sharedCanvasSupport.supported
-                  ? sharedCanvasSupport.reason ?? 'Shared canvas unavailable'
-                  : mode === 'sharedCanvas'
-                    ? 'Align content to the receiving surface coordinate system'
-                    : 'Each projector uses its own raster coordinates'
-            }
+            className={transformMode === 'rotate' ? styles.on : undefined}
+            onClick={() => setTransformMode('rotate')}
+            title="Rotate (E)"
+            aria-pressed={transformMode === 'rotate'}
           >
-            {mode === 'raw' ? 'Raw' : 'Shared'}
+            <span aria-hidden>⟳</span>
+            <span className={styles.wideOnly}>Rotate</span>
           </button>
-        ))}
-        {mappingMode === 'sharedCanvas' && contentCanvasEnabled && (
-          <span className={styles.label} style={{ marginLeft: 8 }}>
-            Content from canvas
-          </span>
-        )}
-        {mappingMode === 'sharedCanvas' && !contentCanvasEnabled && (
-          <label className={styles.label} style={{ marginLeft: 8 }}>
-            Shared content source
-            <select
-              aria-label="Shared content source"
-              data-testid="shared-content-source-select"
-              value={sharedContentSourceProjectorId ?? ''}
-              onChange={(e) => setSharedContentSourceProjectorId(e.target.value || null)}
-              disabled={projectors.length === 0}
-            >
-              {projectors.length === 0 ? (
-                <option value="">No projectors</option>
-              ) : (
-                listSharedContentSourceProjectors(projectors).map((proj) => (
-                  <option key={proj.id} value={proj.id}>
-                    {proj.name}{proj.enabled ? '' : ' (disabled)'}
-                  </option>
-                ))
+        </div>
+      </div>
+
+      <div className={styles.spacer} />
+
+      <div className={styles.cluster}>
+        <button
+          type="button"
+          className={`${styles.iconBtn} ${styles.wideOnlyFlex}`}
+          onClick={undo}
+          disabled={historyPast.length === 0}
+          title="Undo (Ctrl+Z)"
+          aria-label="Undo"
+        >
+          ↶
+        </button>
+        <button
+          type="button"
+          className={`${styles.iconBtn} ${styles.wideOnlyFlex}`}
+          onClick={redo}
+          disabled={historyFuture.length === 0}
+          title="Redo (Ctrl+Shift+Z)"
+          aria-label="Redo"
+        >
+          ↷
+        </button>
+
+        <Menu label="More" align="right" testId="more-menu" title="Display, mapping and project options">
+          {(close) => (
+            <>
+              {compact && (
+                <MenuSection>
+                  <MenuItem onSelect={() => { undo(); close(); }} disabled={historyPast.length === 0}>Undo</MenuItem>
+                  <MenuItem onSelect={() => { redo(); close(); }} disabled={historyFuture.length === 0}>Redo</MenuItem>
+                </MenuSection>
               )}
-            </select>
-          </label>
+              <MenuSection title="Show on surfaces">
+                <MenuSegments
+                  options={compositeOptions}
+                  value={projectionCompositeMode}
+                  onChange={setProjectionCompositeMode}
+                  isDisabled={(mode) => projectorCount < 2 && mode !== 'solo' && mode !== 'unblended'}
+                />
+                {previewOptions.map((o) => (
+                  <MenuItem
+                    key={o.id}
+                    selected={materialPreviewMode === o.id}
+                    onSelect={() => setMaterialPreviewMode(o.id)}
+                    hint={o.hint}
+                  >
+                    {o.label}
+                  </MenuItem>
+                ))}
+              </MenuSection>
+              <MenuSection title="Mapping">
+                <MenuSegments
+                  options={[
+                    { id: 'raw' as MappingMode, label: 'Raw', title: 'Each projector uses its own raster' },
+                    { id: 'sharedCanvas' as MappingMode, label: 'Shared', title: 'Content aligned to the receiving surface' },
+                  ]}
+                  value={mappingMode}
+                  onChange={setMappingMode}
+                  isDisabled={(mode) =>
+                    (mode === 'sharedCanvas' && !sharedCanvasSupport.supported) ||
+                    (mode === 'raw' && contentCanvasEnabled)
+                  }
+                />
+                {mappingMode === 'sharedCanvas' && !contentCanvasEnabled && projectors.length > 0 && (
+                  <label className={styles.menuField}>
+                    <span>Content source</span>
+                    <select
+                      aria-label="Shared content source"
+                      data-testid="shared-content-source-select"
+                      value={sharedContentSourceProjectorId ?? ''}
+                      onChange={(e) => setSharedContentSourceProjectorId(e.target.value || null)}
+                    >
+                      {listSharedContentSourceProjectors(projectors).map((proj) => (
+                        <option key={proj.id} value={proj.id}>
+                          {proj.name}{proj.enabled ? '' : ' (disabled)'}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+              </MenuSection>
+              <MenuSection title="Tools">
+                <MenuItem selected={showProjectionBeam} onSelect={() => useAppStore.getState().toggleProjectionBeam()}>
+                  Projection beam
+                </MenuItem>
+                <MenuItem selected={measureMode} onSelect={() => { setMeasureMode(!measureMode); close(); }} hint="M">
+                  Measure distance
+                </MenuItem>
+                <MenuItem selected={contentCanvasPanelVisible} onSelect={() => { toggleContentCanvasPanel(); close(); }}>
+                  Content canvas
+                </MenuItem>
+                <MenuItem selected={rasterPreviewPanelVisible} onSelect={() => { toggleRasterPreviewPanel(); close(); }}>
+                  Projector output preview
+                </MenuItem>
+                <MenuItem onSelect={() => { useAppStore.getState().openStudioTab('outputs'); close(); }}>
+                  Send to displays…
+                </MenuItem>
+              </MenuSection>
+              <MenuSection title="Units">
+                <MenuSegments
+                  options={UNITS.map((u) => ({ id: u, label: u }))}
+                  value={displayUnit}
+                  onChange={setDisplayUnit}
+                />
+              </MenuSection>
+              <MenuSection title="Project">
+                <MenuItem onSelect={() => { close(); if (window.confirm('Start a new project?')) newProject(); }}>New</MenuItem>
+                <MenuItem onSelect={() => { fileInputRef.current?.click(); close(); }}>Open…</MenuItem>
+                <MenuItem onSelect={() => { saveProjectToFile(); close(); }} hint={projectName}>Save</MenuItem>
+                <MenuItem onSelect={() => { exportCalculationCsv(); close(); }}>Export report (CSV)</MenuItem>
+                <MenuItem onSelect={() => { exportCalculationHtml(); close(); }}>Export report (HTML)</MenuItem>
+              </MenuSection>
+            </>
+          )}
+        </Menu>
+
+        {!compact && (
+          <button
+            type="button"
+            className={`${styles.primary} ${studioVisible ? styles.primaryOn : ''}`}
+            onClick={toggleStudio}
+            data-testid="studio-toggle"
+            title="Mapping & Blend Studio: edge blending, per-surface UV mapping, corner-pin warp, outputs"
+          >
+            Studio
+          </button>
         )}
       </div>
 
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <button
-          type="button"
-          className={contentCanvasPanelVisible ? styles.active : undefined}
-          onClick={toggleContentCanvasPanel}
-          data-testid="content-canvas-toggle"
-          title="Author shared content on a canvas mapped to the receiving surface"
-        >
-          Canvas
-        </button>
-        <button
-          type="button"
-          className={rasterPreviewPanelVisible ? styles.active : undefined}
-          onClick={toggleRasterPreviewPanel}
-          data-testid="raster-preview-toggle"
-          title="Show each projector's output raster with blend ramp applied"
-        >
-          Output
-        </button>
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <span className={styles.label}>Composite</span>
-        {(['solo', 'unblended', 'blended', 'heatmap'] as ProjectionCompositeMode[]).map((mode) => (
-          <button
-            key={mode}
-            type="button"
-            className={projectionCompositeMode === mode ? styles.active : undefined}
-            onClick={() => setProjectionCompositeMode(mode)}
-            disabled={projectorCount < 2 && mode !== 'solo' && mode !== 'unblended'}
-            title={
-              mode === 'solo'
-                ? 'Show only the selected projector on surfaces'
-                : mode === 'unblended'
-                  ? 'Show every projector at once — assign different media per projector in Inspector'
-                  : projectorCount < 2
-                    ? 'Add a second projector'
-                    : undefined
-            }
-          >
-            {mode === 'solo'
-              ? 'Solo'
-              : mode === 'unblended'
-                ? 'Raw'
-                : mode === 'blended'
-                  ? 'Blend'
-                  : 'Coverage Count'}
-          </button>
-        ))}
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <span className={styles.label}>Preview</span>
-        <button
-          type="button"
-          className={materialPreviewMode === 'projectionPreview' ? styles.active : undefined}
-          onClick={() => setMaterialPreviewMode('projectionPreview')}
-        >
-          Projection
-        </button>
-        <button
-          type="button"
-          className={materialPreviewMode === 'projectionUv' ? styles.active : undefined}
-          onClick={() => setMaterialPreviewMode('projectionUv')}
-          title="Projector raster UV on receiving surfaces"
-        >
-          UV
-        </button>
-        <button
-          type="button"
-          className={materialPreviewMode === 'falloff' ? styles.active : undefined}
-          onClick={() => setMaterialPreviewMode('falloff')}
-          title="Inverse-square brightness heatmap from projector (near = hot, far = cold)"
-        >
-          Falloff
-        </button>
-        <button
-          type="button"
-          className={materialPreviewMode === 'blendSum' ? styles.active : undefined}
-          onClick={() => setMaterialPreviewMode('blendSum')}
-          title="Sum of blend weights in light: green = seamless, blue = dark seam, red = hot seam"
-        >
-          Blend Σ
-        </button>
-        <button
-          type="button"
-          className={materialPreviewMode === 'surfaceUv' ? styles.active : undefined}
-          onClick={() => setMaterialPreviewMode('surfaceUv')}
-          title="Per-surface content UV grid after UV mapping"
-        >
-          Surface UV
-        </button>
-        <button
-          type="button"
-          className={materialPreviewMode === 'original' ? styles.active : undefined}
-          onClick={() => setMaterialPreviewMode('original')}
-        >
-          Original
-        </button>
-      </div>
-
-      <div className={styles.separator} />
-
-      <button
-        type="button"
-        className={measureMode ? styles.active : undefined}
-        onClick={() => setMeasureMode(!measureMode)}
-        title="Measure distance (M)"
-      >
-        Measure
-      </button>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <button type="button" onClick={undo} disabled={historyPast.length === 0} title="Undo (Ctrl+Z)">
-          Undo
-        </button>
-        <button type="button" onClick={redo} disabled={historyFuture.length === 0} title="Redo (Ctrl+Shift+Z)">
-          Redo
-        </button>
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <button type="button" onClick={exportCalculationCsv} title="Download CSV calculation report">
-          CSV
-        </button>
-        <button type="button" onClick={exportCalculationHtml} title="Download printable HTML report">
-          HTML
-        </button>
-      </div>
-
-      <div className={styles.separator} />
-
-      <div className={styles.group}>
-        <button
-          type="button"
-          onClick={() => {
-            if (window.confirm('Start a new project?')) newProject();
-          }}
-        >
-          New
-        </button>
-        <button type="button" onClick={() => fileInputRef.current?.click()}>Open</button>
-        <button type="button" onClick={saveProjectToFile} title={`Save "${projectName}"`}>
-          Save
-        </button>
-        <input ref={fileInputRef} type="file" accept=".json,.projectionlab.json" className={styles.hiddenFile} onChange={handleOpenFile} />
-        <input ref={importInputRef} type="file" accept="image/*,video/*,.glb,.gltf,.obj" className={styles.hiddenFile} onChange={handleImport} />
-      </div>
+      <input ref={fileInputRef} type="file" accept=".json,.projectionlab.json" className={styles.hiddenFile} onChange={handleOpenFile} />
+      <input ref={importInputRef} type="file" accept="image/*,video/*,.glb,.gltf,.obj" className={styles.hiddenFile} onChange={handleImport} />
     </div>
   );
 }

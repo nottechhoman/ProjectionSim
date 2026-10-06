@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   height: 100%;
-  background: #222;
-  border: 1px solid #333;
+  background: var(--bg);
+  border: 1px solid var(--line);
   overflow: hidden;
 }
 
@@ -16,8 +16,8 @@
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: #aaa;
-  border-bottom: 1px solid #333;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
   flex-shrink: 0;
 }
 
@@ -25,7 +25,7 @@
   font: inherit;
   font-size: 16px;
   line-height: 1;
-  color: #888;
+  color: var(--muted);
   background: none;
   border: none;
   cursor: pointer;
@@ -33,7 +33,7 @@
 }
 
 .collapseBtn:hover {
-  color: #ccc;
+  color: var(--text);
 }
 
 .body {
@@ -48,14 +48,14 @@
 
 .cardLabel {
   font-size: 11px;
-  color: #ccc;
+  color: var(--text);
   margin-bottom: 6px;
 }
 
 .thumbWrap {
   position: relative;
-  background: #111;
-  border: 1px solid #333;
+  background: var(--bg);
+  border: 1px solid var(--line);
   overflow: hidden;
 }
 

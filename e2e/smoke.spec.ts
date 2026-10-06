@@ -4,7 +4,7 @@ test('loads the app shell and viewport', async ({ page }) => {
   await page.goto('/');
 
   await expect(page.getByRole('button', { name: 'Move' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Measure' })).toBeVisible();
+  await expect(page.getByTestId('more-menu')).toBeVisible();
   await expect(page.locator('canvas')).toHaveCount(1);
 });
 
@@ -18,14 +18,16 @@ test('shows scene and inspector panels', async ({ page }) => {
 test('keeps shared content source and calculation target stable across selection', async ({ page }) => {
   await page.goto('/');
 
-  await page.getByRole('button', { name: '+ Projector' }).click();
-  await page.getByTestId('mapping-shared-button').click();
+  await page.getByTestId('add-menu').click();
+  await page.getByRole('menuitem', { name: /Projector/ }).click();
+  await page.getByTestId('more-menu').click();
+  await page.getByRole('button', { name: 'Shared' }).click();
 
   const sourceSelect = page.getByTestId('shared-content-source-select');
   await expect(sourceSelect).toBeVisible();
   await sourceSelect.selectOption({ label: 'Projector 1' });
 
-  await page.getByRole('listitem').filter({ hasText: 'Projector 2' }).click();
+  await page.getByRole('listitem').filter({ hasText: 'Projector 2' }).first().click();
   await expect(sourceSelect).toHaveValue('proj-1');
 
   const targetSelect = page.getByTestId('calculation-target-select');
@@ -53,7 +55,8 @@ test('visible coverage responds to blocker and preserves calculation target', as
   const baselineArea = parseCoverageArea(baselineText ?? '');
   expect(baselineArea).toBeGreaterThan(0);
 
-  await page.getByRole('button', { name: 'Add Box' }).click();
+  await page.getByTestId('add-menu').click();
+  await page.getByRole('menuitem', { name: 'Box' }).click();
   await page.getByRole('listitem').filter({ hasText: 'Box' }).click();
 
   await expect

@@ -2,7 +2,8 @@ import { test, expect } from '@playwright/test';
 
 test('studio: auto edge blend, blend-mask export, UV mapping and warp', async ({ page }) => {
   await page.goto('/');
-  await page.getByRole('button', { name: '+ Projector' }).click();
+  await page.getByTestId('add-menu').click();
+  await page.getByRole('menuitem', { name: /Projector/ }).click();
 
   await page.getByTestId('studio-toggle').click();
   await expect(page.getByTestId('studio-panel')).toBeVisible();
@@ -29,7 +30,8 @@ test('studio: auto edge blend, blend-mask export, UV mapping and warp', async ({
 
 test('outputs: open a projector output window', async ({ page, context }) => {
   await page.goto('/');
-  await page.getByTestId('outputs-toggle').click();
+  await page.getByTestId('more-menu').click();
+  await page.getByRole('menuitem', { name: 'Send to displays…' }).click();
   const popup = context.waitForEvent('page');
   await page.getByTestId('open-output-proj-1').click();
   const win = await popup;

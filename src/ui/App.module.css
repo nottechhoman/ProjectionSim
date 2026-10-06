@@ -2,8 +2,8 @@
   display: grid;
   height: 100%;
   min-height: 100dvh;
-  background: #1a1a1a;
-  color: #e0e0e0;
+  background: var(--bg);
+  color: var(--text);
   font-family: system-ui, sans-serif;
   font-size: 14px;
 }
@@ -86,32 +86,33 @@
 .compact .mobileNav {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 6px;
-  padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0));
-  background: #252525;
-  border-top: 1px solid #333;
+  gap: 2px;
+  padding: 4px 6px calc(4px + env(safe-area-inset-bottom, 0));
+  background: var(--bg);
+  border-top: 1px solid var(--line);
 }
 
 .mobileNav button {
-  min-height: 52px;
+  min-height: 48px;
   font: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  color: #ccc;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
   padding: 0 2px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  background: #333;
-  border: 1px solid #444;
+  white-space: nowrap;
+  background: transparent;
+  border: none;
   border-radius: 12px;
   cursor: pointer;
 }
 
 .mobileNav button.mobileNavActive {
-  color: #fff;
-  background: #4a6fa5;
-  border-color: #5a8fd5;
+  color: var(--accent);
+  background: var(--surface);
+  font-weight: 600;
 }
 
 .drawerBackdrop {
@@ -158,13 +159,13 @@
   z-index: 10;
   font: inherit;
   font-size: 13px;
-  font-weight: 600;
-  color: #ccc;
-  background: #2a2a2a;
-  border: 1px solid #444;
+  font-weight: 500;
+  color: var(--muted);
+  background: var(--surface);
+  border: 1px solid var(--line);
   cursor: pointer;
-  min-height: 36px;
-  padding: 6px 12px;
+  min-height: var(--tap);
+  padding: 0 12px;
 }
 
 .expandEdge {
@@ -192,8 +193,8 @@
 .expandEdge:hover,
 .expandEdgeRight:hover,
 .expandBottom:hover {
-  color: #e0e0e0;
-  background: #333;
+  color: var(--text);
+  background: var(--surface-2);
 }
 
 @media (max-width: 767px) {

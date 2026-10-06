@@ -93,8 +93,10 @@ function VideoTrack({ source }: { source: VideoSourceRef }) {
           setMuted(!muted);
         }}
         aria-pressed={!muted}
+        aria-label={muted ? 'Unmute' : 'Mute'}
+        title={muted ? 'Muted' : 'Sound on'}
       >
-        {muted ? '🔇 Muted' : '🔊 Sound'}
+        {muted ? '🔇' : '🔊'}
       </button>
       <button
         type="button"
@@ -104,8 +106,10 @@ function VideoTrack({ source }: { source: VideoSourceRef }) {
           setLoop(!loop);
         }}
         aria-pressed={loop}
+        aria-label={loop ? 'Looping' : 'Play once'}
+        title={loop ? 'Looping' : 'Play once'}
       >
-        {loop ? '🔁 Loop' : '→ Once'}
+        {loop ? '🔁' : '1×'}
       </button>
     </div>
   );
@@ -148,77 +152,76 @@ export function MediaDock() {
     setOpen(true);
   };
 
+  const hasTracks = videoSources.length > 0;
+
   return (
     <section className={styles.dock} data-testid="media-dock" aria-label="Media">
       <div className={styles.header}>
-        <button
-          type="button"
-          className={styles.titleBtn}
-          onClick={() => setOpen(!open)}
-          aria-expanded={open}
-        >
-          <span className={styles.caret}>{open ? '▾' : '▸'}</span>
-          Media
-          {videoSources.length > 0 && <span className={styles.badge}>{videoSources.length}</span>}
-        </button>
+        {hasTracks ? (
+          <button
+            type="button"
+            className={styles.titleBtn}
+            onClick={() => setOpen(!open)}
+            aria-expanded={open}
+            title={open ? 'Hide players' : 'Show players'}
+          >
+            Media <span className={styles.count}>{videoSources.length}</span>
+            <span className={styles.caret} aria-hidden>{open ? '▾' : '▴'}</span>
+          </button>
+        ) : (
+          <span className={styles.title}>Media</span>
+        )}
+
+        {projectors.length > 1 && (
+          <select
+            className={styles.targetSelect}
+            value={target?.id ?? ''}
+            onChange={(e) => selectProjector(e.target.value)}
+            aria-label="Projector to receive media"
+          >
+            {projectors.map((p) => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        )}
 
         <div className={styles.actions}>
-          {projectors.length > 0 && (
-            <label className={styles.targetLabel}>
-              <span>To</span>
-              <select
-                className={styles.targetSelect}
-                value={target?.id ?? ''}
-                onChange={(e) => selectProjector(e.target.value)}
-                aria-label="Projector to receive media"
-              >
-                {projectors.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name}</option>
-                ))}
-              </select>
-            </label>
-          )}
-          <button
-            type="button"
-            className={styles.primaryBtn}
-            onClick={() => pick('video')}
-            disabled={!target}
-            data-testid="media-add-video"
-          >
-            ＋ Video
-          </button>
-          <button
-            type="button"
-            className={styles.secondaryBtn}
-            onClick={() => pick('image')}
-            disabled={!target}
-            data-testid="media-add-image"
-          >
-            ＋ Image
-          </button>
           {videoSources.length > 1 && (
             <>
-              <button type="button" className={styles.secondaryBtn} onClick={playAllSceneVideos}>
-                ▶ Play all
+              <button type="button" className={styles.ghostBtn} onClick={playAllSceneVideos} title="Play all videos">
+                ▶ All
               </button>
-              <button type="button" className={styles.secondaryBtn} onClick={pauseAllSceneVideos}>
-                ❚❚ Pause all
+              <button type="button" className={styles.ghostBtn} onClick={pauseAllSceneVideos} title="Pause all videos">
+                ❚❚ All
               </button>
             </>
           )}
+          <button
+            type="button"
+            className={styles.ghostBtn}
+            onClick={() => pick('image')}
+            disabled={!target}
+            data-testid="media-add-image"
+            title={target ? `Add an image to ${target.name}` : undefined}
+          >
+            ＋ Image
+          </button>
+          <button
+            type="button"
+            className={styles.accentBtn}
+            onClick={() => pick('video')}
+            disabled={!target}
+            data-testid="media-add-video"
+            title={target ? `Add a video to ${target.name}` : undefined}
+          >
+            ＋ Video
+          </button>
         </div>
       </div>
 
-      {open && (
+      {hasTracks && open && (
         <div className={styles.tracks}>
-          {videoSources.length === 0 ? (
-            <p className={styles.empty}>
-              No video yet. Press <strong>＋ Video</strong> to play a clip through{' '}
-              {target ? <strong>{target.name}</strong> : 'a projector'}, or add one on the Canvas.
-            </p>
-          ) : (
-            videoSources.map((source) => <VideoTrack key={source.assetId} source={source} />)
-          )}
+          {videoSources.map((source) => <VideoTrack key={source.assetId} source={source} />)}
         </div>
       )}
 
