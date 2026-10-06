@@ -5,7 +5,13 @@
   background: #1a1a1a;
   color: #e0e0e0;
   font-family: system-ui, sans-serif;
-  font-size: 13px;
+  font-size: 14px;
+}
+
+.media {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  min-width: 0;
 }
 
 .toolbar {
@@ -40,6 +46,7 @@
 
 .bottom {
   grid-column: 1 / -1;
+  grid-row: 4;
   overflow: hidden;
   position: relative;
 }
@@ -54,13 +61,18 @@
   grid-row: 2;
 }
 
-.compact .mobileNav {
+.compact .media {
   grid-column: 1;
   grid-row: 3;
 }
 
-.compact .bottom {
+.compact .mobileNav {
+  grid-column: 1;
   grid-row: 4;
+}
+
+.compact .bottom {
+  grid-row: 5;
 }
 
 .collapsed {
@@ -74,16 +86,16 @@
 .compact .mobileNav {
   display: grid;
   grid-template-columns: repeat(6, 1fr);
-  gap: 4px;
-  padding: 6px 6px calc(6px + env(safe-area-inset-bottom, 0));
+  gap: 6px;
+  padding: 8px 8px calc(8px + env(safe-area-inset-bottom, 0));
   background: #252525;
   border-top: 1px solid #333;
 }
 
 .mobileNav button {
-  min-height: 44px;
+  min-height: 52px;
   font: inherit;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 600;
   color: #ccc;
   padding: 0 2px;
@@ -92,7 +104,7 @@
   text-overflow: ellipsis;
   background: #333;
   border: 1px solid #444;
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: pointer;
 }
 
@@ -145,12 +157,14 @@
   position: absolute;
   z-index: 10;
   font: inherit;
-  font-size: 11px;
-  color: #aaa;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ccc;
   background: #2a2a2a;
   border: 1px solid #444;
   cursor: pointer;
-  padding: 4px 8px;
+  min-height: 36px;
+  padding: 6px 12px;
 }
 
 .expandEdge {
@@ -182,14 +196,8 @@
   background: #333;
 }
 
-@media (max-width: 1100px) {
-  .app {
-    font-size: 12px;
-  }
-}
-
 @media (max-width: 767px) {
-  .app {
+  .mobileNav button {
     font-size: 12px;
   }
 }

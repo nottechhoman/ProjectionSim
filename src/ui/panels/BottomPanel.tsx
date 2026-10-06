@@ -1,9 +1,6 @@
-import { useMemo } from 'react';
-import { listSceneVideoSources } from '../../media/videoPlayback';
 import { useAppStore } from '../../store';
 import { distance3 } from '../../utils/distance';
 import { formatLength } from '../../utils/units';
-import { VideoTransport } from './VideoTransport';
 import styles from './BottomPanel.module.css';
 
 export function BottomPanel() {
@@ -24,15 +21,7 @@ export function BottomPanel() {
   const projectorCount = useAppStore((s) => s.projectors.length);
   const selectedProjectorId = useAppStore((s) => s.selectedProjectorId);
   const projectors = useAppStore((s) => s.projectors);
-  const sceneObjects = useAppStore((s) => s.sceneObjects);
-  const contentCanvas = useAppStore((s) => s.contentCanvas);
   const projector = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
-  const playAllSceneVideos = useAppStore((s) => s.playAllSceneVideos);
-  const pauseAllSceneVideos = useAppStore((s) => s.pauseAllSceneVideos);
-  const videoSources = useMemo(
-    () => listSceneVideoSources(projectors, sceneObjects, contentCanvas),
-    [projectors, sceneObjects, contentCanvas],
-  );
 
   const webglStatus =
     webgl2Available === null
@@ -65,19 +54,6 @@ export function BottomPanel() {
         <span>Frame:</span>
         <span>{frameTimeMs > 0 ? `${frameTimeMs.toFixed(1)} ms` : '—'}</span>
       </div>
-      {videoSources.length > 1 && (
-        <div className={styles.item}>
-          <button type="button" className={styles.videoBtn} onClick={playAllSceneVideos}>
-            Play all
-          </button>
-          <button type="button" className={styles.videoBtn} onClick={pauseAllSceneVideos}>
-            Pause all
-          </button>
-        </div>
-      )}
-      {videoSources.map((source) => (
-        <VideoTransport key={source.assetId} assetId={source.assetId} label={source.label} />
-      ))}
       {measureMode && (
         <div className={styles.item}>
           <span>Measure:</span>

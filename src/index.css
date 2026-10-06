@@ -33,3 +33,42 @@ input,
 select {
   font-family: inherit;
 }
+
+/* v3: bigger, easier-to-press controls everywhere */
+button,
+select,
+input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='color']) {
+  min-height: 32px;
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  accent-color: #4fc3f7;
+}
+
+input[type='range'] {
+  min-height: 24px;
+  accent-color: #4fc3f7;
+  cursor: pointer;
+}
+
+body[data-compact-layout] button,
+body[data-compact-layout] select,
+body[data-compact-layout] input:not([type='range']):not([type='checkbox']):not([type='radio']):not([type='color']) {
+  min-height: 40px;
+}
+
+body[data-compact-layout] input[type='checkbox'],
+body[data-compact-layout] input[type='radio'] {
+  width: 22px;
+  height: 22px;
+}
+
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid #4fc3f7;
+  outline-offset: 2px;
+}

@@ -1,10 +1,10 @@
 .toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
-  min-height: 40px;
+  gap: 10px;
+  min-height: 56px;
   height: 100%;
-  padding: 0 10px;
+  padding: 0 12px;
   background: #252525;
   border-bottom: 1px solid #333;
   overflow-x: auto;
@@ -14,14 +14,14 @@
 }
 
 .toolbar.compact {
-  min-height: 48px;
+  min-height: 60px;
   padding:
-    env(safe-area-inset-top, 0)
+    calc(env(safe-area-inset-top, 0) + 8px)
+    10px
     8px
-    6px
-    8px;
-  gap: 6px;
-  align-items: flex-start;
+    10px;
+  gap: 8px;
+  align-items: center;
   flex-wrap: nowrap;
 }
 
@@ -78,47 +78,54 @@
 
   .group button,
   .group select {
-    font-size: 11px;
+    font-size: 13px;
   }
 }
 
 .group {
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
 }
 
 .separator {
   width: 1px;
-  height: 20px;
-  background: #444;
+  height: 28px;
+  background: #3a3d44;
   margin: 0 4px;
+  flex-shrink: 0;
 }
 
 .label {
-  color: #999;
+  color: #8fa3bf;
   font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
   margin-right: 2px;
 }
 
 select,
 button {
   font: inherit;
-  font-size: 12px;
-  color: #e0e0e0;
-  background: #333;
-  border: 1px solid #444;
-  border-radius: 3px;
-  padding: 3px 8px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #e8ebf0;
+  background: #2c2f36;
+  border: 1px solid #454a55;
+  border-radius: 8px;
+  min-height: 38px;
+  padding: 0 12px;
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .compact select,
 .compact button {
-  min-height: 36px;
-  padding: 6px 10px;
-  border-radius: 8px;
+  min-height: 44px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 14px;
 }
 
 .compact .group {
@@ -130,8 +137,8 @@ button {
 }
 
 select:hover,
-button:hover:not(:disabled) {
-  background: #3a3a3a;
+button:hover:not(:disabled):not(.active) {
+  background: #363a43;
 }
 
 button:disabled,
@@ -141,8 +148,10 @@ button.disabled {
 }
 
 button.active {
-  background: #4a6fa5;
-  border-color: #5a8fd5;
+  color: #06121c;
+  background: #4fc3f7;
+  border-color: #4fc3f7;
+  font-weight: 600;
 }
 
 .m2Label {
