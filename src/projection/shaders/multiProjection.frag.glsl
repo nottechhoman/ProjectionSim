@@ -70,6 +70,10 @@ uniform int feedKind;           // 0 colour feed, 1 blend mask only
 // 2 surfaces drawn over that background (misses are left to the background).
 uniform int feedLayer;
 uniform vec2 feedSize;          // feed render target size in pixels
+// v3 "projector view" preview: dim light that misses every surface and outline the
+// surfaces, so the screen shows up sized / keystoned by throw distance and placement.
+uniform int feedView;
+uniform float feedSpill;        // brightness of spill (1 = real signal)
 
 // ---- v2: per-surface UV mapping (set per mesh) -----------------------------
 uniform int surfMap;
@@ -390,7 +394,8 @@ void main() {
       return;
     }
     vec3 bg = sampleProjectorColorAt(feedIndex, q) * brightness[feedIndex];
-    fragColor = vec4(clamp(bg, 0.0, 1.0) * bgSignal, 1.0);
+    float spill = feedView == 1 ? feedSpill : 1.0;
+    fragColor = vec4(clamp(bg, 0.0, 1.0) * bgSignal * spill, 1.0);
     return;
   }
 
@@ -491,7 +496,13 @@ void main() {
     } else {
       c = sampleProjectorColorAt(feedIndex, qs[feedIndex]) * brightness[feedIndex];
     }
-    fragColor = vec4(clamp(c, 0.0, 1.0) * signal, 1.0);
+    vec3 outC = clamp(c, 0.0, 1.0) * signal;
+    if (feedView == 1) {
+      vec2 edgeDist = min(vSurfaceUv, 1.0 - vSurfaceUv) / max(fwidth(vSurfaceUv), vec2(1e-6));
+      float edge = 1.0 - clamp(min(edgeDist.x, edgeDist.y) - 1.0, 0.0, 1.0);
+      outC = mix(outC, vec3(0.35, 0.78, 0.98), edge);
+    }
+    fragColor = vec4(outC, 1.0);
     return;
   }
 

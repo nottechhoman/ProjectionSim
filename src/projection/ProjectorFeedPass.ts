@@ -58,7 +58,7 @@ export class ProjectorFeedPass {
     projectors.forEach((projector, index) => {
       const size = rasterPreviewSize(projector.optics.aspectRatio, profile, maxTexture);
       const slot = this.ensureSlot(projector.id, size.width, size.height);
-      this.renderInto(renderer, projector, index, 'color', meshes, slot.target);
+      this.renderInto(renderer, projector, index, 'color', meshes, slot.target, true);
       this.blitToCanvas(renderer, slot.target, slot.canvas, slot);
     });
     return true;
@@ -142,6 +142,8 @@ export class ProjectorFeedPass {
     kind: FeedKind,
     meshes: THREE.Mesh[],
     target: THREE.WebGLRenderTarget,
+    /** Preview only: dim spill and outline surfaces. Never used for real outputs. */
+    view = false,
   ): void {
     const prevTarget = renderer.getRenderTarget();
     const prevAutoClear = renderer.autoClear;
@@ -159,6 +161,7 @@ export class ProjectorFeedPass {
     this.material.uniforms.forceUvPreview.value = 0;
     this.material.uniforms.falloffPreview.value = 0;
     this.material.uniforms.feedSize.value.set(target.width, target.height);
+    this.material.uniforms.feedView.value = view ? 1 : 0;
     // Raw mapping: content is locked to the projector raster, so the feed is the whole
     // frame (spill included). Shared/canvas mapping pins content to surfaces instead,
     // so only pixels that land on a receiving surface carry content.
@@ -179,6 +182,7 @@ export class ProjectorFeedPass {
         this.material.uniforms.feedLayer.value = 2;
       } else {
         this.material.uniforms.feedLayer.value = 0;
+      this.material.uniforms.feedView.value = 0;
       }
       for (const mesh of meshes) {
         if (!mesh.visible) continue;
