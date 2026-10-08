@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
 import { clearAutosave, downloadProjectFile, parseProjectJson, writeAutosave } from '../persistence';
+import { restoredFromPreviousVersion } from '../persistence/autosave';
 import { transport } from '../playback/clock';
 import type { ProjectSnapshot } from '../persistence/projectSchema';
 import {
@@ -375,7 +376,9 @@ function addDirectMappingFor(
 
 export const useAppStore = create<AppState>((set, get) => ({
   projectName: initial.projectName,
-  projectMessage: initial.projectName !== 'Default Scene' ? 'Restored last autosaved project' : null,
+  projectMessage: restoredFromPreviousVersion
+    ? `Opened "${initial.projectName}" from the previous version (with its images and videos)`
+    : initial.projectName !== 'Default Scene' ? 'Restored last autosaved project' : null,
   sceneObjects: initial.sceneObjects,
   projectors: initial.projectors,
   mediaAssets: initial.mediaAssets,
@@ -1401,10 +1404,16 @@ void hydrateAssetsFromRecords(initial.mediaAssets);
 useAppStore.getState().recomputeCalculations();
 
 let autosaveTimer: ReturnType<typeof setTimeout> | null = null;
-useAppStore.subscribe((state) => {
+// Only project changes restart the 2 s debounce. The viewport reports its frame
+// time into the store every frame; reacting to that kept pushing the save back
+// forever, so nothing was saved while the app was on screen.
+useAppStore.subscribe((state, prev) => {
+  const a = pickPersistedFields(state) as unknown as Record<string, unknown>;
+  const b = pickPersistedFields(prev) as unknown as Record<string, unknown>;
+  if (Object.keys(a).every((k) => a[k] === b[k])) return;
   if (autosaveTimer) clearTimeout(autosaveTimer);
   autosaveTimer = setTimeout(() => {
-    writeAutosave(state.getSnapshot());
+    writeAutosave(useAppStore.getState().getSnapshot());
   }, 2000);
 });
 
