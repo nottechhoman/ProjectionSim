@@ -9,7 +9,9 @@
     "typecheck": "tsc -b --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "osc-bridge": "node tools/osc-bridge/index.mjs",
+    "osc-send": "node tools/osc-bridge/send.mjs"
   },
   "dependencies": {
     "react": "^19.0.0",

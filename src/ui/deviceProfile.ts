@@ -58,6 +58,7 @@ export function responsivePanelWidths(
   return { left: DEFAULT_LEFT_PANEL_WIDTH, right: DEFAULT_RIGHT_PANEL_WIDTH };
 }
 
+/** Side panels open as drawers on touch layouts, so start closed to keep the viewport clear. */
 export function shouldStartWithPanelsHidden(profile: DeviceProfile): boolean {
-  return profile === 'phone';
+  return profile !== 'desktop';
 }

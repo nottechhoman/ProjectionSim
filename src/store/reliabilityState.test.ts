@@ -3,7 +3,7 @@ import { useAppStore } from './index';
 import { defaultPersistedSlice } from './persistenceHelpers';
 import { snapshotToSlice } from './persistenceHelpers';
 import { PROJECT_FILE_VERSION } from '../persistence/projectSchema';
-import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
+import { defaultShow, DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
 
 function resetStore(): void {
   const defaults = defaultPersistedSlice();
@@ -25,7 +25,6 @@ function resetStore(): void {
       calculationTarget: null,
     },
     shaderWarning: null,
-    videoPlaybackRevision: 0,
     showProjectionBeam: false,
   });
   useAppStore.getState().recomputeCalculations();
@@ -36,36 +35,56 @@ describe('reliability store state', () => {
     resetStore();
   });
 
-  it('does not change shared content source when selecting another projector', () => {
-    const store = useAppStore.getState();
-    store.addProjector();
-    const secondId = useAppStore.getState().projectors[1].id;
-    store.setSharedContentSourceProjectorId('proj-1');
-    store.setSelectedProjector(secondId);
-    expect(useAppStore.getState().sharedContentSourceProjectorId).toBe('proj-1');
-  });
-
   it('does not change calculation target when selecting another object', () => {
     useAppStore.getState().setCalculationTargetId('screen-1');
     useAppStore.getState().setSelectedObject('floor-1');
     expect(useAppStore.getState().calculationTargetId).toBe('screen-1');
   });
 
-  it('updates shared content source when set explicitly', () => {
+  it('adding a projector adds a perspective mapping locked to it', () => {
     useAppStore.getState().addProjector();
-    const secondId = useAppStore.getState().projectors[1].id;
-    useAppStore.getState().setSharedContentSourceProjectorId(secondId);
-    expect(useAppStore.getState().sharedContentSourceProjectorId).toBe(secondId);
+    const proj = useAppStore.getState().projectors[1];
+    const locked = useAppStore.getState().show.mappings.filter((m) => m.perspective?.lockToProjectorId === proj.id);
+    expect(locked).toHaveLength(1);
+    expect(locked[0].screenIds).toEqual(['screen-1']);
   });
 
-  it('reassigns shared source when the source projector is deleted', () => {
+  it('deleting a projector unlocks its mappings', () => {
     useAppStore.getState().addProjector();
     const secondId = useAppStore.getState().projectors[1].id;
-    useAppStore.getState().setSharedContentSourceProjectorId(secondId);
     vi.stubGlobal('window', { confirm: () => true });
     useAppStore.getState().removeProjector(secondId);
-    expect(useAppStore.getState().sharedContentSourceProjectorId).toBe('proj-1');
     vi.unstubAllGlobals();
+    expect(useAppStore.getState().show.mappings.some((m) => m.perspective?.lockToProjectorId === secondId)).toBe(false);
+  });
+
+  it('adding a curved screen adds a Direct mapping named after it', () => {
+    useAppStore.getState().addCurvedScreen();
+    const curved = useAppStore.getState().sceneObjects.find((o) => o.type === 'curvedScreen')!;
+    const direct = useAppStore.getState().show.mappings.find((m) => m.kind === 'direct' && m.screenIds.includes(curved.id));
+    expect(direct?.name).toBe(curved.name);
+  });
+
+  it('layers: add on the selected mapping, reorder, undo', () => {
+    const store = useAppStore.getState();
+    const mappingId = store.show.mappings[0].id;
+    store.setSelectedMappingId(mappingId);
+    store.addLayer({ kind: 'solid', color: '#ff0000' });
+    let layers = useAppStore.getState().show.tracks[0].layers;
+    expect(layers).toHaveLength(2);
+    expect(layers[1].mappingId).toBe(mappingId);
+    useAppStore.getState().moveLayer(layers[1].id, 'down');
+    layers = useAppStore.getState().show.tracks[0].layers;
+    expect(layers[0].media.kind).toBe('solid');
+    useAppStore.getState().undo();
+    expect(useAppStore.getState().show.tracks[0].layers[1].media.kind).toBe('solid');
+  });
+
+  it('deleting a mapping leaves its layers unmapped', () => {
+    const mappingId = useAppStore.getState().show.tracks[0].layers[0].mappingId!;
+    useAppStore.getState().removeMapping(mappingId);
+    expect(useAppStore.getState().show.tracks[0].layers[0].mappingId).toBeNull();
+    expect(useAppStore.getState().show.mappings.some((m) => m.id === mappingId)).toBe(false);
   });
 
   it('clears calculation results when no eligible receiver remains', () => {
@@ -77,18 +96,18 @@ describe('reliability store state', () => {
     vi.unstubAllGlobals();
   });
 
-  it('preserves reliability settings through serialization round-trip', () => {
-    useAppStore.getState().setSharedContentSourceProjectorId('proj-1');
+  it('preserves reliability settings and the show through serialization round-trip', () => {
     useAppStore.getState().setCalculationTargetId('screen-1');
     const snapshot = useAppStore.getState().getSnapshot();
     const slice = snapshotToSlice(snapshot);
-    expect(slice.sharedContentSourceProjectorId).toBe('proj-1');
     expect(slice.calculationTargetId).toBe('screen-1');
+    expect(slice.show).toEqual(useAppStore.getState().show);
   });
 
   it('loads legacy projects without explicit reliability fields', () => {
     const legacy = {
       version: PROJECT_FILE_VERSION,
+      show: defaultShow(),
       savedAt: '2026-09-07T00:00:00.000Z',
       name: 'Legacy',
       sceneObjects: DEFAULT_SCENE_OBJECTS,
@@ -106,16 +125,7 @@ describe('reliability store state', () => {
       bottomPanelVisible: true,
     };
     const slice = snapshotToSlice(legacy);
-    expect(slice.sharedContentSourceProjectorId).toBe('proj-1');
     expect(slice.calculationTargetId).toBe('screen-1');
-  });
-
-  it('undo restores shared content source after explicit change', () => {
-    useAppStore.getState().addProjector();
-    const secondId = useAppStore.getState().projectors[1].id;
-    useAppStore.getState().setSharedContentSourceProjectorId(secondId);
-    useAppStore.getState().undo();
-    expect(useAppStore.getState().sharedContentSourceProjectorId).toBe('proj-1');
   });
 
   it('keeps flat calculation target after adding a curved screen', () => {

@@ -1,4 +1,4 @@
-import type { ProjectorConfig, SceneObject } from '../types';
+import type { SceneObject } from '../types';
 
 export type CalculationReceiverType = 'screen' | 'curvedScreen';
 
@@ -14,15 +14,6 @@ export function listCalculationTargets(sceneObjects: SceneObject[]): SceneObject
     (obj) =>
       (obj.type === 'screen' || obj.type === 'curvedScreen') && obj.receivesProjection,
   );
-}
-
-/** All projectors may own shared content, including disabled ones. */
-export function listSharedContentSourceProjectors(projectors: ProjectorConfig[]): ProjectorConfig[] {
-  return projectors;
-}
-
-export function isSharedContentSourceId(projectors: ProjectorConfig[], id: string | null): boolean {
-  return id != null && projectors.some((p) => p.id === id);
 }
 
 export function isCalculationTargetId(sceneObjects: SceneObject[], id: string | null): boolean {
@@ -42,15 +33,6 @@ export function legacyDefaultCalculationTargetId(sceneObjects: SceneObject[]): s
   return screen?.id ?? null;
 }
 
-/** Legacy shared source: selected projector, else first projector. */
-export function legacyDefaultSharedContentSourceId(
-  projectors: ProjectorConfig[],
-  selectedProjectorId: string,
-): string | null {
-  if (projectors.some((p) => p.id === selectedProjectorId)) return selectedProjectorId;
-  return projectors[0]?.id ?? null;
-}
-
 /**
  * Deterministic fallback when the explicit calculation target is missing or ineligible:
  * flat screen first, then curved screen.
@@ -64,24 +46,12 @@ export function fallbackCalculationTargetId(sceneObjects: SceneObject[]): string
   return curved?.id ?? null;
 }
 
-export function fallbackSharedContentSourceId(projectors: ProjectorConfig[]): string | null {
-  return projectors[0]?.id ?? null;
-}
-
 export function resolveCalculationTargetId(
   sceneObjects: SceneObject[],
   explicitId: string | null,
 ): string | null {
   if (isCalculationTargetId(sceneObjects, explicitId)) return explicitId;
   return fallbackCalculationTargetId(sceneObjects);
-}
-
-export function resolveSharedContentSourceId(
-  projectors: ProjectorConfig[],
-  explicitId: string | null,
-): string | null {
-  if (isSharedContentSourceId(projectors, explicitId)) return explicitId;
-  return fallbackSharedContentSourceId(projectors);
 }
 
 export function getCalculationTargetInfo(
@@ -107,21 +77,9 @@ export function getCalculationTargetObject(
 
 export function reconcileReliabilityIds(state: {
   sceneObjects: SceneObject[];
-  projectors: ProjectorConfig[];
-  sharedContentSourceProjectorId: string | null;
   calculationTargetId: string | null;
-}): {
-  sharedContentSourceProjectorId: string | null;
-  calculationTargetId: string | null;
-} {
+}): { calculationTargetId: string | null } {
   return {
-    sharedContentSourceProjectorId: resolveSharedContentSourceId(
-      state.projectors,
-      state.sharedContentSourceProjectorId,
-    ),
-    calculationTargetId: resolveCalculationTargetId(
-      state.sceneObjects,
-      state.calculationTargetId,
-    ),
+    calculationTargetId: resolveCalculationTargetId(state.sceneObjects, state.calculationTargetId),
   };
 }

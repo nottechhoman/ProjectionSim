@@ -1,0 +1,337 @@
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line);
+  flex-shrink: 0;
+}
+
+.sizeLabel {
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--muted);
+}
+
+.collapseBtn {
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--muted);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.collapseBtn:hover {
+  color: var(--text);
+}
+
+.body {
+  overflow-y: auto;
+  flex: 1;
+}
+
+.previewWrap {
+  position: relative;
+  margin: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.previewStack,
+.overlay {
+  position: absolute;
+  inset: 0;
+}
+
+.layer {
+  position: absolute;
+  overflow: hidden;
+}
+
+.layerInner {
+  position: absolute;
+}
+
+.overlay {
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.hatch {
+  fill: url(#canvasOverlapHatch);
+  stroke: none;
+  opacity: 0.55;
+}
+
+.section {
+  padding: 8px 10px;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.sectionTitle {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin-bottom: 6px;
+}
+
+.hint {
+  margin: 0 0 6px;
+  font-size: 10px;
+  color: #666;
+}
+
+.clampNote {
+  margin: 0 0 6px;
+  font-size: 11px;
+  color: #e0c070;
+}
+
+.checkRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text);
+  margin-bottom: 4px;
+  cursor: pointer;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 56px 1fr;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.row label {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.row input,
+.row select {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 3px 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.layerRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.layerBtn {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.layerBtnActive {
+  border-color: #5a8fd5;
+  background: #2a3a50;
+}
+
+.iconBtn,
+.addBtn {
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 4px 6px;
+  cursor: pointer;
+}
+
+.addRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.addBtn {
+  flex: 1;
+  min-width: 64px;
+}
+
+.hiddenFile {
+  display: none;
+}
+
+.shell {
+  position: absolute;
+  z-index: 40;
+  left: 12px;
+  bottom: 12px;
+  width: min(420px, calc(100% - 24px));
+  height: min(520px, calc(100% - 24px));
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+}
+
+.compactShell {
+  position: fixed;
+  z-index: 110;
+  left: 0;
+  right: 0;
+  bottom: calc(56px + env(safe-area-inset-bottom, 0));
+  width: 100%;
+  height: min(72vh, 640px);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.45);
+}
+
+@media (max-width: 1100px) {
+  .row {
+    grid-template-columns: 72px 1fr;
+    gap: 10px;
+  }
+
+  .row input,
+  .row select,
+  .layerBtn,
+  .iconBtn,
+  .addBtn,
+  .checkRow {
+    min-height: 36px;
+  }
+}
+
+.mapSelect {
+  max-width: 42%;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 3px 2px;
+}
+
+.mapSelectMissing {
+  border-color: #b26a2c;
+  color: #e0a060;
+}
+
+.layerOff {
+  opacity: 0.45;
+}
+
+.goBtn {
+  width: 100%;
+  min-height: 64px;
+  font: inherit;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #06210f;
+  background: #3ddc84;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.goBtn:hover {
+  background: #5ce79a;
+}
+
+.standby {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.standby b {
+  color: var(--text);
+}
+
+.cueRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.cueRow input {
+  min-width: 0;
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 3px 5px;
+}
+
+.cueRow select {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+}
+
+.cueTime {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cueNext {
+  border-left: 3px solid #3ddc84;
+  padding-left: 4px;
+}
+
+.kbd {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* Cues panel docks on the right of the viewport so it can sit beside Layers. */
+.shellRight {
+  left: auto;
+  right: 12px;
+  width: min(360px, calc(100% - 24px));
+}

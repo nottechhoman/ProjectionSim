@@ -96,8 +96,10 @@ export function RasterPreviewPanel() {
             })
           )}
           <p className={styles.hint}>
-            Each thumbnail is the frame fed to that projector: surface-mapped content, corner-pin
-            warp and the active blend mask (manual or auto) with brightness applied.
+            Each thumbnail is the projector's own view. The outlined shape is the screen as this
+            projector sees it, so it shrinks with throw distance and keystones with placement.
+            Dim areas are light that misses every surface. Outputs and downloads send the real
+            signal without the outline or dimming.
           </p>
         </div>
       </div>

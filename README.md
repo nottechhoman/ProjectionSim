@@ -1,3 +1,7 @@
+> **v4 (branch `feat/v4-mapping-playback`)** — content on layers sampled through
+> disguise-style mappings, plus a timeline / transport. See [docs/v4.md](docs/v4.md).
+> Dev server: `npm run dev -- --port 5201`.
+
 # ProjectionLab — Advanced (v2)
 
 > **v2 Advanced copy** — adds geometry-aware auto edge blending, gamma/black-level simulation, blend-mask export, per-surface UV mapping with a 2D UV editor, and corner-pin warp. See **[ADVANCED.md](ADVANCED.md)**. The original project is left untouched in `../ProjectionSim`.

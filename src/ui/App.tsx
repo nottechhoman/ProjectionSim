@@ -6,9 +6,13 @@ import { Toolbar } from './panels/Toolbar';
 import { LeftPanel } from './panels/LeftPanel';
 import { Inspector } from './panels/Inspector';
 import { BottomPanel } from './panels/BottomPanel';
-import { ContentCanvasPanel } from './panels/ContentCanvasPanel';
+import { LayersPanel } from './panels/LayersPanel';
+import { CuesPanel } from './panels/CuesPanel';
+import { ControlPanel } from './panels/ControlPanel';
+import { control } from '../control/service';
 import { RasterPreviewPanel } from './panels/RasterPreviewPanel';
 import { StudioPanel } from './panels/StudioPanel';
+import { MediaDock } from './panels/MediaDock';
 import { PanelResizeHandle } from './components/PanelResizeHandle';
 import { FloatingPanel } from './components/FloatingPanel';
 import { isCompactLayout } from './deviceProfile';
@@ -29,8 +33,8 @@ export default function App() {
   const toggleLeftPanel = useAppStore((s) => s.toggleLeftPanel);
   const toggleRightPanel = useAppStore((s) => s.toggleRightPanel);
   const toggleBottomPanel = useAppStore((s) => s.toggleBottomPanel);
-  const contentCanvasPanelVisible = useAppStore((s) => s.contentCanvasPanelVisible);
-  const setContentCanvasPanelVisible = useAppStore((s) => s.setContentCanvasPanelVisible);
+  const layersPanelVisible = useAppStore((s) => s.layersPanelVisible);
+  const setLayersPanelVisible = useAppStore((s) => s.setLayersPanelVisible);
   const rasterPreviewPanelVisible = useAppStore((s) => s.rasterPreviewPanelVisible);
   const setRasterPreviewPanelVisible = useAppStore((s) => s.setRasterPreviewPanelVisible);
   const studioVisible = useAppStore((s) => s.uvEditorPanelVisible);
@@ -41,17 +45,16 @@ export default function App() {
   const resizeRightPanelBy = useAppStore((s) => s.resizeRightPanelBy);
   const moveLeftPanelFloat = useAppStore((s) => s.moveLeftPanelFloat);
   const moveRightPanelFloat = useAppStore((s) => s.moveRightPanelFloat);
-  const selectedProjectorId = useAppStore((s) => s.selectedProjectorId);
-  const projectors = useAppStore((s) => s.projectors);
-  const selectedProjector =
-    projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
-  const hasVideoTimeline =
-    selectedProjector?.mediaSource === 'video' && !!selectedProjector.mediaAssetId;
 
   const leftDocked = leftPanelVisible && !leftPanelPoppedOut && !compact;
   const rightDocked = rightPanelVisible && !rightPanelPoppedOut && !compact;
   const leftDrawer = compact && leftPanelVisible && !leftPanelPoppedOut;
   const rightDrawer = compact && rightPanelVisible && !rightPanelPoppedOut;
+
+  useEffect(() => {
+    control.start();
+    (window as Window & { __projectionLabControl?: typeof control }).__projectionLabControl = control;
+  }, []);
 
   useEffect(() => {
     if (!compact) return;
@@ -64,7 +67,7 @@ export default function App() {
   const closeDrawers = () => {
     setLeftPanelVisible(false);
     setRightPanelVisible(false);
-    setContentCanvasPanelVisible(false);
+    setLayersPanelVisible(false);
     setRasterPreviewPanelVisible(false);
     setStudioVisible(false);
   };
@@ -72,11 +75,11 @@ export default function App() {
   const style = compact
     ? ({
         gridTemplateColumns: '1fr',
-        gridTemplateRows: `auto 1fr auto ${bottomPanelVisible ? (hasVideoTimeline ? '56px' : '28px') : '0px'}`,
+        gridTemplateRows: `auto 1fr auto auto ${bottomPanelVisible ? '24px' : '0px'}`,
       } as const)
     : ({
         gridTemplateColumns: `${leftDocked ? `${leftPanelWidth}px` : '0px'} 1fr ${rightDocked ? `${rightPanelWidth}px` : '0px'}`,
-        gridTemplateRows: `40px 1fr ${bottomPanelVisible ? (hasVideoTimeline ? '56px' : '28px') : '0px'}`,
+        gridTemplateRows: `52px 1fr auto ${bottomPanelVisible ? '28px' : '0px'}`,
       } as const);
 
   return (
@@ -105,7 +108,9 @@ export default function App() {
       </div>
       <div className={styles.center}>
         <Viewport />
-        {!compact ? <ContentCanvasPanel /> : null}
+        {!compact ? <LayersPanel /> : null}
+        {!compact ? <CuesPanel /> : null}
+        {!compact ? <ControlPanel /> : null}
         {!compact ? <RasterPreviewPanel /> : null}
         {!compact ? <StudioPanel /> : null}
       </div>
@@ -125,6 +130,10 @@ export default function App() {
         )}
       </div>
 
+      <div className={styles.media}>
+        <MediaDock />
+      </div>
+
       {compact ? (
         <div className={styles.mobileNav}>
           <button
@@ -132,7 +141,7 @@ export default function App() {
             className={leftPanelVisible ? styles.mobileNavActive : undefined}
             onClick={() => {
               setRightPanelVisible(false);
-              setContentCanvasPanelVisible(false);
+              setLayersPanelVisible(false);
               setRasterPreviewPanelVisible(false);
               toggleLeftPanel();
             }}
@@ -144,7 +153,7 @@ export default function App() {
             className={
               !leftPanelVisible &&
               !rightPanelVisible &&
-              !contentCanvasPanelVisible &&
+              !layersPanelVisible &&
               !rasterPreviewPanelVisible &&
               !studioVisible
                 ? styles.mobileNavActive
@@ -156,15 +165,15 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={contentCanvasPanelVisible ? styles.mobileNavActive : undefined}
+            className={layersPanelVisible ? styles.mobileNavActive : undefined}
             onClick={() => {
               setLeftPanelVisible(false);
               setRightPanelVisible(false);
               setRasterPreviewPanelVisible(false);
-              setContentCanvasPanelVisible(true);
+              setLayersPanelVisible(true);
             }}
           >
-            Canvas
+            Layers
           </button>
           <button
             type="button"
@@ -172,7 +181,7 @@ export default function App() {
             onClick={() => {
               setLeftPanelVisible(false);
               setRightPanelVisible(false);
-              setContentCanvasPanelVisible(false);
+              setLayersPanelVisible(false);
               setRasterPreviewPanelVisible(false);
               setStudioVisible(!studioVisible);
             }}
@@ -185,7 +194,7 @@ export default function App() {
             onClick={() => {
               setLeftPanelVisible(false);
               setRightPanelVisible(false);
-              setContentCanvasPanelVisible(false);
+              setLayersPanelVisible(false);
               setRasterPreviewPanelVisible(true);
             }}
           >
@@ -196,7 +205,7 @@ export default function App() {
             className={rightPanelVisible ? styles.mobileNavActive : undefined}
             onClick={() => {
               setLeftPanelVisible(false);
-              setContentCanvasPanelVisible(false);
+              setLayersPanelVisible(false);
               setRasterPreviewPanelVisible(false);
               toggleRightPanel();
             }}
@@ -216,7 +225,9 @@ export default function App() {
         )}
       </div>
 
-      {compact && contentCanvasPanelVisible ? <ContentCanvasPanel /> : null}
+      {compact && layersPanelVisible ? <LayersPanel /> : null}
+      {compact ? <CuesPanel /> : null}
+      {compact ? <ControlPanel /> : null}
       {compact && rasterPreviewPanelVisible ? <RasterPreviewPanel /> : null}
       {compact && studioVisible ? <StudioPanel /> : null}
 

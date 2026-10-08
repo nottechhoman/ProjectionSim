@@ -1,10 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from '../store/defaultScene';
+import { defaultShow, DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from '../store/defaultScene';
 import { parseProjectJson, serializeProject } from './projectSerializer';
-import { PROJECT_FILE_VERSION, type ProjectSnapshotV2 } from './projectSchema';
+import { PROJECT_FILE_VERSION, type ProjectSnapshotV3 } from './projectSchema';
 
-const sample: ProjectSnapshotV2 = {
+const sample: ProjectSnapshotV3 = {
   version: PROJECT_FILE_VERSION,
+  show: defaultShow(),
   savedAt: '2026-09-07T00:00:00.000Z',
   name: 'Test Scene',
   sceneObjects: DEFAULT_SCENE_OBJECTS,
@@ -24,13 +25,8 @@ const sample: ProjectSnapshotV2 = {
 
 describe('projectSerializer', () => {
   it('round-trips reliability settings', () => {
-    const withReliability = {
-      ...sample,
-      sharedContentSourceProjectorId: 'proj-1',
-      calculationTargetId: 'screen-1',
-    };
+    const withReliability = { ...sample, calculationTargetId: 'screen-1' };
     const loaded = parseProjectJson(JSON.stringify(withReliability));
-    expect(loaded.sharedContentSourceProjectorId).toBe('proj-1');
     expect(loaded.calculationTargetId).toBe('screen-1');
   });
 
@@ -40,14 +36,17 @@ describe('projectSerializer', () => {
     expect(loaded.name).toBe('Test Scene');
     expect(loaded.projectors[0].optics.throwRatio).toBe(1.5);
     expect(loaded.sceneObjects).toHaveLength(2);
-    expect(loaded.version).toBe(2);
-    expect(loaded.contentCanvas?.enabled).toBe(false);
-    expect(loaded.contentCanvas?.layers).toEqual([]);
+    expect(loaded.version).toBe(3);
+    expect(loaded.show.mappings.map((m) => m.kind)).toEqual(['direct', 'perspective']);
+    expect(loaded.show.tracks[0].layers[0].media).toEqual({ kind: 'pattern', pattern: 'checkerboard', color: '#ffffff' });
   });
 
-  it('round-trips a content canvas', () => {
+  it('migrates a v2 content canvas onto layers on a Direct mapping', () => {
+    const { show: _show, ...rest } = sample;
     const withCanvas = {
-      ...sample,
+      ...rest,
+      version: 2,
+      mappingMode: 'sharedCanvas',
       contentCanvas: {
         enabled: true,
         widthPx: 3840,
@@ -73,10 +72,16 @@ describe('projectSerializer', () => {
       },
     };
     const loaded = parseProjectJson(JSON.stringify(withCanvas));
-    expect(loaded.contentCanvas?.enabled).toBe(true);
-    expect(loaded.contentCanvas?.widthPx).toBe(3840);
-    expect(loaded.contentCanvas?.layers).toHaveLength(1);
-    expect(loaded.contentCanvas?.layers[0].pattern).toBe('uvGrid');
+    expect(loaded.version).toBe(3);
+    const [mapping] = loaded.show.mappings;
+    expect(mapping.kind).toBe('direct');
+    expect(mapping.resolution).toEqual({ w: 3840, h: 1080 });
+    expect(mapping.screenIds).toEqual(['screen-1']);
+    const layers = loaded.show.tracks[0].layers;
+    expect(layers).toHaveLength(1);
+    expect(layers[0].media).toEqual({ kind: 'pattern', pattern: 'uvGrid', color: '#ffffff' });
+    expect(layers[0].mappingId).toBe(mapping.id);
+    expect(layers[0].fit).toBe('stretch');
   });
 
   it('loads custom panel widths and clamps invalid values', () => {
@@ -106,11 +111,23 @@ describe('projectSerializer', () => {
     expect(loaded.rightPanelFloat?.x).toBeGreaterThan(0);
   });
 
-  it('loads legacy v1 projects', () => {
-    const v1 = { ...sample, version: 1, mediaAssets: undefined, materialPreviewMode: undefined };
+  it('loads legacy v1 projects (raw → locked perspective layer per projector)', () => {
+    const { show: _show, ...rest } = sample;
+    const v1 = {
+      ...rest,
+      version: 1,
+      mediaAssets: undefined,
+      materialPreviewMode: undefined,
+      projectors: [{ ...DEFAULT_PROJECTORS[0], testPattern: 'colorBars', mediaSource: 'pattern' }],
+    };
     const loaded = parseProjectJson(JSON.stringify(v1));
-    expect(loaded.version).toBe(2);
+    expect(loaded.version).toBe(3);
     expect(loaded.mediaAssets).toEqual([]);
+    const [mapping] = loaded.show.mappings;
+    expect(mapping.kind).toBe('perspective');
+    expect(mapping.perspective).toMatchObject({ lockToProjectorId: 'proj-1', projectorOnly: true });
+    expect(loaded.show.tracks[0].layers[0].media).toMatchObject({ kind: 'pattern', pattern: 'colorBars' });
+    expect('testPattern' in loaded.projectors[0]).toBe(false);
   });
 
   it('rejects invalid JSON', () => {

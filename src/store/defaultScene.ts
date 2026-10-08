@@ -1,4 +1,5 @@
-import type { SceneObject, ProjectorConfig } from '../types';
+import type { SceneObject, ProjectorConfig, Show } from '../types';
+import { createDirectMapping, createLayer, createPerspectiveMapping, createShow } from '../mapping/model';
 import { DEFAULT_BLEND_GAMMA } from '../types';
 import { eulerYXZToQuaternion } from '../utils/euler';
 
@@ -51,11 +52,7 @@ export const DEFAULT_PROJECTORS: ProjectorConfig[] = [
       nearLimit: 0.1,
       farLimit: 100,
     },
-    testPattern: 'checkerboard',
     brightness: 1,
-    mediaSource: 'pattern',
-    mediaAssetId: null,
-    mediaFit: 'contain',
     blendEdges: { left: 0, right: 0, top: 0, bottom: 0 },
     blendGamma: DEFAULT_BLEND_GAMMA,
     outerEdgeFade: false,
@@ -63,3 +60,15 @@ export const DEFAULT_PROJECTORS: ProjectorConfig[] = [
     lookAtTarget: { x: 0, y: 1.5, z: 0 },
   },
 ];
+
+/** Default show: the screen's Direct mapping with a UV grid, and the projector's locked Perspective mapping. */
+export function defaultShow(): Show {
+  const screen = DEFAULT_SCENE_OBJECTS[0];
+  const direct = { ...createDirectMapping(screen), id: 'map-screen-1' };
+  const persp = { ...createPerspectiveMapping(DEFAULT_PROJECTORS[0], [screen.id]), id: 'map-proj-1' };
+  const layer = createLayer({ kind: 'pattern', pattern: 'checkerboard', color: '#ffffff' }, direct.id, {
+    id: 'layer-1',
+    name: 'Checkerboard',
+  });
+  return createShow([direct, persp], [layer]);
+}

@@ -1,44 +1,41 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_SURFACE_UV_MAPPING } from '../types';
-import {
-  computeSurfaceUvFrame,
-  normalizeSurfaceUvMapping,
-  projectSurfaceUv,
-  surfaceToContentUv,
-} from './surfaceUv';
+import { defaultFeedRect, normalizeFeedRect } from '../mapping/model';
+import { feedRectUv } from '../mapping/sample';
+import { computeSurfaceUvFrame, projectSurfaceUv } from './surfaceUv';
 
-const base = { ...DEFAULT_SURFACE_UV_MAPPING, enabled: true };
+const base = defaultFeedRect('s');
+const feed = (s: { x: number; y: number }, r: typeof base) => feedRectUv(r, s);
 
-describe('v2 surface UV mapping', () => {
+describe('feed rect / surface UV mapping', () => {
   it('full region is identity', () => {
-    expect(surfaceToContentUv({ x: 0.25, y: 0.75 }, base)).toEqual({ x: 0.25, y: 0.75 });
+    expect(feed({ x: 0.25, y: 0.75 }, base)).toEqual({ x: 0.25, y: 0.75 });
   });
 
   it('region picks a sub-rect of the content (top-left origin rect)', () => {
     const m = { ...base, region: { x: 0.5, y: 0, width: 0.5, height: 0.5 } };
     // bottom-left of surface → bottom-left of the top-right quadrant
-    const c = surfaceToContentUv({ x: 0, y: 0 }, m)!;
+    const c = feed({ x: 0, y: 0 }, m)!;
     expect(c.x).toBeCloseTo(0.5, 9);
     expect(c.y).toBeCloseTo(0.5, 9);
-    const c2 = surfaceToContentUv({ x: 1, y: 1 }, m)!;
+    const c2 = feed({ x: 1, y: 1 }, m)!;
     expect(c2.x).toBeCloseTo(1, 9);
     expect(c2.y).toBeCloseTo(1, 9);
   });
 
   it('flip and 90° rotation', () => {
-    const f = surfaceToContentUv({ x: 0.2, y: 0.3 }, { ...base, flipU: true })!;
+    const f = feed({ x: 0.2, y: 0.3 }, { ...base, flipU: true })!;
     expect(f.x).toBeCloseTo(0.8, 9);
-    const r = surfaceToContentUv({ x: 1, y: 0.5 }, { ...base, rotationDeg: 90 })!;
+    const r = feed({ x: 1, y: 0.5 }, { ...base, rotationDeg: 90 })!;
     expect(r.x).toBeCloseTo(0.5, 9);
     expect(r.y).toBeCloseTo(1, 9);
   });
 
   it('wrap modes', () => {
     const rep = { ...base, repeatU: 2, repeatV: 1 };
-    expect(surfaceToContentUv({ x: 0.75, y: 0.5 }, rep)).toBeNull();
-    expect(surfaceToContentUv({ x: 0.75, y: 0.5 }, { ...rep, wrap: 'repeat' })!.x).toBeCloseTo(0.5, 9);
-    expect(surfaceToContentUv({ x: 0.75, y: 0.5 }, { ...rep, wrap: 'mirror' })!.x).toBeCloseTo(0.5, 9);
-    expect(surfaceToContentUv({ x: 0.6, y: 0.5 }, { ...rep, wrap: 'mirror' })!.x).toBeCloseTo(0.8, 9);
+    expect(feed({ x: 0.75, y: 0.5 }, rep)).toBeNull();
+    expect(feed({ x: 0.75, y: 0.5 }, { ...rep, wrap: 'repeat' })!.x).toBeCloseTo(0.5, 9);
+    expect(feed({ x: 0.75, y: 0.5 }, { ...rep, wrap: 'mirror' })!.x).toBeCloseTo(0.5, 9);
+    expect(feed({ x: 0.6, y: 0.5 }, { ...rep, wrap: 'mirror' })!.x).toBeCloseTo(0.8, 9);
   });
 
   it('planar frame picks the facing axes', () => {
@@ -76,10 +73,10 @@ describe('v2 surface UV mapping', () => {
   });
 
   it('normalize fills defaults and clamps', () => {
-    const n = normalizeSurfaceUvMapping({ enabled: true, repeatU: 0, region: { x: 0, y: 0, width: -1, height: 0.5 } });
+    const n = normalizeFeedRect({ screenId: 's', repeatU: 0, region: { x: 0, y: 0, width: -1, height: 0.5 } })!;
     expect(n.repeatU).toBe(0.05);
     expect(n.region.width).toBe(0.01);
     expect(n.projection).toBe('meshUv');
-    expect(normalizeSurfaceUvMapping(undefined).enabled).toBe(false);
+    expect(normalizeFeedRect({})).toBeNull();
   });
 });

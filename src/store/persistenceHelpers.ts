@@ -2,8 +2,7 @@ import type { ProjectSnapshot } from '../persistence/projectSchema';
 import type {
   DisplayUnit,
   MaterialPreviewMode,
-  ContentCanvas,
-  MappingMode,
+  Show,
   ProjectionCompositeMode,
   MediaAssetRecord,
   ProjectorConfig,
@@ -15,8 +14,7 @@ import type {
   BlendSettings,
 } from '../types';
 import { normalizeBlendSettings } from '../blending/advancedBlend';
-import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
-import { DEFAULT_CONTENT_CANVAS, normalizeContentCanvas } from '../projection/contentCanvas';
+import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS, defaultShow } from './defaultScene';
 import {
   clampPanelWidth,
   clampFloatPosition,
@@ -33,12 +31,7 @@ import {
   shouldStartWithPanelsHidden,
 } from '../ui/deviceProfile';
 import { readAutosave } from '../persistence/autosave';
-import {
-  legacyDefaultCalculationTargetId,
-  legacyDefaultSharedContentSourceId,
-  resolveCalculationTargetId,
-  resolveSharedContentSourceId,
-} from './reliabilitySettings';
+import { legacyDefaultCalculationTargetId, resolveCalculationTargetId } from './reliabilitySettings';
 
 export interface PersistedStateSlice {
   projectName: string;
@@ -47,9 +40,7 @@ export interface PersistedStateSlice {
   mediaAssets: MediaAssetRecord[];
   materialPreviewMode: MaterialPreviewMode;
   projectionCompositeMode: ProjectionCompositeMode;
-  mappingMode: MappingMode;
-  contentCanvas: ContentCanvas;
-  sharedContentSourceProjectorId: string | null;
+  show: Show;
   calculationTargetId: string | null;
   analysisQuality: AnalysisQuality;
   calculationTargetSide: CalculationTargetSide;
@@ -80,7 +71,7 @@ export function buildInitialPersistedState(): PersistedStateSlice {
 
 export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
   return {
-    version: 2,
+    version: 3,
     savedAt: new Date().toISOString(),
     name: slice.projectName,
     sceneObjects: slice.sceneObjects,
@@ -88,9 +79,7 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     mediaAssets: slice.mediaAssets,
     materialPreviewMode: slice.materialPreviewMode,
     projectionCompositeMode: slice.projectionCompositeMode,
-    mappingMode: slice.mappingMode,
-    contentCanvas: slice.contentCanvas,
-    sharedContentSourceProjectorId: slice.sharedContentSourceProjectorId,
+    show: slice.show,
     calculationTargetId: slice.calculationTargetId,
     analysisQuality: slice.analysisQuality,
     calculationTargetSide: slice.calculationTargetSide,
@@ -117,18 +106,9 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
   const sceneObjects = snapshot.sceneObjects;
   const selectedProjectorId = snapshot.selectedProjectorId;
 
-  const explicitSharedSource =
-    typeof snapshot.sharedContentSourceProjectorId === 'string'
-      ? snapshot.sharedContentSourceProjectorId
-      : null;
   const explicitCalcTarget =
     typeof snapshot.calculationTargetId === 'string' ? snapshot.calculationTargetId : null;
 
-  const sharedContentSourceProjectorId = resolveSharedContentSourceId(
-    projectors,
-    explicitSharedSource ??
-      legacyDefaultSharedContentSourceId(projectors, selectedProjectorId),
-  );
   const calculationTargetId = resolveCalculationTargetId(
     sceneObjects,
     explicitCalcTarget ?? legacyDefaultCalculationTargetId(sceneObjects),
@@ -141,9 +121,7 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
     mediaAssets: snapshot.mediaAssets ?? [],
     materialPreviewMode: snapshot.materialPreviewMode ?? 'projectionPreview',
     projectionCompositeMode: snapshot.projectionCompositeMode ?? 'unblended',
-    mappingMode: snapshot.mappingMode === 'sharedCanvas' ? 'sharedCanvas' : 'raw',
-    contentCanvas: normalizeContentCanvas(snapshot.contentCanvas),
-    sharedContentSourceProjectorId,
+    show: snapshot.show,
     calculationTargetId,
     analysisQuality: snapshot.analysisQuality === 'high' ? 'high' : 'draft',
     calculationTargetSide:
@@ -194,9 +172,7 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     mediaAssets: [],
     materialPreviewMode: 'projectionPreview',
     projectionCompositeMode: 'unblended',
-    mappingMode: 'raw',
-    contentCanvas: structuredClone(DEFAULT_CONTENT_CANVAS),
-    sharedContentSourceProjectorId: 'proj-1',
+    show: defaultShow(),
     calculationTargetId: 'screen-1',
     analysisQuality: 'draft',
     calculationTargetSide: 'front',

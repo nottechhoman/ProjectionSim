@@ -20,13 +20,20 @@ export class DepthPass {
     meshes: THREE.Mesh[],
   ): THREE.Texture {
     const prevTarget = renderer.getRenderTarget();
+    const prevAutoClear = renderer.autoClear;
     renderer.setRenderTarget(this.target);
     renderer.clear();
+    // Clear once: with autoClear each mesh render would wipe the previous blockers.
+    renderer.autoClear = false;
     const prevOverride = scene.overrideMaterial;
     scene.overrideMaterial = this.depthMaterial;
-    meshes.forEach((m) => renderer.render(m, camera));
-    scene.overrideMaterial = prevOverride;
-    renderer.setRenderTarget(prevTarget);
+    try {
+      meshes.forEach((m) => renderer.render(m, camera));
+    } finally {
+      scene.overrideMaterial = prevOverride;
+      renderer.autoClear = prevAutoClear;
+      renderer.setRenderTarget(prevTarget);
+    }
     return this.target.depthTexture!;
   }
 

@@ -3,23 +3,23 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { useAppStore } from '../store';
 import { buildProjectorCamera, getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
-import { createProjectiveMaterial, fitModeToInt, patternToInt } from '../projection/ProjectiveMaterial';
 import {
   applyAdvancedBlendUniforms,
   createMultiProjectiveMaterial,
   updateMultiProjectiveMaterial,
   type PreviewKind,
 } from '../projection/MultiProjectiveMaterial';
-import type { BlendSettings, SurfaceUvMapping } from '../types';
+import type { BlendSettings, Show, SurfaceUvProjection } from '../types';
 import { DEFAULT_BLEND_SETTINGS } from '../types';
-import {
-  computeSurfaceUvFrame,
-  normalizeSurfaceUvMapping,
-  projectSurfaceUv,
-  PROJECTION_INT,
-  WRAP_INT,
-  type SurfaceUvFrame,
-} from '../uvmapping/surfaceUv';
+import { computeSurfaceUvFrame, projectSurfaceUv, type SurfaceUvFrame } from '../uvmapping/surfaceUv';
+import { ScreenTextureBaker, SCREEN_TEXTURE_MAX, type BakeSurface } from '../mapping/ScreenTextureBaker';
+import { activeTrack, createShow } from '../mapping/model';
+import { mappingVisibleTo } from '../mapping/sample';
+import { applyUvAtlas, uvReportForMeshes, type UvReport } from '../mapping/uvAtlas';
+import { evaluate, type LiveLayer } from '../playback/evaluate';
+import { transport } from '../playback/clock';
+import { transportStep, type PlayMode } from '../playback/showControl';
+import { MediaSync } from '../playback/mediaSync';
 import { ProjectorFeedPass, type FeedKind } from '../projection/ProjectorFeedPass';
 import { outputWindows } from '../output/outputWindows';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
@@ -33,8 +33,6 @@ import {
   type OcclusionDepthKey,
 } from '../visibility/projectionOcclusion';
 import type {
-  ContentCanvas,
-  MappingMode,
   MaterialPreviewMode,
   ProjectionCompositeMode,
   ProjectorConfig,
@@ -50,25 +48,19 @@ import {
 } from '../projection/projectionSides';
 import { createScreen } from './objects/createScreen';
 import { createLedWall } from './objects/createLedWall';
-import { updateLedWallMaterial } from '../projection/LedWallMaterial';
+import { setLedWallTexture, updateLedWallMaterial } from '../projection/LedWallMaterial';
 import { createFloor } from './objects/createFloor';
 import { createBox } from './objects/createBox';
 import { createCurvedScreen } from './objects/createCurvedScreen';
 import { FrustumHelper } from './helpers/FrustumHelper';
 import { mediaTextureCache, modelCache } from '../media';
 import { cloneModelGroup } from './ModelLoader';
-import { falloffReferenceDistance } from '../optics/falloff';
 import { computeProjectorLookAtQuaternion, rollFromProjectorQuaternion } from '../optics/lookAt';
 import { getCalculationTargetObject } from '../store/reliabilitySettings';
 import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../utils/euler';
 import { unprojectRasterRay } from '../optics/rays';
 import { computePlanarFootprint } from '../coverage/planarFootprint';
 import { computeCurvedFootprint, type CurvedScreenSurface } from '../coverage/curvedFootprint';
-import {
-  buildScreenMapUniforms,
-  resolveSharedCanvasSupport,
-} from '../projection/sharedCanvasMapping';
-import { ContentCanvasRenderer } from '../projection/ContentCanvasRenderer';
 
 const CORNER_UV = [
   [0, 0],
@@ -94,11 +86,8 @@ function dimensionsKey(obj: SceneObject): string {
   const curved = obj.curved
     ? `${obj.curved.radius}:${obj.curved.arcAngleDeg}:${obj.curved.height}`
     : '';
-  const model = obj.modelAssetId ? `${obj.modelAssetId}:${obj.modelScale ?? 1}` : '';
-  const led =
-    obj.ledWall
-      ? `${obj.ledWall.pixelResolution.width}x${obj.ledWall.pixelResolution.height}:${obj.ledWall.mediaSource}:${obj.ledWall.mediaAssetId}:${obj.ledWall.mediaFit}`
-      : '';
+  const model = obj.modelAssetId ? `${obj.modelAssetId}:${obj.modelScale ?? 1}:${obj.uvAtlas ? 'atlas' : 'uv'}` : '';
+  const led = obj.ledWall ? `${obj.ledWall.pixelResolution.width}x${obj.ledWall.pixelResolution.height}` : '';
   const sides = obj.projectionSides ?? 'front';
   return `${obj.type}:${obj.dimensions.width}:${obj.dimensions.height}:${depth}:${curved}:${model}:${led}:${sides}`;
 }
@@ -121,6 +110,12 @@ function createObjectMesh(obj: SceneObject): THREE.Object3D {
       if (!prototype) return createBox(obj);
       const group = cloneModelGroup(prototype);
       group.userData.isModel = true;
+      if (obj.uvAtlas) {
+        // Own copies of the geometry (the prototype is shared) before rewriting UVs.
+        const meshes = collectMeshes(group);
+        for (const mesh of meshes) mesh.geometry = mesh.geometry.clone();
+        applyUvAtlas(meshes, group);
+      }
       return group;
     }
     default:
@@ -130,45 +125,11 @@ function createObjectMesh(obj: SceneObject): THREE.Object3D {
 
 type OcclusionDepthResolver = (key: OcclusionDepthKey, multi: boolean) => THREE.Texture | THREE.Texture[] | null;
 
-interface SurfaceHookData {
-  mapping: SurfaceUvMapping;
-  frame: SurfaceUvFrame;
-  root: THREE.Object3D;
-  baseColor: THREE.Color;
-}
-
-const scratchRootInv = new THREE.Matrix4();
-
-function applySurfaceUniforms(mat: THREE.ShaderMaterial, data: SurfaceHookData | undefined): void {
-  const u = mat.uniforms;
-  if (!u.surfMap) return;
-  if (!data || !data.mapping.enabled) {
-    u.surfMap.value = 0;
-    return;
-  }
-  const { mapping, frame, root } = data;
-  u.surfMap.value = 1;
-  u.surfProj.value = PROJECTION_INT[mapping.projection];
-  u.surfAxes.value = frame.planarAxes;
-  (u.surfRootInv.value as THREE.Matrix4).copy(scratchRootInv.copy(root.matrixWorld).invert());
-  (u.surfBoundsMin.value as THREE.Vector3).set(frame.boundsMin.x, frame.boundsMin.y, frame.boundsMin.z);
-  (u.surfBoundsSize.value as THREE.Vector3).set(frame.boundsSize.x, frame.boundsSize.y, frame.boundsSize.z);
-  (u.surfTheta.value as THREE.Vector3).set(frame.thetaRef, frame.thetaMin, frame.thetaMax);
-  (u.surfPhi.value as THREE.Vector2).set(frame.phiMin, frame.phiMax);
-  (u.surfRegion.value as THREE.Vector4).set(
-    mapping.region.x,
-    mapping.region.y,
-    mapping.region.width,
-    mapping.region.height,
-  );
-  (u.surfXform.value as THREE.Vector4).set(
-    THREE.MathUtils.degToRad(mapping.rotationDeg),
-    mapping.flipU ? 1 : 0,
-    mapping.flipV ? 1 : 0,
-    WRAP_INT[mapping.wrap],
-  );
-  (u.surfRepeat.value as THREE.Vector2).set(mapping.repeatU, mapping.repeatV);
-}
+const blackTexture = (() => {
+  const t = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  t.needsUpdate = true;
+  return t;
+})();
 
 function attachReceiverShaderHooks(
   mesh: THREE.Mesh,
@@ -188,10 +149,14 @@ function attachReceiverShaderHooks(
     if (mat.uniforms.projectionSides) {
       mat.uniforms.projectionSides.value = mesh.userData.projectionSides ?? 0;
     }
-    const surf = mesh.userData.surfaceHook as SurfaceHookData | undefined;
-    applySurfaceUniforms(mat, surf);
-    if (surf && mat.uniforms.surfaceBaseColor && mat.uniforms.feedIndex) {
-      (mat.uniforms.surfaceBaseColor.value as THREE.Color).copy(surf.baseColor);
+    if (mat.uniforms.screenMap) {
+      const tex = mesh.userData.screenTexture as THREE.Texture | null | undefined;
+      mat.uniforms.screenMap.value = tex ?? blackTexture;
+      mat.uniforms.hasScreenMap.value = tex ? 1 : 0;
+    }
+    const base = mesh.userData.baseColor as THREE.Color | undefined;
+    if (base && mat.uniforms.surfaceBaseColor && mat.uniforms.feedIndex) {
+      (mat.uniforms.surfaceBaseColor.value as THREE.Color).copy(base);
     }
     const key = mesh.userData.occlusionDepthKey as OcclusionDepthKey;
     const multi = mat.uniforms.depthMaps != null;
@@ -212,7 +177,7 @@ function attachReceiverShaderHooks(
   };
 }
 
-/** Root-local vertex sample used to fit planar / cylindrical / spherical UV frames. */
+/** Root-local vertex sample used to fit planar / cylindrical / spherical UV frames (Feed mappings). */
 function computeRootSurfaceFrame(root: THREE.Object3D): SurfaceUvFrame {
   root.updateMatrixWorld(true);
   const rootInv = root.matrixWorld.clone().invert();
@@ -238,21 +203,15 @@ function syncReceiverMeshHooks(
   sidesInt: number,
   resolveOcclusionDepth: OcclusionDepthResolver,
 ): void {
-  const mapping = normalizeSurfaceUvMapping(obj.uvMapping);
-  if (mapping.enabled && mapping.projection !== 'meshUv' && !root.userData.surfaceFrame) {
-    root.userData.surfaceFrame = computeRootSurfaceFrame(root);
-  }
-  const frame = (root.userData.surfaceFrame as SurfaceUvFrame | undefined) ?? computeSurfaceUvFrame([]);
   for (const mesh of collectMeshes(root)) {
     attachReceiverShaderHooks(mesh, obj.id, obj.blocksProjection, sidesInt, resolveOcclusionDepth);
-    const prev = mesh.userData.surfaceHook as SurfaceHookData | undefined;
-    mesh.userData.surfaceHook = {
-      mapping,
-      frame,
-      root,
-      baseColor: prev?.baseColor ?? meshBaseColor(mesh),
-    } satisfies SurfaceHookData;
+    if (!mesh.userData.baseColor) mesh.userData.baseColor = meshBaseColor(mesh);
   }
+}
+
+function surfaceFrameOf(root: THREE.Object3D): SurfaceUvFrame {
+  if (!root.userData.surfaceFrame) root.userData.surfaceFrame = computeRootSurfaceFrame(root);
+  return root.userData.surfaceFrame as SurfaceUvFrame;
 }
 
 function collectMeshes(root: THREE.Object3D): THREE.Mesh[] {
@@ -348,7 +307,6 @@ export class SceneEngine {
   private transformControls: TransformControls | null = null;
   private depthPass: DepthPass | null = null;
   private readonly depthPassByProjector = new Map<string, DepthPass>();
-  private readonly projectiveMaterial = createProjectiveMaterial();
   private readonly multiProjectiveMaterial = createMultiProjectiveMaterial();
   private readonly projectorVisuals = new Map<string, { body: THREE.Mesh; frustum: FrustumHelper }>();
   private readonly objectMeshes = new Map<string, THREE.Object3D>();
@@ -357,14 +315,19 @@ export class SceneEngine {
   private selectedProjectorId = 'proj-1';
   private materialPreviewMode: MaterialPreviewMode = 'projectionPreview';
   private projectionCompositeMode: ProjectionCompositeMode = 'unblended';
-  private mappingMode: MappingMode = 'raw';
-  private contentCanvas: ContentCanvas = {
-    enabled: false,
-    widthPx: 3840,
-    heightPx: 1080,
-    layers: [],
-  };
-  private readonly contentCanvasRenderer = new ContentCanvasRenderer();
+  private show: Show = createShow();
+  private readonly baker = new ScreenTextureBaker();
+  private readonly mediaSync = new MediaSync();
+  private liveLayers: LiveLayer[] = [];
+  private playMode: PlayMode = 'play';
+  private lastPlayhead: number | null = null;
+  /** Any play / pause / seek restarts boundary detection (a jump is not a crossing). */
+  private readonly transportUnsub = transport.subscribe(() => {
+    this.lastPlayhead = null;
+  });
+  /** Bumped on every store sync; with the live-layer signature it decides re-bakes. */
+  private syncRevision = 0;
+  private lastContentKey = '';
   private readonly feedPass = new ProjectorFeedPass();
   private blendSettings: BlendSettings = DEFAULT_BLEND_SETTINGS;
   private lastFrameAt = 0;
@@ -381,7 +344,6 @@ export class SceneEngine {
   private maxOverlap = 1;
   private rasterPreviewPanelVisible = false;
   private rasterPreviewWasVisible = false;
-  private sharedContentSourceProjectorId: string | null = null;
   private sceneObjects: SceneObject[] = [];
   private animationId: number | null = null;
   private disposed = false;
@@ -604,12 +566,12 @@ export class SceneEngine {
   }
 
   private applyDepthMapUniformSize(size: number): void {
-    this.projectiveMaterial.uniforms.depthMapSize.value.set(size, size);
     this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(size, size);
   }
 
   sync(state: AppState): void {
     if (!this.webglAvailable || this.disposed) return;
+    this.syncRevision += 1;
 
     if (state.viewPreset !== this.currentViewPreset) {
       this.setViewPreset(state.viewPreset);
@@ -624,9 +586,8 @@ export class SceneEngine {
     this.sceneObjects = state.sceneObjects;
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
-    this.mappingMode = state.mappingMode;
-    this.contentCanvas = state.contentCanvas;
-    this.sharedContentSourceProjectorId = state.sharedContentSourceProjectorId;
+    this.show = state.show;
+    this.playMode = state.playMode;
     this.showProjectionBeam = state.showProjectionBeam;
     this.calculationTargetId = state.calculationTargetId;
     this.rasterPreviewPanelVisible = state.rasterPreviewPanelVisible;
@@ -945,6 +906,7 @@ export class SceneEngine {
         if (mesh.material instanceof THREE.ShaderMaterial) {
           updateLedWallMaterial(mesh.material, obj);
         }
+        mesh.userData.isLedWall = true;
       } else if (obj.receivesProjection) {
         const sidesInt = supportsProjectionSides(obj.type)
           ? projectionSidesToInt(normalizeProjectionSides(obj))
@@ -1006,10 +968,13 @@ export class SceneEngine {
       }
       const textures: THREE.Texture[] = [];
       for (const projector of projectors.slice(0, 4)) {
-        let pass = this.depthPassByProjector.get(projector.id);
+        // One target per (projector, key): keys exclude different blockers, so they
+        // must not overwrite each other's depth map within a frame.
+        const passKey = `${projector.id}|${key}`;
+        let pass = this.depthPassByProjector.get(passKey);
         if (!pass) {
           pass = new DepthPass(this.currentDepthResolution, this.currentDepthResolution);
-          this.depthPassByProjector.set(projector.id, pass);
+          this.depthPassByProjector.set(passKey, pass);
         }
         const worldMatrix = getProjectorWorldMatrix(projector);
         const projectorCamera = buildProjectorCamera(projector.optics, worldMatrix);
@@ -1021,9 +986,28 @@ export class SceneEngine {
     return texturesByKey.size > 0;
   }
 
+  /** UV health of an object's meshes (overlap / outside 0–1), cached per mesh build. */
+  getUvReport(objectId: string): UvReport | null {
+    const root = this.objectMeshes.get(objectId);
+    if (!root) return null;
+    if (!root.userData.uvReport) root.userData.uvReport = uvReportForMeshes(collectMeshes(root));
+    return root.userData.uvReport as UvReport;
+  }
+
+  /** Canvas CSS-pixel position (top-left origin) of a world point in the editor view. For tests only. */
+  worldToCanvas(x: number, y: number, z: number): { x: number; y: number } | null {
+    if (!this.editorCamera) return null;
+    this.editorCamera.updateMatrixWorld(true);
+    const p = new THREE.Vector3(x, y, z).project(this.editorCamera);
+    const rect = this.canvas.getBoundingClientRect();
+    return { x: ((p.x + 1) / 2) * rect.width, y: ((1 - p.y) / 2) * rect.height };
+  }
+
   /** Read one canvas pixel after rendering (bottom-left WebGL origin). For tests only. */
   readCanvasPixel(x: number, y: number): [number, number, number, number] | null {
     if (!this.renderer) return null;
+    // The drawing buffer is not preserved between frames: render and read in one task.
+    this.render();
     const gl = this.renderer.getContext();
     const ratio = this.renderer.getPixelRatio();
     const px = Math.floor(x * ratio);
@@ -1101,8 +1085,12 @@ export class SceneEngine {
         (visual.body.material as THREE.Material).dispose();
         visual.frustum.dispose();
         this.projectorVisuals.delete(id);
-        this.depthPassByProjector.get(id)?.dispose();
-        this.depthPassByProjector.delete(id);
+        for (const [passKey, pass] of this.depthPassByProjector) {
+          if (passKey.startsWith(`${id}|`)) {
+            pass.dispose();
+            this.depthPassByProjector.delete(passKey);
+          }
+        }
         this.feedPass.disposeProjector(id);
       }
     }
@@ -1171,90 +1159,6 @@ export class SceneEngine {
 
       visual.frustum.visible = this.showProjectionBeam;
     }
-
-    if (enabled.length === 1) {
-      this.applyProjectiveUniforms(enabled[0]);
-    } else if (this.projectionCompositeMode === 'solo') {
-      const solo =
-        projectors.find((p) => p.id === selectedProjectorId && p.enabled) ?? enabled[0];
-      if (solo) this.applyProjectiveUniforms(solo);
-    }
-  }
-
-  private applyMappingUniforms(
-    material: THREE.ShaderMaterial,
-    sceneObjects: SceneObject[],
-    mappingMode: MappingMode,
-  ): number {
-    const support = resolveSharedCanvasSupport(sceneObjects);
-    const canvasActive = this.contentCanvas.enabled && support.supported;
-    const active = (mappingMode === 'sharedCanvas' || canvasActive) && support.supported;
-    const mappingInt = active ? 1 : 0;
-    material.uniforms.mappingMode.value = mappingInt;
-    material.uniforms.useContentCanvas.value = canvasActive ? 1 : 0;
-    material.uniforms.canvasMap.value = canvasActive
-      ? this.contentCanvasRenderer.texture
-      : material.uniforms.canvasMap.value;
-
-    if (!active || !support.primaryReceiver) {
-      material.uniforms.screenMapKind.value = 0;
-      return mappingInt;
-    }
-
-    const map = buildScreenMapUniforms(support.primaryReceiver, support.mapKind);
-    material.uniforms.screenMapKind.value = map.mapKind;
-    (material.uniforms.screenMapMatrixInv.value as THREE.Matrix4).copy(map.matrixInv);
-    (material.uniforms.screenMapParams.value as THREE.Vector4).copy(map.params);
-    return mappingInt;
-  }
-
-  private contentSourceProjector(projectors: ProjectorConfig[]): ProjectorConfig | null {
-    if (!this.sharedContentSourceProjectorId) return null;
-    return projectors.find((p) => p.id === this.sharedContentSourceProjectorId) ?? null;
-  }
-
-  private applyProjectiveUniforms(projector: ProjectorConfig): void {
-    const worldMatrix = getProjectorWorldMatrix(projector);
-    const forceUv = this.materialPreviewMode === 'projectionUv' ? 1 : 0;
-    const falloff = this.materialPreviewMode === 'falloff' ? 1 : 0;
-    this.projectiveMaterial.uniforms.forceUvPreview.value = forceUv;
-    this.projectiveMaterial.uniforms.falloffPreview.value = falloff;
-    (this.projectiveMaterial.uniforms.projectorWorldPos.value as THREE.Vector3).setFromMatrixPosition(
-      worldMatrix,
-    );
-    this.projectiveMaterial.uniforms.falloffRefDistance.value = falloffReferenceDistance(projector);
-    this.projectiveMaterial.uniforms.projectorMatrix.value.copy(
-      getProjectorViewProjectionMatrix(projector.optics, worldMatrix),
-    );
-
-    const contentProjector =
-      this.mappingMode === 'sharedCanvas'
-        ? (this.contentSourceProjector(this.allProjectors) ?? projector)
-        : projector;
-
-    this.projectiveMaterial.uniforms.patternType.value = patternToInt(contentProjector.testPattern);
-    this.projectiveMaterial.uniforms.brightness.value = contentProjector.brightness;
-    this.projectiveMaterial.uniforms.rasterAspect.value = contentProjector.optics.aspectRatio;
-    (this.projectiveMaterial.uniforms.projectorColor.value as THREE.Color).set(contentProjector.color);
-
-    const useMedia =
-      (contentProjector.mediaSource === 'image' || contentProjector.mediaSource === 'video') &&
-      contentProjector.mediaAssetId;
-    if (useMedia) {
-      const entry = mediaTextureCache.get(contentProjector.mediaAssetId!);
-      if (entry) {
-        this.projectiveMaterial.uniforms.useMediaTexture.value = 1;
-        this.projectiveMaterial.uniforms.mediaMap.value = entry.texture;
-        this.projectiveMaterial.uniforms.mediaAspect.value = entry.aspect;
-        this.projectiveMaterial.uniforms.fitMode.value = fitModeToInt(contentProjector.mediaFit);
-      } else {
-        this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
-      }
-    } else {
-      this.projectiveMaterial.uniforms.useMediaTexture.value = 0;
-    }
-
-    this.applyMappingUniforms(this.projectiveMaterial, this.sceneObjects, this.mappingMode);
   }
 
   start(): void {
@@ -1276,14 +1180,36 @@ export class SceneEngine {
     const frameStart = performance.now();
     this.lastFrameAt = frameStart;
 
-    mediaTextureCache.updateVideos();
-    if (this.contentCanvas.enabled && this.renderer) {
-      this.contentCanvasRenderer.composite(this.renderer, this.contentCanvas, getDeviceProfile());
-    }
     this.controls?.update();
     this.resize();
     this.updateGizmoScale();
     this.editorScene.updateMatrixWorld(true);
+
+    // v4: timeline → live layers → media sync → screen textures → content feeds.
+    const track = activeTrack(this.show);
+    // Section end actions, play modes and the end of the track.
+    if (transport.playing) {
+      const now = transport.time();
+      const step = this.lastPlayhead === null ? ({ kind: 'none' } as const) : transportStep(track, this.lastPlayhead, now, this.playMode);
+      const end = now >= track.durationSec;
+      if (step.kind === 'seek') transport.seek(step.to);
+      else if (step.kind === 'pause') {
+        transport.pause();
+        transport.seek(step.at);
+      } else if (end) {
+        transport.pause();
+        transport.seek(track.durationSec);
+      }
+    }
+    const t = transport.time();
+    this.lastPlayhead = t;
+    this.liveLayers = evaluate(track, t, (id) => mediaTextureCache.get(id)?.video?.duration ?? null, this.show.fps);
+    this.mediaSync.setTime(t);
+    // Pre-roll the next play() only when videos are involved.
+    transport.prerollMs = track.layers.some((l) => l.enabled && l.media.kind === 'video') ? this.mediaSync.startupMs : 0;
+    this.mediaSync.sync(this.liveLayers, track, transport.playing, transport.rate, this.show.fps, transport);
+    mediaTextureCache.updateVideos();
+    this.renderContent();
 
     const receivers = this.getReceiverRoots();
     let projectorsToRender = this.activeProjectors;
@@ -1308,13 +1234,8 @@ export class SceneEngine {
           defaultDepths ?? [],
           this.projectionCompositeMode,
           this.materialPreviewMode === 'projectionUv',
-          this.contentSourceProjector(this.allProjectors),
-          this.applyMappingUniforms(
-            this.multiProjectiveMaterial,
-            this.sceneObjects,
-            this.mappingMode,
-          ),
           this.materialPreviewMode === 'falloff',
+          this.feedTexturesFor(projectorsToRender.slice(0, 4)),
         );
         applyAdvancedBlendUniforms(
           this.multiProjectiveMaterial,
@@ -1356,6 +1277,102 @@ export class SceneEngine {
     this.callbacks.onFrameTime?.(performance.now() - frameStart);
   }
 
+  /** Screens: visible projection receivers and LED walls. */
+  private bakeSurfaces(): BakeSurface[] {
+    const out: BakeSurface[] = [];
+    for (const obj of this.sceneObjects) {
+      const root = this.objectMeshes.get(obj.id);
+      if (!root || !root.visible) continue;
+      if (obj.type !== 'ledWall' && !obj.receivesProjection) continue;
+      out.push({ obj, root, meshes: collectMeshes(root), frame: surfaceFrameOf(root) });
+    }
+    return out;
+  }
+
+  private readonly mediaOf = (layer: { id: string }) => this.mediaSync.media(layer.id);
+
+  private screenTextureMax(): number {
+    return Math.min(SCREEN_TEXTURE_MAX[getDeviceProfile()], this.maxTextureSize);
+  }
+
+  private contentFeedMax(): number {
+    if (outputWindows.list().length > 0) return 4096;
+    return getDeviceProfile() === 'phone' ? 1280 : 2048;
+  }
+
+  private feedTexturesFor(projectors: ProjectorConfig[]): (THREE.Texture | null)[] {
+    return projectors.map((p) => this.feedPass.contentTexture(p.id));
+  }
+
+  private assignScreenTextures(surfaces: BakeSurface[]): void {
+    for (const s of surfaces) {
+      const tex = this.baker.texture(s.obj.id);
+      for (const mesh of s.meshes) mesh.userData.screenTexture = tex;
+    }
+  }
+
+  /**
+   * Bake screen textures and render every active projector's content feed.
+   * Projector-only mappings need that projector's own bake, so those projectors are
+   * handled first; the shared bake runs last and stays on the screens (LED walls).
+   */
+  private renderContent(): void {
+    if (!this.renderer) return;
+    // Static content (no video playing, nothing changed) keeps last frame's textures.
+    const hasVideo = this.liveLayers.some((l) => l.layer.media.kind === 'video');
+    const key = [
+      this.syncRevision,
+      mediaTextureCache.version,
+      outputWindows.list().length,
+      getDeviceProfile(),
+      this.liveLayers.map((l) => `${l.layer.id}:${l.opacity.toFixed(4)}`).join(','),
+    ].join('|');
+    if (!hasVideo && key === this.lastContentKey) return;
+    this.lastContentKey = key;
+    const surfaces = this.bakeSurfaces();
+    this.baker.retain(new Set(surfaces.map((s) => s.obj.id)));
+    const maxDim = this.screenTextureMax();
+    const mappings = this.show.mappings;
+    const projectors = this.activeProjectors.slice(0, 4);
+    this.feedPass.retainContent(new Set(projectors.map((p) => p.id)));
+    const exclusive = new Set<string>();
+    for (const entry of this.liveLayers) {
+      const m = mappings.find((mp) => mp.id === entry.layer.mappingId);
+      const lock = m?.perspective?.lockToProjectorId;
+      if (m && lock && !mappingVisibleTo(m, null)) exclusive.add(lock);
+    }
+    const receiverMeshes = this.getReceiverRoots().flatMap((root) => collectMeshes(root));
+    const needFeeds = projectors.length > 0;
+    if (needFeeds) this.buildOcclusionDepthMaps(projectors);
+    const maxFeed = this.contentFeedMax();
+    const renderFeed = (projector: ProjectorConfig, index: number) => {
+      this.feedPass.renderContentFeed(
+        this.renderer!,
+        projector,
+        index,
+        receiverMeshes,
+        (material) => this.prepareFeedMaterial(material, projectors, false, false),
+        maxFeed,
+      );
+    };
+    projectors.forEach((projector, index) => {
+      if (!exclusive.has(projector.id)) return;
+      this.baker.bake(this.renderer!, surfaces, this.liveLayers, mappings, this.allProjectors, projector.id, maxDim, this.mediaOf);
+      this.assignScreenTextures(surfaces);
+      renderFeed(projector, index);
+    });
+    this.baker.bake(this.renderer, surfaces, this.liveLayers, mappings, this.allProjectors, null, maxDim, this.mediaOf);
+    this.assignScreenTextures(surfaces);
+    projectors.forEach((projector, index) => {
+      if (!exclusive.has(projector.id)) renderFeed(projector, index);
+    });
+    for (const s of surfaces) {
+      if (s.obj.type !== 'ledWall') continue;
+      const mat = (s.root as THREE.Mesh).material;
+      if (mat instanceof THREE.ShaderMaterial) setLedWallTexture(mat, this.baker.texture(s.obj.id));
+    }
+  }
+
   private previewKind(): PreviewKind {
     if (this.materialPreviewMode === 'blendSum') return 'blendSum';
     if (this.materialPreviewMode === 'surfaceUv') return 'surfaceUv';
@@ -1373,7 +1390,12 @@ export class SceneEngine {
     return this.activeProjectors.slice(0, 4);
   }
 
-  private prepareFeedMaterial(material: THREE.ShaderMaterial, projectors: ProjectorConfig[], forceBlend: boolean): void {
+  private prepareFeedMaterial(
+    material: THREE.ShaderMaterial,
+    projectors: ProjectorConfig[],
+    forceBlend: boolean,
+    withFeeds = true,
+  ): void {
     const compositeMode = forceBlend ? 'blended' : this.projectionCompositeMode;
     updateMultiProjectiveMaterial(
       material,
@@ -1381,9 +1403,8 @@ export class SceneEngine {
       this.occlusionDepthMulti.get('all') ?? [],
       compositeMode === 'heatmap' ? 'blended' : compositeMode,
       false,
-      this.contentSourceProjector(this.allProjectors),
-      this.applyMappingUniforms(material, this.sceneObjects, this.mappingMode),
       false,
+      withFeeds ? this.feedTexturesFor(projectors) : [],
     );
     applyAdvancedBlendUniforms(material, this.blendSettings, this.maxOverlap, 'normal');
     material.uniforms.depthMapSize.value.set(this.currentDepthResolution, this.currentDepthResolution);
@@ -1572,7 +1593,7 @@ export class SceneEngine {
    * v2: wireframe of a receiving object's raw surface UV layout for the UV editor
    * (segments in 0–1 surface UV, before region / flip / rotate).
    */
-  getSurfaceUvSegments(objectId: string, projection: SurfaceUvMapping['projection'], maxSegments = 2500): [number, number, number, number][] {
+  getSurfaceUvSegments(objectId: string, projection: SurfaceUvProjection, maxSegments = 2500): [number, number, number, number][] {
     const root = this.objectMeshes.get(objectId);
     if (!root) return [];
     root.updateMatrixWorld(true);
@@ -1686,9 +1707,10 @@ export class SceneEngine {
     this.projectorVisuals.clear();
     for (const pass of this.depthPassByProjector.values()) pass.dispose();
     this.depthPassByProjector.clear();
-    this.projectiveMaterial.dispose();
     this.multiProjectiveMaterial.dispose();
-    this.contentCanvasRenderer.dispose();
+    this.baker.dispose();
+    this.mediaSync.dispose();
+    this.transportUnsub();
     this.feedPass.dispose();
     outputWindows.setFrameDriver(null);
     for (const id of [...this.outputTargets.keys()]) this.disposeOutputSlot(id);

@@ -1,29 +1,28 @@
 import { create } from 'zustand';
 import * as THREE from 'three';
 import { clearAutosave, downloadProjectFile, parseProjectJson, writeAutosave } from '../persistence';
+import { transport } from '../playback/clock';
 import type { ProjectSnapshot } from '../persistence/projectSchema';
 import {
   detectFileKind,
   hydrateAssetsFromRecords,
   importMediaBlob,
-  mediaTextureCache,
 } from '../media/assetImport';
-import {
-  listSceneVideoSources,
-  pauseVideos,
-  playVideos,
-  toggleVideo,
-} from '../media/videoPlayback';
+import type { PlayMode } from '../playback/showControl';
+import { keyAt, upsertKeyframe, withPropKeys } from '../playback/keyframes';
 import type {
-  ContentCanvasLayer,
-  ContentLayerKind,
+  Keyframe,
+  KeyframeProp,
+  Cue,
+  TrackSection,
   CalculationResults,
   DisplayUnit,
+  Layer,
+  Mapping,
+  MappingKind,
   MaterialPreviewMode,
-  MappingMode,
   MediaAssetRecord,
-  MediaFitMode,
-  MediaSourceKind,
+  MediaRef,
   ProjectionCompositeMode,
   ProjectionSides,
   ProjectorConfig,
@@ -47,7 +46,24 @@ import {
   computeSampledCoverageAnalysis,
 } from '../coverage';
 import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA, MAX_PROJECTORS, PROJECTOR_PALETTE } from '../types';
-import { createContentLayer } from '../projection/contentCanvas';
+import {
+  activeTrack,
+  changeMappingKind,
+  createDirectMapping,
+  createLayer,
+  createMapping,
+  createPerspectiveMapping,
+  isScreen,
+  newId,
+  pruneMappingRefs,
+  updateActiveTrack,
+  addTrackToShow,
+  duplicateTrackInShow,
+  moveTrackInShow,
+  removeTrackFromShow,
+  renameTrackInShow,
+  setActiveTrackInShow,
+} from '../mapping/model';
 import { deriveAutoBlendEdgesFromOverlap } from '../blending/autoBlend';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import {
@@ -68,37 +84,35 @@ import {
   buildCalculationHtml,
   downloadTextFile,
 } from '../persistence/reportExport';
-import { resolveSharedCanvasSupport } from '../projection/sharedCanvasMapping';
-import type { BlendSettings, ProjectorWarp, SurfaceUvMapping } from '../types';
+import type { BlendSettings, ProjectorWarp } from '../types';
 import { DEFAULT_PROJECTOR_WARP } from '../types';
 import { computeBlendAnalysis, type BlendAnalysisResult } from '../blending/blendAnalysis';
 import { normalizeBlendSettings } from '../blending/advancedBlend';
-import { defaultProjectionForType, normalizeSurfaceUvMapping } from '../uvmapping/surfaceUv';
 import {
   getCalculationTargetInfo,
   getCalculationTargetObject,
   reconcileReliabilityIds,
 } from './reliabilitySettings';
 
+export type StudioTab = 'blend' | 'mappings' | 'warp' | 'outputs';
+
 interface AppState extends PersistedStateSlice {
   /** v2: sampled blend uniformity on the calculation target. */
   blendAnalysis: BlendAnalysisResult | null;
   uvEditorPanelVisible: boolean;
-  studioTab: 'blend' | 'uv' | 'warp' | 'outputs';
-  setStudioTab: (tab: 'blend' | 'uv' | 'warp' | 'outputs') => void;
-  openStudioTab: (tab: 'blend' | 'uv' | 'warp' | 'outputs') => void;
+  studioTab: StudioTab;
+  setStudioTab: (tab: StudioTab) => void;
+  openStudioTab: (tab: StudioTab) => void;
   setUvEditorPanelVisible: (visible: boolean) => void;
   toggleUvEditorPanel: () => void;
   setBlendSettings: (patch: Partial<BlendSettings>) => void;
-  updateSceneObjectUvMapping: (id: string, patch: Partial<SurfaceUvMapping>, recordHistory?: boolean) => void;
   updateProjectorWarp: (id: string, warp: Partial<ProjectorWarp>, recordHistory?: boolean) => void;
   resetProjectorWarp: (id: string) => void;
-  selectedContentLayerId: string | null;
-  contentCanvasPanelVisible: boolean;
+  selectedLayerId: string | null;
+  selectedMappingId: string | null;
+  layersPanelVisible: boolean;
   rasterPreviewPanelVisible: boolean;
   rasterPreviewRevision: number;
-  /** Session-only: mapping mode captured when the content canvas is turned on. */
-  mappingModeBeforeCanvas: MappingMode | null;
   projectMessage: string | null;
   measureMode: boolean;
   measurePoints: [Vec3 | null, Vec3 | null];
@@ -108,8 +122,6 @@ interface AppState extends PersistedStateSlice {
   webgl2Available: boolean | null;
   calculationResults: CalculationResults;
   shaderWarning: string | null;
-  /** Bumped when global video transport changes so UI can refresh. */
-  videoPlaybackRevision: number;
   showProjectionBeam: boolean;
   setSelectedObject: (id: string | null) => void;
   setSelectedProjector: (id: string) => void;
@@ -135,28 +147,63 @@ interface AppState extends PersistedStateSlice {
     },
   ) => void;
   removeSceneObject: (id: string) => void;
+  setSceneObjectUvAtlas: (id: string, on: boolean) => void;
   setDisplayUnit: (u: DisplayUnit) => void;
   setViewPreset: (preset: ViewPreset) => void;
   setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
-  setMappingMode: (mode: MappingMode) => void;
-  setContentCanvasEnabled: (enabled: boolean) => void;
-  setContentCanvasSize: (widthPx: number, heightPx: number) => void;
-  addContentCanvasLayer: (kind: ContentLayerKind) => void;
-  updateContentCanvasLayer: (id: string, patch: Partial<ContentCanvasLayer>) => void;
-  removeContentCanvasLayer: (id: string) => void;
-  moveContentCanvasLayer: (id: string, direction: 'up' | 'down') => void;
-  importContentCanvasMedia: (file: File, kind: 'image' | 'video') => Promise<void>;
-  setSelectedContentLayerId: (id: string | null) => void;
-  setContentCanvasPanelVisible: (visible: boolean) => void;
-  toggleContentCanvasPanel: () => void;
+  // v4 mappings
+  addMapping: (kind: MappingKind, screenIds?: string[]) => void;
+  updateMapping: (id: string, patch: Partial<Mapping>, recordHistory?: boolean) => void;
+  setMappingKind: (id: string, kind: MappingKind) => void;
+  duplicateMapping: (id: string) => void;
+  removeMapping: (id: string) => void;
+  setSelectedMappingId: (id: string | null) => void;
+  importMappingMask: (mappingId: string, file: File) => Promise<void>;
+  // v4 layers
+  addLayer: (media: MediaRef, mappingId?: string | null) => void;
+  updateLayer: (id: string, patch: Partial<Layer>, recordHistory?: boolean) => void;
+  removeLayer: (id: string) => void;
+  duplicateLayer: (id: string) => void;
+  moveLayer: (id: string, direction: 'up' | 'down') => void;
+  importLayerMedia: (file: File, kind: 'image' | 'video') => Promise<void>;
+  setSelectedLayerId: (id: string | null) => void;
+  setLayersPanelVisible: (visible: boolean) => void;
+  toggleLayersPanel: () => void;
+  setTrackDuration: (sec: number) => void;
+  // v4 keyframes
+  selectedKeyframe: { layerId: string; prop: KeyframeProp; keyId: string } | null;
+  setSelectedKeyframe: (sel: { layerId: string; prop: KeyframeProp; keyId: string } | null) => void;
+  setKeyframe: (layerId: string, prop: KeyframeProp, timeSec: number, value: number) => void;
+  updateKeyframe: (layerId: string, prop: KeyframeProp, keyId: string, patch: Partial<Keyframe>, recordHistory?: boolean) => void;
+  removeKeyframe: (layerId: string, prop: KeyframeProp, keyId: string) => void;
+  // v4 setlist
+  addTrack: () => void;
+  duplicateTrack: (id: string) => void;
+  renameTrack: (id: string, name: string) => void;
+  removeTrack: (id: string) => void;
+  moveTrack: (id: string, direction: -1 | 1) => void;
+  setActiveTrack: (id: string) => void;
+  timelineVisible: boolean;
+  toggleTimeline: () => void;
+  // v4 show control (sections, cues, play mode)
+  playMode: PlayMode;
+  setPlayMode: (mode: PlayMode) => void;
+  cuesPanelVisible: boolean;
+  setCuesPanelVisible: (visible: boolean) => void;
+  controlPanelVisible: boolean;
+  setControlPanelVisible: (visible: boolean) => void;
+  addCue: (timeSec: number, name?: string) => void;
+  updateCue: (id: string, patch: Partial<Cue>) => void;
+  removeCue: (id: string) => void;
+  addSection: (startSec: number, endSec: number) => void;
+  updateSection: (id: string, patch: Partial<TrackSection>) => void;
+  removeSection: (id: string) => void;
   setRasterPreviewPanelVisible: (visible: boolean) => void;
   toggleRasterPreviewPanel: () => void;
   bumpRasterPreviewRevision: () => void;
-  setSharedContentSourceProjectorId: (id: string | null) => void;
   setCalculationTargetId: (id: string | null) => void;
   setAnalysisQuality: (quality: AnalysisQuality) => void;
   setCalculationTargetSide: (side: CalculationTargetSide) => void;
-  getSharedCanvasSupport: () => { supported: boolean; reason: string | null };
   setShowProjectionBeam: (show: boolean) => void;
   toggleProjectionBeam: () => void;
   setProjectionCompositeMode: (mode: ProjectionCompositeMode) => void;
@@ -196,25 +243,10 @@ interface AppState extends PersistedStateSlice {
     id: string,
     patch: {
       pixelResolution?: Partial<{ width: number; height: number }>;
-      mediaSource?: 'image' | 'video';
-      mediaAssetId?: string | null;
-      mediaFit?: MediaFitMode;
       projectionSides?: ProjectionSides;
     },
   ) => void;
   importFile: (file: File, modelScale?: number) => Promise<void>;
-  setProjectorMedia: (
-    projectorId: string,
-    source: MediaSourceKind,
-    assetId: string | null,
-    fit?: MediaFitMode,
-  ) => void;
-  toggleVideoPlayback: (assetId: string) => void;
-  playAllSceneVideos: () => void;
-  pauseAllSceneVideos: () => void;
-  seekVideo: (assetId: string, seconds: number) => void;
-  setVideoMuted: (assetId: string, muted: boolean) => void;
-  setVideoLoop: (assetId: string, loop: boolean) => void;
   getSnapshot: () => ProjectSnapshot;
   newProject: () => void;
   saveProjectToFile: () => void;
@@ -247,8 +279,7 @@ function restoreSceneHistory(
     sceneObjects: snapshot.sceneObjects,
     projectors: snapshot.projectors,
     mediaAssets: snapshot.mediaAssets,
-    contentCanvas: snapshot.contentCanvas,
-    sharedContentSourceProjectorId: snapshot.sharedContentSourceProjectorId,
+    show: snapshot.show,
     calculationTargetId: snapshot.calculationTargetId,
     blendSettings: snapshot.blendSettings,
   });
@@ -257,12 +288,9 @@ function restoreSceneHistory(
 function applyReliabilityReconcile(set: (partial: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void, get: () => AppState): void {
   const state = get();
   const next = reconcileReliabilityIds(state);
-  if (
-    next.sharedContentSourceProjectorId !== state.sharedContentSourceProjectorId ||
-    next.calculationTargetId !== state.calculationTargetId
-  ) {
-    set(next);
-  }
+  const mappings = pruneMappingRefs(state.show.mappings, state.sceneObjects, state.projectors);
+  if (next.calculationTargetId !== state.calculationTargetId) set(next);
+  if (mappings !== state.show.mappings) set({ show: { ...state.show, mappings } });
 }
 
 function buildReportContext(state: AppState) {
@@ -282,9 +310,7 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     mediaAssets: state.mediaAssets,
     materialPreviewMode: state.materialPreviewMode,
     projectionCompositeMode: state.projectionCompositeMode,
-    mappingMode: state.mappingMode,
-    contentCanvas: state.contentCanvas,
-    sharedContentSourceProjectorId: state.sharedContentSourceProjectorId,
+    show: state.show,
     calculationTargetId: state.calculationTargetId,
     analysisQuality: state.analysisQuality,
     calculationTargetSide: state.calculationTargetSide,
@@ -308,6 +334,45 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
 
 const initial = buildInitialPersistedState();
 
+function defaultRect(screenId: string) {
+  return {
+    screenId,
+    projection: 'meshUv' as const,
+    region: { x: 0, y: 0, width: 1, height: 1 },
+    rotationDeg: 0,
+    flipU: false,
+    flipV: false,
+    repeatU: 1,
+    repeatV: 1,
+    wrap: 'clamp' as const,
+  };
+}
+
+/** Switching tracks starts the new one from the top, stopped. */
+function resetTransport(): void {
+  transport.pause();
+  transport.seek(0);
+}
+
+/** Mapping a new layer lands on: the selected mapping, else the first one. */
+function defaultMappingId(state: AppState): string | null {
+  const ids = state.show.mappings.map((m) => m.id);
+  if (state.selectedMappingId && ids.includes(state.selectedMappingId)) return state.selectedMappingId;
+  return ids[0] ?? null;
+}
+
+/** New screens get a Direct mapping named after them. */
+function addDirectMappingFor(
+  objectId: string,
+  get: () => AppState,
+  set: (partial: Partial<AppState> | ((s: AppState) => Partial<AppState>)) => void,
+): void {
+  const obj = get().sceneObjects.find((o) => o.id === objectId);
+  if (!obj || !isScreen(obj)) return;
+  const mapping = createDirectMapping(obj);
+  set((s) => ({ show: { ...s.show, mappings: [...s.show.mappings, mapping] }, selectedMappingId: mapping.id }));
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   projectName: initial.projectName,
   projectMessage: initial.projectName !== 'Default Scene' ? 'Restored last autosaved project' : null,
@@ -316,14 +381,12 @@ export const useAppStore = create<AppState>((set, get) => ({
   mediaAssets: initial.mediaAssets,
   materialPreviewMode: initial.materialPreviewMode,
   projectionCompositeMode: initial.projectionCompositeMode,
-  mappingMode: initial.mappingMode,
-  contentCanvas: initial.contentCanvas,
-  selectedContentLayerId: initial.contentCanvas.layers[0]?.id ?? null,
-  contentCanvasPanelVisible: false,
+  show: initial.show,
+  selectedLayerId: activeTrack(initial.show).layers[0]?.id ?? null,
+  selectedMappingId: initial.show.mappings[0]?.id ?? null,
+  layersPanelVisible: false,
   rasterPreviewPanelVisible: false,
   rasterPreviewRevision: 0,
-  mappingModeBeforeCanvas: null,
-  sharedContentSourceProjectorId: initial.sharedContentSourceProjectorId,
   calculationTargetId: initial.calculationTargetId,
   analysisQuality: initial.analysisQuality,
   calculationTargetSide: initial.calculationTargetSide,
@@ -339,25 +402,6 @@ export const useAppStore = create<AppState>((set, get) => ({
     pushSceneHistory(get, set);
     set((s) => ({ blendSettings: normalizeBlendSettings({ ...s.blendSettings, ...patch }) }));
     get().recomputeCalculations();
-  },
-  updateSceneObjectUvMapping: (id, patch, recordHistory = true) => {
-    if (recordHistory) pushSceneHistory(get, set);
-    set((s) => ({
-      sceneObjects: s.sceneObjects.map((obj) => {
-        if (obj.id !== id) return obj;
-        const current = obj.uvMapping
-          ? normalizeSurfaceUvMapping(obj.uvMapping)
-          : { ...normalizeSurfaceUvMapping(undefined), projection: defaultProjectionForType(obj.type) };
-        return {
-          ...obj,
-          uvMapping: normalizeSurfaceUvMapping({
-            ...current,
-            ...patch,
-            region: patch.region ? { ...current.region, ...patch.region } : current.region,
-          }),
-        };
-      }),
-    }));
   },
   updateProjectorWarp: (id, warp, recordHistory = true) => {
     if (recordHistory) pushSceneHistory(get, set);
@@ -408,7 +452,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   leftPanelFloat: initial.leftPanelFloat,
   rightPanelFloat: initial.rightPanelFloat,
   transformMode: initial.transformMode,
-  videoPlaybackRevision: 0,
   showProjectionBeam: false,
   setSelectedObject: (id) => set({ selectedObjectId: id }),
   setSelectedProjector: (id) => set({ selectedProjectorId: id, selectedObjectId: id }),
@@ -521,121 +564,288 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCalculations();
   },
   pushSceneHistoryCheckpoint: () => pushSceneHistory(get, set),
+  setSceneObjectUvAtlas: (id, on) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ sceneObjects: s.sceneObjects.map((o) => (o.id === id ? { ...o, uvAtlas: on } : o)) }));
+  },
   setDisplayUnit: (u) => set({ displayUnit: u }),
   setViewPreset: (preset) => set({ viewPreset: preset }),
   setMaterialPreviewMode: (mode) => set({ materialPreviewMode: mode }),
-  setMappingMode: (mode) => {
-    if (mode === 'sharedCanvas') {
-      const support = resolveSharedCanvasSupport(get().sceneObjects);
-      if (!support.supported) return;
-    }
-    set({ mappingMode: mode });
-  },
-  setContentCanvasEnabled: (enabled) => {
+  addMapping: (kind, screenIds) => {
+    const state = get();
+    const ids = screenIds ?? state.sceneObjects.filter(isScreen).map((o) => o.id);
     pushSceneHistory(get, set);
-    const support = resolveSharedCanvasSupport(get().sceneObjects);
-    set((s) => {
-      if (enabled) {
-        if (s.contentCanvas.enabled) {
-          return {
-            contentCanvas: { ...s.contentCanvas, enabled: true },
-            mappingMode: support.supported ? 'sharedCanvas' : s.mappingMode,
-          };
-        }
-        return {
-          contentCanvas: { ...s.contentCanvas, enabled: true },
-          mappingModeBeforeCanvas: s.mappingMode,
-          mappingMode: support.supported ? 'sharedCanvas' : s.mappingMode,
-        };
-      }
-      return {
-        contentCanvas: { ...s.contentCanvas, enabled: false },
-        mappingMode: s.mappingModeBeforeCanvas ?? s.mappingMode,
-        mappingModeBeforeCanvas: null,
-      };
-    });
-  },
-  setContentCanvasSize: (widthPx, heightPx) => {
-    const w = Math.max(1, Math.round(widthPx));
-    const h = Math.max(1, Math.round(heightPx));
-    pushSceneHistory(get, set);
-    set((s) => ({ contentCanvas: { ...s.contentCanvas, widthPx: w, heightPx: h } }));
-  },
-  addContentCanvasLayer: (kind) => {
-    pushSceneHistory(get, set);
-    const layer = createContentLayer(kind, get().contentCanvas);
+    const mapping = createMapping(kind, ids, state.projectors);
+    if (kind === 'feed') mapping.feed = { rects: ids.map((id) => ({ ...defaultRect(id) })) };
     set((s) => ({
-      contentCanvas: { ...s.contentCanvas, layers: [...s.contentCanvas.layers, layer] },
-      selectedContentLayerId: layer.id,
+      show: { ...s.show, mappings: [...s.show.mappings, mapping] },
+      selectedMappingId: mapping.id,
+      projectMessage: `Added ${mapping.name}`,
     }));
   },
-  updateContentCanvasLayer: (id, patch) => {
+  updateMapping: (id, patch, recordHistory = true) => {
+    if (recordHistory) pushSceneHistory(get, set);
+    set((s) => ({
+      show: { ...s.show, mappings: s.show.mappings.map((m) => (m.id === id ? { ...m, ...patch, id } : m)) },
+    }));
+  },
+  setMappingKind: (id, kind) => {
     pushSceneHistory(get, set);
     set((s) => ({
-      contentCanvas: {
-        ...s.contentCanvas,
-        layers: s.contentCanvas.layers.map((layer) =>
-          layer.id === id ? { ...layer, ...patch } : layer,
-        ),
+      show: {
+        ...s.show,
+        mappings: s.show.mappings.map((m) => (m.id === id ? changeMappingKind(m, kind, s.projectors) : m)),
       },
     }));
   },
-  removeContentCanvasLayer: (id) => {
+  duplicateMapping: (id) => {
+    const source = get().show.mappings.find((m) => m.id === id);
+    if (!source) return;
+    pushSceneHistory(get, set);
+    const copy: Mapping = { ...structuredClone(source), id: newId('map'), name: `${source.name} copy` };
+    set((s) => {
+      const index = s.show.mappings.findIndex((m) => m.id === id);
+      const mappings = [...s.show.mappings];
+      mappings.splice(index + 1, 0, copy);
+      return { show: { ...s.show, mappings }, selectedMappingId: copy.id };
+    });
+  },
+  removeMapping: (id) => {
+    const target = get().show.mappings.find((m) => m.id === id);
+    if (!target) return;
     pushSceneHistory(get, set);
     set((s) => {
-      const layers = s.contentCanvas.layers.filter((layer) => layer.id !== id);
+      const mappings = s.show.mappings.filter((m) => m.id !== id);
+      const show = updateActiveTrack({ ...s.show, mappings }, (track) => ({
+        ...track,
+        layers: track.layers.map((l) => (l.mappingId === id ? { ...l, mappingId: null } : l)),
+      }));
       return {
-        contentCanvas: { ...s.contentCanvas, layers },
-        selectedContentLayerId:
-          s.selectedContentLayerId === id ? (layers[layers.length - 1]?.id ?? null) : s.selectedContentLayerId,
+        show,
+        selectedMappingId: s.selectedMappingId === id ? (mappings[0]?.id ?? null) : s.selectedMappingId,
+        projectMessage: `Deleted ${target.name}`,
       };
     });
   },
-  moveContentCanvasLayer: (id, direction) => {
+  setSelectedMappingId: (id) => set({ selectedMappingId: id }),
+  importMappingMask: async (mappingId, file) => {
+    try {
+      const record = await importMediaBlob(file, file.name, 'image', file.type || 'image/png');
+      set((s) => ({ mediaAssets: [...s.mediaAssets, record] }));
+      get().updateMapping(mappingId, { maskAssetId: record.id });
+      set({ projectMessage: `Mask "${file.name}" set` });
+    } catch (err) {
+      set({ projectMessage: err instanceof Error ? err.message : 'Mask import failed' });
+    }
+  },
+  addLayer: (media, mappingId) => {
+    const state = get();
+    const mapId = mappingId === undefined ? defaultMappingId(state) : mappingId;
+    pushSceneHistory(get, set);
+    const layer = createLayer(media, mapId, { durationSec: activeTrack(state.show).durationSec });
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => ({ ...track, layers: [...track.layers, layer] })),
+      selectedLayerId: layer.id,
+      selectedObjectId: null,
+    }));
+  },
+  updateLayer: (id, patch, recordHistory = true) => {
+    if (recordHistory) pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => ({
+        ...track,
+        layers: track.layers.map((l) => (l.id === id ? { ...l, ...patch, id } : l)),
+      })),
+    }));
+  },
+  removeLayer: (id) => {
     pushSceneHistory(get, set);
     set((s) => {
-      const layers = [...s.contentCanvas.layers];
-      const index = layers.findIndex((layer) => layer.id === id);
-      if (index < 0) return s;
-      const target = direction === 'up' ? index + 1 : index - 1;
-      if (target < 0 || target >= layers.length) return s;
-      const [item] = layers.splice(index, 1);
-      layers.splice(target, 0, item);
-      return { contentCanvas: { ...s.contentCanvas, layers } };
+      const layers = activeTrack(s.show).layers.filter((l) => l.id !== id);
+      return {
+        show: updateActiveTrack(s.show, (track) => ({ ...track, layers })),
+        selectedLayerId: s.selectedLayerId === id ? (layers[layers.length - 1]?.id ?? null) : s.selectedLayerId,
+      };
     });
   },
-  importContentCanvasMedia: async (file, kind) => {
+  duplicateLayer: (id) => {
+    const source = activeTrack(get().show).layers.find((l) => l.id === id);
+    if (!source) return;
+    pushSceneHistory(get, set);
+    const copy: Layer = { ...structuredClone(source), id: newId('layer'), name: `${source.name} copy` };
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => {
+        const layers = [...track.layers];
+        layers.splice(layers.findIndex((l) => l.id === id) + 1, 0, copy);
+        return { ...track, layers };
+      }),
+      selectedLayerId: copy.id,
+    }));
+  },
+  moveLayer: (id, direction) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => {
+        const layers = [...track.layers];
+        const index = layers.findIndex((l) => l.id === id);
+        const target = direction === 'up' ? index + 1 : index - 1;
+        if (index < 0 || target < 0 || target >= layers.length) return track;
+        const [item] = layers.splice(index, 1);
+        layers.splice(target, 0, item);
+        return { ...track, layers };
+      }),
+    }));
+  },
+  importLayerMedia: async (file, kind) => {
     try {
       const record = await importMediaBlob(file, file.name, kind, file.type || 'application/octet-stream');
-      pushSceneHistory(get, set);
-      const layer = createContentLayer(kind, get().contentCanvas, {
-        name: file.name,
-        mediaAssetId: record.id,
-        fit: 'contain',
-      });
-      set((s) => ({
-        mediaAssets: [...s.mediaAssets, record],
-        contentCanvas: { ...s.contentCanvas, layers: [...s.contentCanvas.layers, layer] },
-        selectedContentLayerId: layer.id,
-        projectMessage: `Added ${kind} "${file.name}" to canvas`,
-      }));
+      set((s) => ({ mediaAssets: [...s.mediaAssets, record] }));
+      get().addLayer({ kind, assetId: record.id });
+      const layerId = get().selectedLayerId;
+      if (layerId) get().updateLayer(layerId, { name: file.name }, false);
+      set({ projectMessage: `Added ${kind} layer "${file.name}"` });
     } catch (err) {
       set({ projectMessage: err instanceof Error ? err.message : 'Import failed' });
     }
   },
-  setSelectedContentLayerId: (id) => set({ selectedContentLayerId: id }),
-  setContentCanvasPanelVisible: (visible) => set({ contentCanvasPanelVisible: visible }),
-  toggleContentCanvasPanel: () =>
-    set((s) => ({ contentCanvasPanelVisible: !s.contentCanvasPanelVisible })),
+  setSelectedLayerId: (id) => set(id ? { selectedLayerId: id, selectedObjectId: null } : { selectedLayerId: null }),
+  setLayersPanelVisible: (visible) => set({ layersPanelVisible: visible }),
+  setTrackDuration: (sec) => {
+    const durationSec = Math.min(24 * 3600, Math.max(1, sec));
+    pushSceneHistory(get, set);
+    set((s) => ({ show: updateActiveTrack(s.show, (track) => ({ ...track, durationSec })) }));
+  },
+  selectedKeyframe: null,
+  setSelectedKeyframe: (sel) => set({ selectedKeyframe: sel }),
+  setKeyframe: (layerId, prop, timeSec, value) => {
+    const layer = activeTrack(get().show).layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    const frame = 1 / get().show.fps;
+    const existing = keyAt(layer.keyframes?.[prop], timeSec, frame);
+    const key: Keyframe = { id: existing?.id ?? newId('key'), timeSec: Math.max(0, timeSec), value, ease: existing?.ease ?? 'linear' };
+    get().updateLayer(layerId, { keyframes: withPropKeys(layer.keyframes, prop, upsertKeyframe(layer.keyframes?.[prop], key, frame)) });
+    set({ selectedKeyframe: { layerId, prop, keyId: key.id } });
+  },
+  updateKeyframe: (layerId, prop, keyId, patch, recordHistory = true) => {
+    const layer = activeTrack(get().show).layers.find((l) => l.id === layerId);
+    const keys = layer?.keyframes?.[prop];
+    if (!layer || !keys) return;
+    const next = keys
+      .map((k) => (k.id === keyId ? { ...k, ...patch, id: keyId, timeSec: Math.max(0, patch.timeSec ?? k.timeSec) } : k))
+      .sort((a, b) => a.timeSec - b.timeSec);
+    get().updateLayer(layerId, { keyframes: withPropKeys(layer.keyframes, prop, next) }, recordHistory);
+  },
+  removeKeyframe: (layerId, prop, keyId) => {
+    const layer = activeTrack(get().show).layers.find((l) => l.id === layerId);
+    const keys = layer?.keyframes?.[prop];
+    if (!layer || !keys) return;
+    get().updateLayer(layerId, { keyframes: withPropKeys(layer.keyframes, prop, keys.filter((k) => k.id !== keyId)) });
+    set((s) => ({ selectedKeyframe: s.selectedKeyframe?.keyId === keyId ? null : s.selectedKeyframe }));
+  },
+  addTrack: () => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: addTrackToShow(s.show), selectedLayerId: null }));
+    resetTransport();
+  },
+  duplicateTrack: (id) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: duplicateTrackInShow(s.show, id) }));
+    resetTransport();
+  },
+  renameTrack: (id, name) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: renameTrackInShow(s.show, id, name) }));
+  },
+  removeTrack: (id) => {
+    const show = get().show;
+    if (show.tracks.length <= 1) {
+      set({ projectMessage: 'A show needs at least one track' });
+      return;
+    }
+    pushSceneHistory(get, set);
+    const wasActive = show.activeTrackId === id;
+    set((s) => ({ show: removeTrackFromShow(s.show, id), selectedLayerId: wasActive ? null : s.selectedLayerId }));
+    if (wasActive) resetTransport();
+  },
+  moveTrack: (id, direction) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: moveTrackInShow(s.show, id, direction) }));
+  },
+  setActiveTrack: (id) => {
+    if (get().show.activeTrackId === id) return;
+    pushSceneHistory(get, set);
+    set((s) => ({ show: setActiveTrackInShow(s.show, id), selectedLayerId: null }));
+    resetTransport();
+  },
+  timelineVisible: true,
+  toggleTimeline: () => set((s) => ({ timelineVisible: !s.timelineVisible })),
+  playMode: 'play',
+  setPlayMode: (mode) => set({ playMode: mode }),
+  cuesPanelVisible: false,
+  setCuesPanelVisible: (visible) => set(visible ? { cuesPanelVisible: true, controlPanelVisible: false } : { cuesPanelVisible: false }),
+  controlPanelVisible: false,
+  setControlPanelVisible: (visible) => set(visible ? { controlPanelVisible: true, cuesPanelVisible: false } : { controlPanelVisible: false }),
+  addCue: (timeSec, name) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => {
+        const cues = [...track.cues, { id: newId('cue'), name: name ?? `Cue ${track.cues.length + 1}`, timeSec: Math.max(0, timeSec) }];
+        cues.sort((a, b) => a.timeSec - b.timeSec);
+        return { ...track, cues };
+      }),
+    }));
+  },
+  updateCue: (id, patch) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => ({
+        ...track,
+        cues: track.cues.map((c) => (c.id === id ? { ...c, ...patch, id } : c)).sort((a, b) => a.timeSec - b.timeSec),
+      })),
+    }));
+  },
+  removeCue: (id) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: updateActiveTrack(s.show, (track) => ({ ...track, cues: track.cues.filter((c) => c.id !== id) })) }));
+  },
+  addSection: (startSec, endSec) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => {
+        const start = Math.max(0, Math.min(startSec, endSec));
+        const end = Math.max(start + 0.1, Math.max(startSec, endSec));
+        const sections = [...track.sections, { id: newId('section'), name: `Section ${track.sections.length + 1}`, startSec: start, endSec: end, endAction: 'continue' as const }];
+        sections.sort((a, b) => a.startSec - b.startSec);
+        return { ...track, sections };
+      }),
+    }));
+  },
+  updateSection: (id, patch) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => ({
+        ...track,
+        sections: track.sections
+          .map((x) => {
+            if (x.id !== id) return x;
+            const next = { ...x, ...patch, id };
+            if (next.endSec <= next.startSec) next.endSec = next.startSec + 0.1;
+            return next;
+          })
+          .sort((a, b) => a.startSec - b.startSec),
+      })),
+    }));
+  },
+  removeSection: (id) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: updateActiveTrack(s.show, (track) => ({ ...track, sections: track.sections.filter((x) => x.id !== id) })) }));
+  },
+  toggleLayersPanel: () => set((s) => ({ layersPanelVisible: !s.layersPanelVisible })),
   setRasterPreviewPanelVisible: (visible) => set({ rasterPreviewPanelVisible: visible }),
   toggleRasterPreviewPanel: () =>
     set((s) => ({ rasterPreviewPanelVisible: !s.rasterPreviewPanelVisible })),
   bumpRasterPreviewRevision: () =>
     set((s) => ({ rasterPreviewRevision: s.rasterPreviewRevision + 1 })),
-  setSharedContentSourceProjectorId: (id) => {
-    pushSceneHistory(get, set);
-    set({ sharedContentSourceProjectorId: id });
-  },
   setCalculationTargetId: (id) => {
     pushSceneHistory(get, set);
     set({ calculationTargetId: id });
@@ -648,10 +858,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   setCalculationTargetSide: (side) => {
     set({ calculationTargetSide: side });
     get().recomputeCalculations();
-  },
-  getSharedCanvasSupport: () => {
-    const support = resolveSharedCanvasSupport(get().sceneObjects);
-    return { supported: support.supported, reason: support.reason };
   },
   setShowProjectionBeam: (show) => set({ showProjectionBeam: show }),
   toggleProjectionBeam: () => set((s) => ({ showProjectionBeam: !s.showProjectionBeam })),
@@ -684,11 +890,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         nearLimit: 0.1,
         farLimit: 100,
       },
-      testPattern: 'projectorId',
       brightness: 1,
-      mediaSource: 'pattern',
-      mediaAssetId: null,
-      mediaFit: 'contain',
       blendEdges: { ...DEFAULT_BLEND_EDGES },
       blendGamma: DEFAULT_BLEND_GAMMA,
       outerEdgeFade: false,
@@ -697,8 +899,13 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     const switchToMultiView =
       state.projectors.length === 1 && state.projectionCompositeMode === 'solo';
+    const lockedMapping = createPerspectiveMapping(
+      newProjector,
+      state.sceneObjects.filter((o) => o.receivesProjection && o.type !== 'ledWall').map((o) => o.id),
+    );
     set((s) => ({
       projectors: [...s.projectors, newProjector],
+      show: { ...s.show, mappings: [...s.show.mappings, lockedMapping] },
       selectedObjectId: id,
       selectedProjectorId: id,
       projectionCompositeMode: switchToMultiView ? 'unblended' : s.projectionCompositeMode,
@@ -1017,6 +1224,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         },
       ],
     }));
+    addDirectMappingFor(id, get, set);
     get().recomputeCalculations();
   },
   addLedWall: () => {
@@ -1040,15 +1248,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           dimensions: { width: 4, height: 2.25 },
           ledWall: {
             pixelResolution: { width: 1920, height: 1080 },
-            mediaSource: 'image' as const,
-            mediaAssetId: null,
-            mediaFit: 'contain' as const,
           },
         },
       ],
       selectedObjectId: id,
-      projectMessage: 'Added LED Wall — assign an image or video in Inspector',
+      projectMessage: 'Added LED Wall with its own Direct mapping — put layers on it',
     }));
+    addDirectMappingFor(id, get, set);
     get().recomputeCalculations();
   },
   updateSceneObjectLedWall: (id, patch) => {
@@ -1056,15 +1262,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({
       sceneObjects: s.sceneObjects.map((obj) => {
         if (obj.id !== id || obj.type !== 'ledWall') return obj;
-        const base = obj.ledWall ?? {
-          pixelResolution: { width: 1920, height: 1080 },
-          mediaSource: 'image' as const,
-          mediaAssetId: null,
-          mediaFit: 'contain' as const,
-        };
+        const base = obj.ledWall ?? { pixelResolution: { width: 1920, height: 1080 } };
         const nextLedWall = {
-          ...base,
-          ...patch,
           pixelResolution: patch.pixelResolution
             ? { ...base.pixelResolution, ...patch.pixelResolution }
             : base.pixelResolution,
@@ -1087,7 +1286,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     try {
       const record = await importMediaBlob(file, file.name, kind, file.type || 'application/octet-stream');
-      pushSceneHistory(get, set);
+      if (kind === 'model') pushSceneHistory(get, set);
       set((s) => ({ mediaAssets: [...s.mediaAssets, record] }));
 
       if (kind === 'model') {
@@ -1113,81 +1312,26 @@ export const useAppStore = create<AppState>((set, get) => ({
           ],
           projectMessage: `Imported model "${file.name}" at scale ${modelScale}`,
         }));
+        addDirectMappingFor(id, get, set);
       } else {
-        const proj =
-          get().projectors.find((p) => p.id === get().selectedProjectorId) ?? get().projectors[0];
-        if (proj) {
-          get().setProjectorMedia(proj.id, kind, record.id);
-        }
-        set({ projectMessage: `Imported ${kind} "${file.name}"` });
+        get().addLayer({ kind, assetId: record.id });
+        const layerId = get().selectedLayerId;
+        if (layerId) get().updateLayer(layerId, { name: file.name }, false);
+        set({ projectMessage: `Imported ${kind} "${file.name}" as a layer` });
       }
     } catch (err) {
       set({ projectMessage: err instanceof Error ? err.message : 'Import failed' });
     }
-  },
-  setProjectorMedia: (projectorId, source, assetId, fit) => {
-    pushSceneHistory(get, set);
-    set((s) => ({
-      projectors: s.projectors.map((p) =>
-        p.id === projectorId
-          ? {
-              ...p,
-              mediaSource: source,
-              mediaAssetId: assetId,
-              mediaFit: fit ?? p.mediaFit,
-            }
-          : p,
-      ),
-    }));
-  },
-  toggleVideoPlayback: (assetId) => {
-    if (!toggleVideo(assetId)) return;
-    set((s) => ({ videoPlaybackRevision: s.videoPlaybackRevision + 1 }));
-  },
-  playAllSceneVideos: () => {
-    const assetIds = listSceneVideoSources(get().projectors, get().sceneObjects, get().contentCanvas).map(
-      (source) => source.assetId,
-    );
-    const started = playVideos(assetIds);
-    if (started > 0) {
-      set((s) => ({
-        videoPlaybackRevision: s.videoPlaybackRevision + 1,
-        projectMessage: `Playing ${started} video${started === 1 ? '' : 's'}`,
-      }));
-    }
-  },
-  pauseAllSceneVideos: () => {
-    const assetIds = listSceneVideoSources(get().projectors, get().sceneObjects, get().contentCanvas).map(
-      (source) => source.assetId,
-    );
-    pauseVideos(assetIds);
-    set((s) => ({ videoPlaybackRevision: s.videoPlaybackRevision + 1 }));
-  },
-  seekVideo: (assetId, seconds) => {
-    const video = mediaTextureCache.get(assetId)?.video;
-    if (!video || !Number.isFinite(seconds)) return;
-    video.currentTime = Math.max(0, Math.min(video.duration || 0, seconds));
-  },
-  setVideoMuted: (assetId, muted) => {
-    const video = mediaTextureCache.get(assetId)?.video;
-    if (!video) return;
-    video.muted = muted;
-  },
-  setVideoLoop: (assetId, loop) => {
-    const video = mediaTextureCache.get(assetId)?.video;
-    if (!video) return;
-    video.loop = loop;
   },
   getSnapshot: () => sliceToSnapshot(pickPersistedFields(get())),
   newProject: () => {
     const defaults = defaultPersistedSlice();
     set({
       ...defaults,
-      selectedContentLayerId: defaults.contentCanvas.layers[0]?.id ?? null,
-      contentCanvasPanelVisible: false,
+      selectedLayerId: activeTrack(defaults.show).layers[0]?.id ?? null,
+      selectedMappingId: defaults.show.mappings[0]?.id ?? null,
       rasterPreviewPanelVisible: false,
       rasterPreviewRevision: 0,
-      mappingModeBeforeCanvas: null,
       projectMessage: 'New project created',
       calculationResults: {
         nominal: null,
@@ -1197,15 +1341,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         coverageAnalysis: null,
         calculationTarget: null,
       },
-      videoPlaybackRevision: 0,
       measureMode: false,
       measurePoints: [null, null],
       historyPast: [],
       historyFuture: [],
     });
-    pauseVideos(
-      listSceneVideoSources(get().projectors, get().sceneObjects, get().contentCanvas).map((source) => source.assetId),
-    );
+    transport.pause();
+    transport.seek(0);
     clearAutosave();
     get().recomputeCalculations();
   },
@@ -1222,10 +1364,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       const slice = snapshotToSlice(snapshot);
       set({
         ...slice,
-        selectedContentLayerId: slice.contentCanvas.layers[0]?.id ?? null,
-        contentCanvasPanelVisible: get().contentCanvasPanelVisible,
+        selectedLayerId: activeTrack(slice.show).layers[0]?.id ?? null,
+        selectedMappingId: slice.show.mappings[0]?.id ?? null,
         rasterPreviewPanelVisible: get().rasterPreviewPanelVisible,
-        mappingModeBeforeCanvas: null,
         projectMessage:
           missing.length > 0
             ? `Loaded "${snapshot.name}" — missing assets: ${missing.join(', ')}`
@@ -1238,15 +1379,13 @@ export const useAppStore = create<AppState>((set, get) => ({
         coverageAnalysis: null,
         calculationTarget: null,
       },
-        videoPlaybackRevision: 0,
         measureMode: false,
         measurePoints: [null, null],
         historyPast: [],
         historyFuture: [],
       });
-      pauseVideos(
-        listSceneVideoSources(get().projectors, get().sceneObjects, get().contentCanvas).map((source) => source.assetId),
-      );
+      transport.pause();
+      transport.seek(0);
       writeAutosave(snapshot);
       get().recomputeCalculations();
     } catch (err) {

@@ -1,24 +1,20 @@
-// NAPT Advanced (v2) — unified projector compositing shader.
-// Handles 1–4 projectors, corner-pin warp, per-surface UV mapping, manual and
+// Unified projector compositing shader (v2, v4 content feeds).
+// Handles 1–4 projectors, corner-pin warp, per-projector content feeds, manual and
 // geometry-aware auto edge blending, display-gamma handling, black-level
 // simulation/compensation, analysis previews and per-projector feed rendering.
-// CPU mirrors: src/blending/advancedBlend.ts, src/uvmapping/surfaceUv.ts,
-// src/warp/homography.ts — keep them in sync.
+// CPU mirrors: src/blending/advancedBlend.ts, src/warp/homography.ts — keep them in sync.
+// Content is baked per screen first (src/mapping/shaders/bake.frag.glsl).
 
 #define MAX_P 4
 
 uniform mat4 projectorMatrices[MAX_P];
 uniform sampler2D depthMaps[MAX_P];
-uniform sampler2D mediaMaps[MAX_P];
+// v4: each projector's content feed — the textured screens rendered from that
+// projector's (unwarped) camera. Light at raster p carries feed(warpInv(p)).
+uniform sampler2D feedMaps[MAX_P];
 uniform float depthBias;
 uniform int useOcclusion;
 uniform float brightness[MAX_P];
-uniform float patternTypes[MAX_P];
-uniform float useMediaTexture[MAX_P];
-uniform float fitModes[MAX_P];
-uniform float mediaAspects[MAX_P];
-uniform float rasterAspects[MAX_P];
-uniform vec3 projectorColors[MAX_P];
 uniform vec4 blendEdges[MAX_P];
 uniform float outerEdgeFade[MAX_P];
 uniform float blendGamma[MAX_P];
@@ -27,21 +23,9 @@ uniform int projectorCount;
 uniform int compositeMode;
 uniform int forceUvPreview;
 uniform vec3 surfaceBaseColor;
-uniform int mappingMode;
-uniform int screenMapKind;
-uniform mat4 screenMapMatrixInv;
-uniform vec4 screenMapParams;
-uniform int sharedUseMediaTexture;
-uniform sampler2D sharedMediaMap;
-uniform float sharedPatternType;
-uniform float sharedFitMode;
-uniform float sharedMediaAspect;
-uniform float sharedRasterAspect;
-uniform vec3 sharedProjectorColor;
-uniform float sharedBrightness;
-
-uniform int useContentCanvas;
-uniform sampler2D canvasMap;
+// v4: this mesh's screen texture (set per mesh) for the content-feed pass.
+uniform sampler2D screenMap;
+uniform int hasScreenMap;
 
 uniform int projectionSides;
 uniform int falloffPreview;
@@ -65,20 +49,15 @@ uniform float maxOverlap;
 // ---- v2: previews / feed ---------------------------------------------------
 uniform int previewKind;        // 0 normal, 1 blend sum, 2 surface UV
 uniform int feedIndex;          // -1 scene view; >= 0 render that projector's feed
-uniform int feedKind;           // 0 colour feed, 1 blend mask only
-
-// ---- v2: per-surface UV mapping (set per mesh) -----------------------------
-uniform int surfMap;
-uniform int surfProj;           // 0 mesh UV, 1 planar, 2 cylindrical, 3 spherical
-uniform int surfAxes;           // planar: 0 XY, 1 XZ, 2 ZY
-uniform mat4 surfRootInv;
-uniform vec3 surfBoundsMin;
-uniform vec3 surfBoundsSize;
-uniform vec3 surfTheta;         // ref, min, max
-uniform vec2 surfPhi;           // min, max
-uniform vec4 surfRegion;        // x, y, w, h (top-left origin)
-uniform vec4 surfXform;         // rotation rad, flipU, flipV, wrap
-uniform vec2 surfRepeat;
+uniform int feedKind;           // 0 colour feed, 1 blend mask only, 2 content feed (textured screens)
+// v3: 0 surfaces only (black where no surface), 1 full-frame raster background,
+// 2 surfaces drawn over that background (misses are left to the background).
+uniform int feedLayer;
+uniform vec2 feedSize;          // feed render target size in pixels
+// v3 "projector view" preview: dim light that misses every surface and outline the
+// surfaces, so the screen shows up sized / keystoned by throw distance and placement.
+uniform int feedView;
+uniform float feedSpill;        // brightness of spill (1 = real signal)
 
 in vec3 vWorldPos;
 in vec2 vSurfaceUv;
@@ -132,132 +111,12 @@ float edgeScore(vec2 q) {
   return curveShape(dx / w) * curveShape(dy / w);
 }
 
-vec2 applyFit(vec2 uv, float fitMode, float mediaAspect, float rasterAspect) {
-  if (fitMode >= 1.5 || mediaAspect <= 0.0) return uv;
-  float scaleX = 1.0;
-  float scaleY = 1.0;
-  if (fitMode < 0.5) {
-    if (mediaAspect > rasterAspect) scaleY = rasterAspect / mediaAspect;
-    else scaleX = mediaAspect / rasterAspect;
-  } else {
-    if (mediaAspect > rasterAspect) scaleX = mediaAspect / rasterAspect;
-    else scaleY = rasterAspect / mediaAspect;
-  }
-  return vec2((uv.x - 0.5) / scaleX + 0.5, (uv.y - 0.5) / scaleY + 0.5);
-}
-
-vec2 sharedContentUv() {
-  if (screenMapKind == 3) return vSurfaceUv;
-  vec3 local = (screenMapMatrixInv * vec4(vWorldPos, 1.0)).xyz;
-  if (screenMapKind == 1) {
-    return vec2(local.x / screenMapParams.x + 0.5, local.y / screenMapParams.y + 0.5);
-  }
-  if (screenMapKind == 2) {
-    float theta = atan(local.z, local.x);
-    float arcRad = screenMapParams.z * 0.01745329252;
-    float u = (theta + arcRad * 0.5) / arcRad;
-    float v = (local.y + screenMapParams.y * 0.5) / screenMapParams.y;
-    return vec2(u, v);
-  }
-  return vec2(0.0);
-}
-
-float wrapPi(float a) {
-  return a - 2.0 * PI * floor((a + PI) / (2.0 * PI));
-}
-
-// Raw 0–1 surface UV of this fragment for the mesh's projection type.
-vec2 rawSurfaceUv() {
-  if (surfProj == 0) return vSurfaceUv;
-  vec3 l = (surfRootInv * vec4(vWorldPos, 1.0)).xyz;
-  vec3 mn = surfBoundsMin;
-  vec3 sz = max(surfBoundsSize, vec3(1e-6));
-  if (surfProj == 1) {
-    if (surfAxes == 1) return vec2((l.x - mn.x) / sz.x, (mn.z + sz.z - l.z) / sz.z);
-    if (surfAxes == 2) return vec2((mn.z + sz.z - l.z) / sz.z, (l.y - mn.y) / sz.y);
-    return vec2((l.x - mn.x) / sz.x, (l.y - mn.y) / sz.y);
-  }
-  float t = wrapPi(atan(l.x, l.z) - surfTheta.x);
-  float u = (surfTheta.z - t) / max(1e-6, surfTheta.z - surfTheta.y);
-  if (surfProj == 2) return vec2(u, (l.y - mn.y) / sz.y);
-  float f = atan(l.y, max(length(l.xz), 1e-6));
-  return vec2(u, (f - surfPhi.x) / max(1e-6, surfPhi.y - surfPhi.x));
-}
-
-float wrapScalar(float x, float mode, inout bool ok) {
-  if (mode > 1.5) {
-    float m = x - 2.0 * floor(x / 2.0);
-    return m > 1.0 ? 2.0 - m : m;
-  }
-  if (mode > 0.5) return fract(x);
-  if (x < -1e-4 || x > 1.0001) ok = false;
-  return clamp(x, 0.0, 1.0);
-}
-
-// Surface UV → content UV (bottom-left origin). ok=false when clamped out.
-vec2 surfaceContentUv(out bool ok) {
-  ok = true;
-  vec2 s = rawSurfaceUv();
-  if (surfXform.y > 0.5) s.x = 1.0 - s.x;
-  if (surfXform.z > 0.5) s.y = 1.0 - s.y;
-  float a = surfXform.x;
-  if (a != 0.0) {
-    vec2 c = s - 0.5;
-    float ca = cos(a);
-    float sa = sin(a);
-    s = vec2(ca * c.x - sa * c.y, sa * c.x + ca * c.y) + 0.5;
-  }
-  s *= surfRepeat;
-  s.x = wrapScalar(s.x, surfXform.w, ok);
-  s.y = wrapScalar(s.y, surfXform.w, ok);
-  return vec2(surfRegion.x + s.x * surfRegion.z, 1.0 - surfRegion.y - surfRegion.w + s.y * surfRegion.w);
-}
-
-vec2 contentUvForSurface(out bool ok) {
-  ok = true;
-  if (surfMap == 1) return surfaceContentUv(ok);
-  return sharedContentUv();
-}
-
-vec3 patternColor(float pType, vec2 uv, vec3 tint) {
-  if (pType < 0.5) {
-    return mix(vec3(0.1), vec3(0.9), checker(uv));
-  } else if (pType < 1.5) {
-    return vec3(uv, 0.0);
-  } else if (pType < 2.5) {
-    return vec3(uv.x, uv.y, 0.5);
-  } else if (pType < 3.5) {
-    return vec3(1.0);
-  } else if (pType < 4.5) {
-    return tint;
-  } else if (pType < 5.5) {
-    return vec3(0.0);
-  }
-  return vec3(0.5);
-}
-
-vec3 sampleSharedContent(vec2 contentUv) {
-  if (useContentCanvas == 1) {
-    if (contentUv.x < 0.0 || contentUv.x > 1.0 ||
-        contentUv.y < 0.0 || contentUv.y > 1.0) return vec3(0.0);
-    return texture(canvasMap, contentUv).rgb;
-  }
-  if (sharedUseMediaTexture == 1) {
-    vec2 mediaUv = applyFit(contentUv, sharedFitMode, sharedMediaAspect, sharedRasterAspect);
-    if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) {
-      return vec3(0.0);
-    }
-    return texture(sharedMediaMap, mediaUv).rgb;
-  }
-  return patternColor(sharedPatternType, contentUv, sharedProjectorColor);
-}
-
 // WebGL2 requires constant sampler indices — branch on projector slot.
-vec3 sampleMediaAt(int idx, vec2 mediaUv) {
-  if (idx == 0) return texture(mediaMaps[0], mediaUv).rgb;
-  if (idx == 1) return texture(mediaMaps[1], mediaUv).rgb;
-  if (idx == 2) return texture(mediaMaps[2], mediaUv).rgb;
-  return texture(mediaMaps[3], mediaUv).rgb;
+vec3 sampleFeedAt(int idx, vec2 q) {
+  if (idx == 0) return texture(feedMaps[0], q).rgb;
+  if (idx == 1) return texture(feedMaps[1], q).rgb;
+  if (idx == 2) return texture(feedMaps[2], q).rgb;
+  return texture(feedMaps[3], q).rgb;
 }
 
 float sampleDepthAt(int idx, vec2 uv) {
@@ -265,17 +124,6 @@ float sampleDepthAt(int idx, vec2 uv) {
   if (idx == 1) return texture(depthMaps[1], uv).r;
   if (idx == 2) return texture(depthMaps[2], uv).r;
   return texture(depthMaps[3], uv).r;
-}
-
-vec3 sampleProjectorColorAt(int idx, vec2 uv) {
-  if (useMediaTexture[idx] > 0.5) {
-    vec2 mediaUv = applyFit(uv, fitModes[idx], mediaAspects[idx], rasterAspects[idx]);
-    if (mediaUv.x < 0.0 || mediaUv.x > 1.0 || mediaUv.y < 0.0 || mediaUv.y > 1.0) {
-      return vec3(0.0);
-    }
-    return sampleMediaAt(idx, mediaUv);
-  }
-  return patternColor(patternTypes[idx], uv, projectorColors[idx]);
 }
 
 bool projectorVisibleAt(int idx, vec2 uv, float fragDepth) {
@@ -367,7 +215,47 @@ float toSignal(float w) {
 }
 
 void main() {
+  // v4 content feed: the screen textures as this projector's camera sees them.
+  if (feedIndex >= 0 && feedKind == 2) {
+    if (!receivesOnThisFace() || hasScreenMap == 0) {
+      fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+    vec4 clip = projectorMatrices[feedIndex] * vec4(vWorldPos, 1.0);
+    vec3 ndc = clip.xyz / max(clip.w, 1e-6);
+    if (clip.w <= 0.0 || !projectorVisibleAt(feedIndex, ndc.xy * 0.5 + 0.5, ndc.z * 0.5 + 0.5)) {
+      fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+    fragColor = vec4(texture(screenMap, vSurfaceUv).rgb, 1.0);
+    return;
+  }
+
+  // Full-frame layer of an output feed: the warped content feed (spill included).
+  if (feedIndex >= 0 && feedLayer == 1) {
+    vec2 p = gl_FragCoord.xy / feedSize;
+    vec2 q;
+    if (!warpToContent(feedIndex, p, q)) {
+      fragColor = vec4(0.0, 0.0, 0.0, 1.0);
+      return;
+    }
+    bool bgBlended = compositeMode == 1;
+    float bgW = (bgBlended && blendMode == 0)
+      ? pow(rawBlendWeight(q, blendEdges[feedIndex], outerEdgeFade[feedIndex]), blendGamma[feedIndex])
+      : 1.0;
+    float bgSignal = bgBlended ? toSignal(bgW) : 1.0;
+    if (feedKind == 1) {
+      fragColor = vec4(vec3(bgSignal), 1.0);
+      return;
+    }
+    vec3 bg = sampleFeedAt(feedIndex, q) * brightness[feedIndex];
+    float spill = feedView == 1 ? feedSpill : 1.0;
+    fragColor = vec4(clamp(bg, 0.0, 1.0) * bgSignal * spill, 1.0);
+    return;
+  }
+
   if (!receivesOnThisFace()) {
+    if (feedIndex >= 0 && feedLayer == 2) discard;
     fragColor = feedIndex >= 0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(surfaceBaseColor, 1.0);
     return;
   }
@@ -397,21 +285,13 @@ void main() {
     if (hit[i]) hitCount += 1;
   }
 
-  bool surfOk;
-  vec2 contentUv = contentUvForSurface(surfOk);
-  bool sharedMapping = mappingMode == 1;
-
   if (feedIndex < 0 && previewKind == 2) {
-    vec2 uvShow = (sharedMapping || surfMap == 1) ? contentUv : (hitCount > 0 ? qs[0] : vSurfaceUv);
-    if (!surfOk) {
-      fragColor = vec4(surfaceBaseColor * 0.5, 1.0);
-      return;
-    }
-    fragColor = vec4(uvGridColor(uvShow), 1.0);
+    fragColor = vec4(uvGridColor(vSurfaceUv), 1.0);
     return;
   }
 
   if (hitCount == 0) {
+    if (feedIndex >= 0 && feedLayer == 2) discard;
     fragColor = feedIndex >= 0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(surfaceBaseColor, 1.0);
     return;
   }
@@ -445,6 +325,7 @@ void main() {
   // Per-projector feed / mask (rendered from that projector's camera).
   if (feedIndex >= 0) {
     if (!hit[feedIndex]) {
+      if (feedLayer == 2) discard;
       fragColor = vec4(0.0, 0.0, 0.0, 1.0);
       return;
     }
@@ -454,14 +335,14 @@ void main() {
       fragColor = vec4(vec3(signal), 1.0);
       return;
     }
-    vec3 c;
-    if (sharedMapping) {
-      c = surfOk ? sampleSharedContent(contentUv) : vec3(0.0);
-      c *= useContentCanvas == 1 ? brightness[feedIndex] : sharedBrightness;
-    } else {
-      c = sampleProjectorColorAt(feedIndex, qs[feedIndex]) * brightness[feedIndex];
+    vec3 c = sampleFeedAt(feedIndex, qs[feedIndex]) * brightness[feedIndex];
+    vec3 outC = clamp(c, 0.0, 1.0) * signal;
+    if (feedView == 1) {
+      vec2 edgeDist = min(vSurfaceUv, 1.0 - vSurfaceUv) / max(fwidth(vSurfaceUv), vec2(1e-6));
+      float edge = 1.0 - clamp(min(edgeDist.x, edgeDist.y) - 1.0, 0.0, 1.0);
+      outC = mix(outC, vec3(0.35, 0.78, 0.98), edge);
     }
-    fragColor = vec4(clamp(c, 0.0, 1.0) * signal, 1.0);
+    fragColor = vec4(outC, 1.0);
     return;
   }
 
@@ -474,12 +355,9 @@ void main() {
     lightSum += L;
     vec3 color;
     if (forceUvPreview == 1) {
-      color = sharedMapping ? vec3(contentUv, 0.2) : vec3(qs[i], 0.2);
-    } else if (sharedMapping) {
-      color = surfOk ? sampleSharedContent(contentUv) : vec3(0.0);
-      color *= useContentCanvas == 1 ? brightness[i] : sharedBrightness;
+      color = vec3(qs[i], 0.2);
     } else {
-      color = sampleProjectorColorAt(i, qs[i]) * brightness[i];
+      color = sampleFeedAt(i, qs[i]) * brightness[i];
     }
     sumColor += (1.0 - blackLevel) * color * L;
   }

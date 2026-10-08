@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import { SceneEngine } from '../scene/SceneEngine';
 import { useAppStore } from '../store';
+import { transport } from '../playback/clock';
+import { addCueAtPlayhead, go, jumpCue, stepFrame, stop, toggleLoopSection, togglePlay } from '../playback/controls';
+import { mediaTextureCache } from '../media';
 
 export function Viewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,9 +65,19 @@ export function Viewport() {
 
     (window as Window & { __projectionLabEngine?: SceneEngine; __projectionLabStore?: typeof useAppStore }).__projectionLabEngine = engine;
     (window as Window & { __projectionLabEngine?: SceneEngine; __projectionLabStore?: typeof useAppStore }).__projectionLabStore = useAppStore;
+    (window as Window & { __projectionLabTransport?: typeof transport }).__projectionLabTransport = transport;
+    (window as Window & { __projectionLabMedia?: typeof mediaTextureCache }).__projectionLabMedia = mediaTextureCache;
 
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
+      const target = e.target as HTMLElement | null;
+      if (
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.isContentEditable
+      ) {
+        return;
+      }
       const store = useAppStore.getState();
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'z') {
         e.preventDefault();
@@ -72,9 +85,52 @@ export function Viewport() {
         else store.undo();
         return;
       }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      // Transport shortcuts. A focused button would also react to Space / Enter.
+      const transportKey = () => {
+        e.preventDefault();
+        if (target instanceof HTMLButtonElement) target.blur();
+      };
+      switch (e.key) {
+        case ' ':
+          transportKey();
+          togglePlay();
+          return;
+        case 'Enter':
+          transportKey();
+          go();
+          return;
+        case 'Escape':
+          stop();
+          return;
+        case 'ArrowLeft':
+        case 'ArrowRight': {
+          e.preventDefault();
+          const dir = e.key === 'ArrowRight' ? 1 : -1;
+          if (e.shiftKey) jumpCue(dir);
+          else stepFrame(dir);
+          return;
+        }
+        case 'l':
+        case 'L':
+          toggleLoopSection();
+          return;
+        case 'm':
+        case 'M':
+          addCueAtPlayhead();
+          return;
+        case 'Delete':
+        case 'Backspace': {
+          const sel = store.selectedKeyframe;
+          if (sel) {
+            e.preventDefault();
+            store.removeKeyframe(sel.layerId, sel.prop, sel.keyId);
+          }
+          return;
+        }
+      }
       if (e.key === 'w' || e.key === 'W') store.setTransformMode('translate');
       if (e.key === 'e' || e.key === 'E') store.setTransformMode('rotate');
-      if (e.key === 'm' || e.key === 'M') store.setMeasureMode(!store.measureMode);
     };
     window.addEventListener('keydown', onKeyDown);
 
@@ -101,9 +157,8 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     transformMode: state.transformMode,
     materialPreviewMode: state.materialPreviewMode,
     projectionCompositeMode: state.projectionCompositeMode,
-    mappingMode: state.mappingMode,
-    contentCanvas: state.contentCanvas,
-    sharedContentSourceProjectorId: state.sharedContentSourceProjectorId,
+    show: state.show,
+    playMode: state.playMode,
     measureMode: state.measureMode,
     measurePoints: state.measurePoints,
     showProjectionBeam: state.showProjectionBeam,

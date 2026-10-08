@@ -6,8 +6,6 @@ export type TransformMode = 'translate' | 'rotate';
 
 export type SceneObjectType = 'screen' | 'floor' | 'wall' | 'box' | 'curvedScreen' | 'model' | 'ledWall';
 
-export type LedWallMediaSource = 'image' | 'video';
-
 export type MaterialPreviewMode =
   | 'original'
   | 'projectionPreview'
@@ -15,10 +13,8 @@ export type MaterialPreviewMode =
   | 'falloff'
   /** v2: per-fragment sum of light-space blend weights (1.0 = seamless). */
   | 'blendSum'
-  /** v2: per-surface content UV (after UV mapping) as colour. */
+  /** Per-surface texture UV (the screen texture layout) as colour. */
   | 'surfaceUv';
-
-export type MediaSourceKind = 'pattern' | 'image' | 'video';
 
 export type MediaFitMode = 'contain' | 'cover' | 'stretch';
 
@@ -32,36 +28,6 @@ export type TestPattern =
   | 'gray';
 
 export type ProjectionCompositeMode = 'solo' | 'unblended' | 'heatmap' | 'blended';
-
-export type MappingMode = 'raw' | 'sharedCanvas';
-
-export type ContentLayerKind = 'image' | 'video' | 'pattern' | 'solid';
-
-export interface ContentCanvasLayer {
-  id: string;
-  name: string;
-  kind: ContentLayerKind;
-  mediaAssetId: string | null;
-  pattern: TestPattern | null;
-  color: string;
-  /** Layer rect in canvas pixels, top-left origin. */
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  rotationDeg: number;
-  opacity: number;
-  fit: MediaFitMode;
-  visible: boolean;
-}
-
-export interface ContentCanvas {
-  enabled: boolean;
-  widthPx: number;
-  heightPx: number;
-  /** Render order: index 0 is the bottom layer. */
-  layers: ContentCanvasLayer[];
-}
 
 export type AnalysisQuality = 'draft' | 'high';
 
@@ -109,34 +75,6 @@ export interface UvRegion {
   width: number;
   height: number;
 }
-
-export interface SurfaceUvMapping {
-  /** When false the surface uses the legacy primary-receiver shared mapping. */
-  enabled: boolean;
-  projection: SurfaceUvProjection;
-  /** Which part of the shared content this surface displays. */
-  region: UvRegion;
-  /** Rotation of the surface UV around its centre, degrees. */
-  rotationDeg: number;
-  flipU: boolean;
-  flipV: boolean;
-  /** Tiling of the surface UV inside the region (1 = once). */
-  repeatU: number;
-  repeatV: number;
-  wrap: UvWrapMode;
-}
-
-export const DEFAULT_SURFACE_UV_MAPPING: SurfaceUvMapping = {
-  enabled: false,
-  projection: 'meshUv',
-  region: { x: 0, y: 0, width: 1, height: 1 },
-  rotationDeg: 0,
-  flipU: false,
-  flipV: false,
-  repeatU: 1,
-  repeatV: 1,
-  wrap: 'clamp',
-};
 
 export interface Vec2 {
   x: number;
@@ -231,14 +169,11 @@ export interface SceneObject {
   modelAssetId?: string;
   /** Scale factor applied to imported models (1 = file units as meters) */
   modelScale?: number;
-  /** v2: per-surface UV mapping of shared content. */
-  uvMapping?: SurfaceUvMapping;
-  /** Direct-display LED wall settings (type ledWall only). */
+  /** v4: replace an imported model's UVs with a generated non-overlapping atlas. */
+  uvAtlas?: boolean;
+  /** Direct-display LED wall settings (type ledWall only). Content comes from layers. */
   ledWall?: {
     pixelResolution: { width: number; height: number };
-    mediaSource: LedWallMediaSource;
-    mediaAssetId: string | null;
-    mediaFit: MediaFitMode;
   };
 }
 
@@ -268,11 +203,7 @@ export interface ProjectorConfig {
   color: string;
   transform: Transform;
   optics: ProjectorOptics;
-  testPattern: TestPattern;
   brightness: number;
-  mediaSource: MediaSourceKind;
-  mediaAssetId: string | null;
-  mediaFit: MediaFitMode;
   blendEdges: BlendEdges;
   /** Ramp exponent (0.5–3); 1 = linear/seamless, higher = darker crossover. */
   blendGamma: number;
@@ -377,4 +308,176 @@ export interface CalculationResults {
     name: string;
     type: 'screen' | 'curvedScreen';
   } | null;
+}
+
+// ---------------------------------------------------------------------------
+// v4: mappings, layers and the show (content lives only on layers)
+// ---------------------------------------------------------------------------
+
+export type MappingKind = 'direct' | 'perspective' | 'parallel' | 'feed' | 'cylindrical' | 'spherical';
+export type MappingFiltering = 'nearest' | 'bilinear' | 'msaa2x';
+export type DirectFit = 'crop' | 'fit' | 'stretch' | 'pixel';
+
+/** Euler rotation in degrees: x = pitch, y = yaw, z = roll (YXZ order, like projectors). */
+export type RotationDeg = Vec3;
+
+export interface PerspectiveParams {
+  eye: Vec3;
+  rotation: RotationDeg;
+  /** Vertical field of view (degrees). Ignored while locked to a projector. */
+  fovDeg: number;
+  /** Follow this projector's position, orientation, lens and resolution. */
+  lockToProjectorId: string | null;
+  /**
+   * Only the locked projector outputs layers on this mapping (raw per-projector
+   * content, e.g. alignment patterns). Other projectors do not see them.
+   */
+  projectorOnly: boolean;
+}
+
+export interface ParallelParams {
+  center: Vec3;
+  rotation: RotationDeg;
+  /** Size of the orthographic frame in metres. */
+  size: { w: number; h: number };
+}
+
+/** Per-screen region of the mapping canvas (feed / surface-UV mapping). */
+export interface FeedRect {
+  screenId: string;
+  /** How the screen derives its 0–1 surface UV. */
+  projection: SurfaceUvProjection;
+  /** Normalized region of the mapping canvas, top-left origin. */
+  region: UvRegion;
+  rotationDeg: number;
+  flipU: boolean;
+  flipV: boolean;
+  repeatU: number;
+  repeatV: number;
+  wrap: UvWrapMode;
+}
+
+export interface CylindricalParams {
+  center: Vec3;
+  rotation: RotationDeg;
+  /** Horizontal arc covered by the canvas (degrees, centred on local +Z). */
+  arcDeg: number;
+  /** Height covered by the canvas (metres, centred on the centre). */
+  height: number;
+}
+
+export interface SphericalParams {
+  center: Vec3;
+  rotation: RotationDeg;
+  arcDeg: number;
+  /** Vertical arc covered by the canvas (degrees, centred on the horizon). */
+  elevationDeg: number;
+}
+
+export interface Mapping {
+  id: string;
+  name: string;
+  kind: MappingKind;
+  /** Mapping canvas size in pixels. */
+  resolution: { w: number; h: number };
+  screenIds: string[];
+  filtering: MappingFiltering;
+  maskAssetId: string | null;
+  direct?: { fit: DirectFit };
+  perspective?: PerspectiveParams;
+  parallel?: ParallelParams;
+  feed?: { rects: FeedRect[] };
+  cylindrical?: CylindricalParams;
+  spherical?: SphericalParams;
+}
+
+export type MediaRef =
+  | { kind: 'video'; assetId: string | null }
+  | { kind: 'image'; assetId: string | null }
+  | { kind: 'pattern'; pattern: TestPattern; color: string }
+  | { kind: 'solid'; color: string };
+
+export type LayerBlendMode = 'normal' | 'add' | 'multiply';
+export type LayerPlayMode = 'loop' | 'once' | 'holdLast' | 'pingPong';
+
+/** Layer placement inside its mapping canvas, normalized 0–1, top-left origin. */
+export interface LayerRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotationDeg: number;
+}
+
+export type KeyframeProp = 'opacity' | 'x' | 'y' | 'scale' | 'rotationDeg';
+export type KeyframeEase = 'linear' | 'easeInOut';
+
+/** A value at a time (seconds from the layer's start); ease shapes the segment to the next key. */
+export interface Keyframe {
+  id: string;
+  timeSec: number;
+  value: number;
+  ease: KeyframeEase;
+}
+
+export type LayerKeyframes = Partial<Record<KeyframeProp, Keyframe[]>>;
+
+export interface Layer {
+  id: string;
+  name: string;
+  media: MediaRef;
+  mappingId: string | null;
+  opacity: number;
+  blendMode: LayerBlendMode;
+  // timing
+  startSec: number;
+  durationSec: number;
+  /** Media in-point (seconds into the clip). */
+  inSec: number;
+  /** Media out-point; null = end of clip. */
+  outSec: number | null;
+  playMode: LayerPlayMode;
+  speed: number;
+  fadeInSec: number;
+  fadeOutSec: number;
+  rect: LayerRect;
+  fit: MediaFitMode;
+  volume: number;
+  muted: boolean;
+  enabled: boolean;
+  /** Animated properties (x / y / rotation override the rect, scale scales it about its centre). */
+  keyframes?: LayerKeyframes;
+}
+
+export interface Track {
+  id: string;
+  name: string;
+  durationSec: number;
+  /** Render order: index 0 is the bottom layer. */
+  layers: Layer[];
+  sections: TrackSection[];
+  cues: Cue[];
+}
+
+export type SectionEndAction = 'continue' | 'stop' | 'hold' | 'loop';
+
+export interface TrackSection {
+  id: string;
+  name: string;
+  startSec: number;
+  endSec: number;
+  endAction: SectionEndAction;
+}
+
+export interface Cue {
+  id: string;
+  name: string;
+  timeSec: number;
+}
+
+export interface Show {
+  fps: number;
+  mappings: Mapping[];
+  tracks: Track[];
+  activeTrackId: string;
 }

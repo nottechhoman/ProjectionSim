@@ -1,9 +1,9 @@
 import { validateOptics } from '../optics/validate';
 import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, ProjectionSides, SceneObject } from '../types';
 import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA } from '../types';
-import { normalizeContentCanvas } from '../projection/contentCanvas';
 import { normalizeBlendSettings } from '../blending/advancedBlend';
-import { normalizeSurfaceUvMapping } from '../uvmapping/surfaceUv';
+import { migrateLegacyContent } from '../mapping/migrate';
+import { normalizeShow, pruneMappingRefs } from '../mapping/model';
 import { DEFAULT_PROJECTOR_WARP, type ProjectorWarp } from '../types';
 
 function normalizeWarp(raw: unknown): ProjectorWarp {
@@ -30,8 +30,9 @@ import {
 import {
   PROJECT_FILE_VERSION,
   PROJECT_FILE_VERSION_LEGACY,
+  PROJECT_FILE_VERSION_V2,
   type ProjectSnapshot,
-  type ProjectSnapshotV2,
+  type ProjectSnapshotV3,
 } from './projectSchema';
 
 export class ProjectValidationError extends Error {
@@ -62,7 +63,7 @@ function validateTransform(raw: unknown): void {
 
 const OBJECT_TYPES = ['screen', 'floor', 'wall', 'box', 'curvedScreen', 'model', 'ledWall'] as const;
 
-function validateSceneObject(raw: unknown): SceneObject {
+function validateSceneObject(raw: unknown): Record<string, unknown> {
   if (!isObject(raw)) throw new ProjectValidationError('Invalid scene object');
   if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
     throw new ProjectValidationError('Scene object missing id or name');
@@ -82,21 +83,12 @@ function validateSceneObject(raw: unknown): SceneObject {
       : raw.projectionSides === 'front'
         ? 'front'
         : undefined;
-  return {
-    ...(raw as unknown as SceneObject),
-    projectionSides,
-    ...(raw.uvMapping !== undefined
-      ? { uvMapping: normalizeSurfaceUvMapping(raw.uvMapping as never) }
-      : {}),
-  };
+  return { ...raw, projectionSides };
 }
 
 function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
   return {
     ...raw,
-    mediaSource: raw.mediaSource ?? 'pattern',
-    mediaAssetId: raw.mediaAssetId ?? null,
-    mediaFit: raw.mediaFit ?? 'contain',
     blendEdges: raw.blendEdges ?? { ...DEFAULT_BLEND_EDGES },
     blendGamma: raw.blendGamma ?? DEFAULT_BLEND_GAMMA,
     outerEdgeFade: raw.outerEdgeFade ?? false,
@@ -106,7 +98,7 @@ function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
   };
 }
 
-function validateProjector(raw: unknown): ProjectorConfig {
+function validateProjector(raw: unknown): Record<string, unknown> {
   if (!isObject(raw)) throw new ProjectValidationError('Invalid projector');
   if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
     throw new ProjectValidationError('Projector missing id or name');
@@ -116,7 +108,7 @@ function validateProjector(raw: unknown): ProjectorConfig {
   const optics = raw.optics as unknown as ProjectorConfig['optics'];
   const v = validateOptics(optics);
   if (!v.valid) throw new ProjectValidationError(v.error ?? 'Invalid projector optics');
-  return normalizeProjector(raw as unknown as ProjectorConfig);
+  return raw;
 }
 
 function validateMediaAssets(raw: unknown): MediaAssetRecord[] {
@@ -145,9 +137,9 @@ export function parseProjectJson(text: string): ProjectSnapshot {
 
   if (!isObject(data)) throw new ProjectValidationError('Project root must be an object');
   const version = data.version;
-  if (version !== PROJECT_FILE_VERSION && version !== PROJECT_FILE_VERSION_LEGACY) {
+  if (version !== PROJECT_FILE_VERSION && version !== PROJECT_FILE_VERSION_V2 && version !== PROJECT_FILE_VERSION_LEGACY) {
     throw new ProjectValidationError(
-      `Unsupported project version: ${String(version)} (expected ${PROJECT_FILE_VERSION} or ${PROJECT_FILE_VERSION_LEGACY})`,
+      `Unsupported project version: ${String(version)} (expected ${PROJECT_FILE_VERSION_LEGACY}–${PROJECT_FILE_VERSION})`,
     );
   }
 
@@ -158,9 +150,28 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     throw new ProjectValidationError('Project must include at least one projector');
   }
 
-  const sceneObjects = data.sceneObjects.map(validateSceneObject);
-  const projectors = data.projectors.map(validateProjector);
-  const mediaAssets = version === PROJECT_FILE_VERSION ? validateMediaAssets(data.mediaAssets) : [];
+  const rawObjects = data.sceneObjects.map(validateSceneObject);
+  const rawProjectors = data.projectors.map(validateProjector);
+  const mediaAssets = version === PROJECT_FILE_VERSION_LEGACY ? [] : validateMediaAssets(data.mediaAssets);
+
+  // v1 / v2: content lived on projectors / the shared canvas — move it onto layers.
+  const content =
+    version === PROJECT_FILE_VERSION
+      ? {
+          show: normalizeShow(data.show),
+          sceneObjects: rawObjects as unknown as SceneObject[],
+          projectors: rawProjectors as unknown as ProjectorConfig[],
+        }
+      : migrateLegacyContent({
+          sceneObjects: rawObjects,
+          projectors: rawProjectors,
+          mappingMode: data.mappingMode,
+          contentCanvas: data.contentCanvas,
+          sharedContentSourceProjectorId: data.sharedContentSourceProjectorId,
+        });
+  const sceneObjects = content.sceneObjects;
+  const projectors = content.projectors.map(normalizeProjector);
+  const show = { ...content.show, mappings: pruneMappingRefs(content.show.mappings, sceneObjects, projectors) };
 
   const selectedObjectId =
     data.selectedObjectId === null || typeof data.selectedObjectId === 'string'
@@ -186,12 +197,6 @@ export function parseProjectJson(text: string): ProjectSnapshot {
       ? data.projectionCompositeMode
       : 'unblended';
 
-  const mappingMode: import('../types').MappingMode =
-    data.mappingMode === 'sharedCanvas' ? 'sharedCanvas' : 'raw';
-  const sharedContentSourceProjectorId =
-    typeof data.sharedContentSourceProjectorId === 'string'
-      ? data.sharedContentSourceProjectorId
-      : undefined;
   const calculationTargetId =
     typeof data.calculationTargetId === 'string' ? data.calculationTargetId : undefined;
   const analysisQuality =
@@ -203,7 +208,7 @@ export function parseProjectJson(text: string): ProjectSnapshot {
         ? 'front'
         : undefined;
 
-  const snapshot: ProjectSnapshotV2 = {
+  const snapshot: ProjectSnapshotV3 = {
     version: PROJECT_FILE_VERSION,
     savedAt: typeof data.savedAt === 'string' ? data.savedAt : new Date().toISOString(),
     name: typeof data.name === 'string' ? data.name : 'Untitled',
@@ -212,9 +217,7 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     mediaAssets,
     materialPreviewMode,
     projectionCompositeMode,
-    mappingMode,
-    contentCanvas: normalizeContentCanvas(data.contentCanvas),
-    sharedContentSourceProjectorId,
+    show,
     calculationTargetId,
     analysisQuality,
     calculationTargetSide,
