@@ -5,7 +5,7 @@ import { transport } from '../playback/clock';
 import { runCommand } from '../playback/controls';
 import { formatTimecode } from '../playback/timecode';
 import { chaseDecision, chaseTimedOut } from './chase';
-import { parseControlMessage, type ControlAction } from './commands';
+import { parseBridgeMessage, type ControlAction } from './commands';
 import { MtcDecoder, parseMidiMessage, type MidiEvent } from './midiParse';
 import {
   loadControlSettings,
@@ -24,6 +24,10 @@ export interface ControlStatus {
   learning: { action: ControlAction; cue?: string } | null;
   mtc: string;
   osc: 'off' | 'connecting' | 'connected' | 'error';
+  /** UDP port the bridge listens on (from its hello). */
+  oscUdpPort: number | null;
+  /** Last OSC message the bridge passed on. */
+  lastOsc: { address: string; args: unknown[]; from: string | null; result: string; at: number } | null;
 }
 
 /**
@@ -32,7 +36,7 @@ export interface ControlStatus {
  */
 class ControlService {
   settings: ControlSettings = loadControlSettings();
-  status: ControlStatus = { midi: 'off', inputs: [], lastMidi: '—', lastCommand: '—', learning: null, mtc: '—', osc: 'off' };
+  status: ControlStatus = { midi: 'off', inputs: [], lastMidi: '—', lastCommand: '—', learning: null, mtc: '—', osc: 'off', oscUdpPort: null, lastOsc: null };
   private readonly listeners = new Set<() => void>();
   private version = 0;
   private access: MIDIAccess | null = null;
@@ -229,8 +233,20 @@ class ControlService {
       this.setStatus({ osc: 'connected' });
     };
     ws.onmessage = (e) => {
-      const cmd = typeof e.data === 'string' ? parseControlMessage(e.data) : null;
-      if (cmd) this.run(cmd);
+      const msg = typeof e.data === 'string' ? parseBridgeMessage(e.data) : null;
+      if (!msg) return;
+      if (msg.kind === 'hello') {
+        this.setStatus({ oscUdpPort: msg.udpPort });
+        return;
+      }
+      let result = 'not a /show/… command — ignored';
+      if (msg.command) {
+        this.run(msg.command);
+        result = this.status.lastCommand;
+      }
+      if (msg.kind === 'osc') {
+        this.setStatus({ lastOsc: { address: msg.address, args: msg.args, from: msg.from, result, at: Date.now() } });
+      }
     };
     ws.onclose = () => {
       if (this.ws !== ws) return;
@@ -238,7 +254,7 @@ class ControlService {
       this.setStatus({ osc: 'error' });
       if (this.settings.oscEnabled) {
         this.wsRetry = setTimeout(() => this.connectOsc(this.settings.oscUrl), this.wsBackoff);
-        this.wsBackoff = Math.min(10000, this.wsBackoff * 2);
+        this.wsBackoff = Math.min(3000, this.wsBackoff * 2);
       }
     };
   }
@@ -249,7 +265,7 @@ class ControlService {
     const ws = this.ws;
     this.ws = null;
     ws?.close();
-    if (this.status.osc !== 'off') this.setStatus({ osc: 'off' });
+    if (this.status.osc !== 'off') this.setStatus({ osc: 'off', oscUdpPort: null });
   }
 
   private setStatus(patch: Partial<ControlStatus>): void {

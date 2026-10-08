@@ -35,11 +35,12 @@ export const DEFAULT_CONTROL_SETTINGS: ControlSettings = {
   mscDeviceId: 0x7f,
   mtcChase: false,
   mtcOffsetSec: 0,
-  oscEnabled: false,
+  oscEnabled: true,
   oscUrl: 'ws://127.0.0.1:9100',
 };
 
-const KEY = 'projectionlab-v4-control';
+// v2: OSC now connects by default (v1 saved it off).
+const KEY = 'projectionlab-v4-control-v2';
 
 /** Per-machine settings (they describe this computer's MIDI / OSC setup, not the show). */
 export function loadControlSettings(): ControlSettings {
@@ -86,7 +87,7 @@ export function normalizeControlSettings(raw: unknown): ControlSettings {
     mscDeviceId: Math.min(0x7f, Math.max(0, Math.round(num(d.mscDeviceId, 0x7f)))),
     mtcChase: d.mtcChase === true,
     mtcOffsetSec: num(d.mtcOffsetSec, 0),
-    oscEnabled: d.oscEnabled === true,
+    oscEnabled: d.oscEnabled !== false,
     oscUrl: typeof d.oscUrl === 'string' && d.oscUrl ? d.oscUrl : DEFAULT_CONTROL_SETTINGS.oscUrl,
   };
 }

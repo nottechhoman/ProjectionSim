@@ -32,6 +32,8 @@ export function startBridge({ udpPort = 9000, wsPort = 9100, host = '127.0.0.1',
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
     clients.add(socket);
     log(`app connected (${clients.size})`);
+    // Tell the app which UDP port OSC should be sent to.
+    socket.write(frame(JSON.stringify({ type: 'hello', udpPort: udp.address().port, wsPort: server.address().port })));
     socket.on('data', (buf) => {
       const opcode = buf[0] & 0x0f;
       if (opcode === 0x8) socket.end(Buffer.from([0x88, 0]));
@@ -49,8 +51,8 @@ export function startBridge({ udpPort = 9000, wsPort = 9100, host = '127.0.0.1',
     for (const m of decodeOsc(msg)) {
       const cmd = oscToCommand(m);
       log(`${rinfo.address} ${m.address} ${JSON.stringify(m.args)} → ${cmd ? JSON.stringify(cmd) : 'ignored'}`);
-      if (!cmd) continue;
-      const data = frame(JSON.stringify(cmd));
+      // Every message goes to the app (it shows the last one); command is null when unmapped.
+      const data = frame(JSON.stringify({ type: 'osc', from: rinfo.address, address: m.address, args: m.args, command: cmd }));
       for (const c of clients) c.write(data);
     }
   });
@@ -61,6 +63,7 @@ export function startBridge({ udpPort = 9000, wsPort = 9100, host = '127.0.0.1',
       ready += 1;
       if (ready === 2) {
         resolve({
+          clientCount: () => clients.size,
           udpPort: udp.address().port,
           wsPort: server.address().port,
           close: () =>

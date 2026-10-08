@@ -43,12 +43,18 @@ describe('bridge end to end', () => {
         ws.onopen = resolve;
         ws.onerror = reject;
       });
+      const messages = [];
       const got = new Promise((resolve) => {
-        ws.onmessage = (e) => resolve(JSON.parse(e.data));
+        ws.onmessage = (e) => {
+          messages.push(JSON.parse(e.data));
+          if (messages.length === 2) resolve(messages);
+        };
       });
       const udp = createSocket('udp4');
       await new Promise((r) => udp.send(encodeOsc('/show/cue', [2]), bridge.udpPort, '127.0.0.1', r));
-      expect(await got).toEqual({ type: 'cue', number: '2' });
+      const [hello, osc] = await got;
+      expect(hello).toEqual({ type: 'hello', udpPort: bridge.udpPort, wsPort: bridge.wsPort });
+      expect(osc).toMatchObject({ type: 'osc', address: '/show/cue', args: [2], command: { type: 'cue', number: '2' } });
       udp.close();
       ws.close();
     } finally {

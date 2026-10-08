@@ -84,12 +84,6 @@ export class MediaSync {
     return { texture: p.texture, aspect: p.aspect };
   }
 
-  /** The element currently shown for a layer (tests / debugging). */
-  activeVideo(layerId: string): HTMLVideoElement | null {
-    const deck = this.decks.get(layerId);
-    return deck ? deck.players[deck.active].video : null;
-  }
-
   setTime(t: number): void {
     this.lastTime = t;
   }
@@ -173,10 +167,6 @@ export class MediaSync {
       for (const p of deck.players) if (!p.video.paused) p.video.pause();
       if (!layerIds.has(id)) this.release(id);
     }
-  }
-
-  pauseAll(): void {
-    for (const deck of this.decks.values()) for (const p of deck.players) if (!p.video.paused) p.video.pause();
   }
 
   dispose(): void {

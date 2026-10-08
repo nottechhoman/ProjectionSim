@@ -68,3 +68,36 @@ export function parseControlMessage(text: string): ControlCommand | null {
       return null;
   }
 }
+
+export type BridgeMessage =
+  | { kind: 'hello'; udpPort: number | null }
+  | { kind: 'osc'; address: string; args: unknown[]; from: string | null; command: ControlCommand | null }
+  | { kind: 'command'; command: ControlCommand };
+
+/**
+ * Messages from the OSC bridge: a hello (with the UDP port OSC goes to), every
+ * received OSC message with the command it maps to (or null), or a bare command.
+ */
+export function parseBridgeMessage(text: string): BridgeMessage | null {
+  let data: unknown;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    return null;
+  }
+  if (!data || typeof data !== 'object') return null;
+  const d = data as Record<string, unknown>;
+  if (d.type === 'hello') return { kind: 'hello', udpPort: typeof d.udpPort === 'number' ? d.udpPort : null };
+  if (d.type === 'osc' && typeof d.address === 'string') {
+    const command = d.command && typeof d.command === 'object' ? parseControlMessage(JSON.stringify(d.command)) : null;
+    return {
+      kind: 'osc',
+      address: d.address,
+      args: Array.isArray(d.args) ? d.args : [],
+      from: typeof d.from === 'string' ? d.from : null,
+      command,
+    };
+  }
+  const command = parseControlMessage(text);
+  return command ? { kind: 'command', command } : null;
+}

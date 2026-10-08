@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { createTrack } from '../mapping/model';
 import { chaseDecision, chaseTimedOut } from './chase';
-import { findCue, parseControlMessage } from './commands';
+import { findCue, parseBridgeMessage, parseControlMessage } from './commands';
 import { MtcDecoder, parseMidiMessage } from './midiParse';
 import { describeTrigger, normalizeControlSettings, triggerFromEvent, triggerMatches } from './settings';
 
@@ -80,6 +80,19 @@ describe('commands', () => {
     expect(findCue(track, '2')?.id).toBe('b');
     expect(findCue(track, '9')).toBeNull();
   });
+  it('parses bridge envelopes: hello, every OSC message (mapped or not), bare commands', () => {
+    expect(parseBridgeMessage('{"type":"hello","udpPort":9000,"wsPort":9100}')).toEqual({ kind: 'hello', udpPort: 9000 });
+    expect(parseBridgeMessage('{"type":"osc","from":"10.0.0.2","address":"/show/cue","args":[2],"command":{"type":"cue","number":"2"}}')).toEqual({
+      kind: 'osc',
+      address: '/show/cue',
+      args: [2],
+      from: '10.0.0.2',
+      command: { type: 'cue', number: '2' },
+    });
+    expect(parseBridgeMessage('{"type":"osc","address":"/foo","args":[],"command":null}')).toMatchObject({ kind: 'osc', command: null });
+    expect(parseBridgeMessage('{"type":"go"}')).toEqual({ kind: 'command', command: { type: 'go' } });
+  });
+
   it('parses bridge messages', () => {
     expect(parseControlMessage('{"type":"go"}')).toEqual({ type: 'go' });
     expect(parseControlMessage('{"type":"cue","number":3}')).toEqual({ type: 'cue', number: '3' });

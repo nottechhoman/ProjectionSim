@@ -3,15 +3,22 @@
 Browsers cannot receive OSC (UDP), so this small Node script listens for OSC and
 forwards commands to the app over a local WebSocket. No dependencies (Node 18+).
 
+**With the dev server you do not need to do anything**: `npm run dev` starts the
+bridge (UDP 9000 → ws 9100) and the app connects automatically. Turn it off with
+`OSC_BRIDGE=0 npm run dev`; change ports with `OSC_UDP_PORT` / `OSC_WS_PORT`.
+
+Without the dev server (production build, hosted copy) run it yourself:
+
 ```sh
 cd ProjectionSim_v4
-node tools/osc-bridge/index.mjs            # OSC on UDP 9000, app on ws://127.0.0.1:9100
+npm run osc-bridge                          # = node tools/osc-bridge/index.mjs (UDP 9000, ws 9100)
 node tools/osc-bridge/index.mjs --udp 8000 --ws 9200
 ```
 
-Then in the app: **More → External control (MIDI / OSC)… → Connect to the OSC bridge**
-(URL `ws://127.0.0.1:9100`). The status shows *connected*; it reconnects on its own if
-the bridge restarts.
+The app connects to `ws://127.0.0.1:9100` by default and retries every few seconds.
+**More → External control → OSC** shows *Bridge connected*, the UDP port, and the last
+message received with what it did. Send a test message with
+`npm run osc-send -- /show/cue 2` (= `node tools/osc-bridge/send.mjs /show/cue 2`).
 
 | OSC address | Action |
 |---|---|

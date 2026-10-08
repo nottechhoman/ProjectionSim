@@ -129,17 +129,50 @@ export function ControlPanel() {
           </div>
 
           <div className={styles.section}>
-            <div className={styles.sectionTitle}>OSC (via bridge)</div>
+            <div className={styles.sectionTitle}>OSC</div>
+            <p className={styles.standby} data-testid="osc-status">
+              {s.oscEnabled ? (
+                st.osc === 'connected' ? (
+                  <>
+                    <b style={{ color: '#3ddc84' }}>● Bridge connected</b> — send OSC to UDP port <b>{st.oscUdpPort ?? '?'}</b> on this machine
+                  </>
+                ) : st.osc === 'connecting' ? (
+                  <>◌ Connecting to the bridge…</>
+                ) : (
+                  <>
+                    <b style={{ color: '#e0c070' }}>● No bridge</b> at {s.oscUrl} — retrying. With <code>npm run dev</code> it starts automatically; otherwise run{' '}
+                    <code>node tools/osc-bridge/index.mjs</code>.
+                  </>
+                )
+              ) : (
+                'OSC is off.'
+              )}
+            </p>
+            <p className={styles.hint} data-testid="osc-last">
+              Last OSC:{' '}
+              {st.lastOsc ? (
+                <>
+                  <b>
+                    {st.lastOsc.address} {st.lastOsc.args.map((a) => JSON.stringify(a)).join(' ')}
+                  </b>{' '}
+                  → {st.lastOsc.result} · {new Date(st.lastOsc.at).toLocaleTimeString()}
+                  {st.lastOsc.from ? ` from ${st.lastOsc.from}` : ''}
+                </>
+              ) : (
+                'none yet'
+              )}
+            </p>
             <label className={styles.checkRow}>
               <input type="checkbox" checked={s.oscEnabled} onChange={(e) => control.update({ oscEnabled: e.target.checked })} data-testid="osc-enabled" />
-              Connect to the OSC bridge <span className={styles.hint}>({st.osc})</span>
+              Receive OSC
             </label>
             <div className={styles.row}>
               <label>Bridge</label>
               <input value={s.oscUrl} onChange={(e) => control.update({ oscUrl: e.target.value })} aria-label="OSC bridge URL" />
             </div>
             <p className={styles.hint}>
-              Run <code>node tools/osc-bridge/index.mjs</code> in the project folder, then send OSC to UDP 9000: /show/go, /show/play, /show/pause, /show/stop, /show/next, /show/prev, /show/cue N, /show/locate seconds.
+              /show/go, /show/play, /show/pause, /show/toggle, /show/stop, /show/next, /show/prev, /show/cue N, /show/locate seconds. Test with{' '}
+              <code>node tools/osc-bridge/send.mjs /show/go</code>.
             </p>
           </div>
         </div>
