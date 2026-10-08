@@ -8,7 +8,10 @@ import {
   hydrateAssetsFromRecords,
   importMediaBlob,
 } from '../media/assetImport';
+import type { PlayMode } from '../playback/showControl';
 import type {
+  Cue,
+  TrackSection,
   CalculationResults,
   DisplayUnit,
   Layer,
@@ -158,6 +161,17 @@ interface AppState extends PersistedStateSlice {
   setTrackDuration: (sec: number) => void;
   timelineVisible: boolean;
   toggleTimeline: () => void;
+  // v4 show control (sections, cues, play mode)
+  playMode: PlayMode;
+  setPlayMode: (mode: PlayMode) => void;
+  cuesPanelVisible: boolean;
+  setCuesPanelVisible: (visible: boolean) => void;
+  addCue: (timeSec: number, name?: string) => void;
+  updateCue: (id: string, patch: Partial<Cue>) => void;
+  removeCue: (id: string) => void;
+  addSection: (startSec: number, endSec: number) => void;
+  updateSection: (id: string, patch: Partial<TrackSection>) => void;
+  removeSection: (id: string) => void;
   setRasterPreviewPanelVisible: (visible: boolean) => void;
   toggleRasterPreviewPanel: () => void;
   bumpRasterPreviewRevision: () => void;
@@ -657,6 +671,65 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   timelineVisible: true,
   toggleTimeline: () => set((s) => ({ timelineVisible: !s.timelineVisible })),
+  playMode: 'play',
+  setPlayMode: (mode) => set({ playMode: mode }),
+  cuesPanelVisible: false,
+  setCuesPanelVisible: (visible) => set({ cuesPanelVisible: visible }),
+  addCue: (timeSec, name) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => {
+        const cues = [...track.cues, { id: newId('cue'), name: name ?? `Cue ${track.cues.length + 1}`, timeSec: Math.max(0, timeSec) }];
+        cues.sort((a, b) => a.timeSec - b.timeSec);
+        return { ...track, cues };
+      }),
+    }));
+  },
+  updateCue: (id, patch) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => ({
+        ...track,
+        cues: track.cues.map((c) => (c.id === id ? { ...c, ...patch, id } : c)).sort((a, b) => a.timeSec - b.timeSec),
+      })),
+    }));
+  },
+  removeCue: (id) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: updateActiveTrack(s.show, (track) => ({ ...track, cues: track.cues.filter((c) => c.id !== id) })) }));
+  },
+  addSection: (startSec, endSec) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => {
+        const start = Math.max(0, Math.min(startSec, endSec));
+        const end = Math.max(start + 0.1, Math.max(startSec, endSec));
+        const sections = [...track.sections, { id: newId('section'), name: `Section ${track.sections.length + 1}`, startSec: start, endSec: end, endAction: 'continue' as const }];
+        sections.sort((a, b) => a.startSec - b.startSec);
+        return { ...track, sections };
+      }),
+    }));
+  },
+  updateSection: (id, patch) => {
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => ({
+        ...track,
+        sections: track.sections
+          .map((x) => {
+            if (x.id !== id) return x;
+            const next = { ...x, ...patch, id };
+            if (next.endSec <= next.startSec) next.endSec = next.startSec + 0.1;
+            return next;
+          })
+          .sort((a, b) => a.startSec - b.startSec),
+      })),
+    }));
+  },
+  removeSection: (id) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: updateActiveTrack(s.show, (track) => ({ ...track, sections: track.sections.filter((x) => x.id !== id) })) }));
+  },
   toggleLayersPanel: () => set((s) => ({ layersPanelVisible: !s.layersPanelVisible })),
   setRasterPreviewPanelVisible: (visible) => set({ rasterPreviewPanelVisible: visible }),
   toggleRasterPreviewPanel: () =>

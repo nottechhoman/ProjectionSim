@@ -7,6 +7,7 @@ import { LeftPanel } from './panels/LeftPanel';
 import { Inspector } from './panels/Inspector';
 import { BottomPanel } from './panels/BottomPanel';
 import { LayersPanel } from './panels/LayersPanel';
+import { CuesPanel } from './panels/CuesPanel';
 import { RasterPreviewPanel } from './panels/RasterPreviewPanel';
 import { StudioPanel } from './panels/StudioPanel';
 import { MediaDock } from './panels/MediaDock';
@@ -101,6 +102,7 @@ export default function App() {
       <div className={styles.center}>
         <Viewport />
         {!compact ? <LayersPanel /> : null}
+        {!compact ? <CuesPanel /> : null}
         {!compact ? <RasterPreviewPanel /> : null}
         {!compact ? <StudioPanel /> : null}
       </div>
@@ -216,6 +218,7 @@ export default function App() {
       </div>
 
       {compact && layersPanelVisible ? <LayersPanel /> : null}
+      {compact ? <CuesPanel /> : null}
       {compact && rasterPreviewPanelVisible ? <RasterPreviewPanel /> : null}
       {compact && studioVisible ? <StudioPanel /> : null}
 

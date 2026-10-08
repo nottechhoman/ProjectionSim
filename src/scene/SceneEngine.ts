@@ -17,6 +17,7 @@ import { activeTrack, createShow } from '../mapping/model';
 import { mappingVisibleTo } from '../mapping/sample';
 import { evaluate, type LiveLayer } from '../playback/evaluate';
 import { transport } from '../playback/clock';
+import { transportStep, type PlayMode } from '../playback/showControl';
 import { MediaSync } from '../playback/mediaSync';
 import { ProjectorFeedPass, type FeedKind } from '../projection/ProjectorFeedPass';
 import { outputWindows } from '../output/outputWindows';
@@ -311,6 +312,12 @@ export class SceneEngine {
   private readonly baker = new ScreenTextureBaker();
   private readonly mediaSync = new MediaSync();
   private liveLayers: LiveLayer[] = [];
+  private playMode: PlayMode = 'play';
+  private lastPlayhead: number | null = null;
+  /** Any play / pause / seek restarts boundary detection (a jump is not a crossing). */
+  private readonly transportUnsub = transport.subscribe(() => {
+    this.lastPlayhead = null;
+  });
   /** Bumped on every store sync; with the live-layer signature it decides re-bakes. */
   private syncRevision = 0;
   private lastContentKey = '';
@@ -573,6 +580,7 @@ export class SceneEngine {
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
     this.show = state.show;
+    this.playMode = state.playMode;
     this.showProjectionBeam = state.showProjectionBeam;
     this.calculationTargetId = state.calculationTargetId;
     this.rasterPreviewPanelVisible = state.rasterPreviewPanelVisible;
@@ -1164,12 +1172,22 @@ export class SceneEngine {
 
     // v4: timeline → live layers → media sync → screen textures → content feeds.
     const track = activeTrack(this.show);
-    // Stop at the end of the track (sections / end actions come with the cue system).
-    if (transport.playing && transport.time() >= track.durationSec) {
-      transport.pause();
-      transport.seek(track.durationSec);
+    // Section end actions, play modes and the end of the track.
+    if (transport.playing) {
+      const now = transport.time();
+      const step = this.lastPlayhead === null ? ({ kind: 'none' } as const) : transportStep(track, this.lastPlayhead, now, this.playMode);
+      const end = now >= track.durationSec;
+      if (step.kind === 'seek') transport.seek(step.to);
+      else if (step.kind === 'pause') {
+        transport.pause();
+        transport.seek(step.at);
+      } else if (end) {
+        transport.pause();
+        transport.seek(track.durationSec);
+      }
     }
     const t = transport.time();
+    this.lastPlayhead = t;
     this.liveLayers = evaluate(track, t, (id) => mediaTextureCache.get(id)?.video?.duration ?? null, this.show.fps);
     this.mediaSync.setTime(t);
     // Pre-roll the next play() only when videos are involved.
@@ -1677,6 +1695,7 @@ export class SceneEngine {
     this.multiProjectiveMaterial.dispose();
     this.baker.dispose();
     this.mediaSync.dispose();
+    this.transportUnsub();
     this.feedPass.dispose();
     outputWindows.setFrameDriver(null);
     for (const id of [...this.outputTargets.keys()]) this.disposeOutputSlot(id);

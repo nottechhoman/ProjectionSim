@@ -6,6 +6,7 @@ import { usePlayhead } from '../../playback/useTransport';
 import { clipLength } from '../../playback/evaluate';
 import { moveClip, trimClipEnd, trimClipStart } from '../../playback/edit';
 import { formatTimecode, snapToFrame } from '../../playback/timecode';
+import { sectionAt } from '../../playback/showControl';
 import { mediaTextureCache } from '../../media';
 import type { Layer } from '../../types';
 import { MappingSelect } from './LayersPanel';
@@ -40,6 +41,8 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
   const track = activeTrack(show);
   const fps = show.fps;
   const t = usePlayhead();
+  const playMode = useAppStore((s) => s.playMode);
+  const currentSectionId = sectionAt(track, t)?.id ?? null;
 
   const scrollerRef = useRef<HTMLDivElement>(null);
   const [viewWidth, setViewWidth] = useState(600);
@@ -180,6 +183,30 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
               ))}
               {ticks.map((s) => (
                 <span key={`m${s}`} className={styles.minorTick} style={{ left: (s + tickStep / 2) * pps }} />
+              ))}
+              {track.sections.map((sec) => (
+                <span
+                  key={sec.id}
+                  className={`${styles.sectionBand} ${playMode !== 'play' && sec.id === currentSectionId ? styles.sectionBandOn : ''}`}
+                  style={{ left: sec.startSec * pps, width: Math.max(2, (sec.endSec - sec.startSec) * pps) }}
+                  title={`${sec.name} · at end: ${sec.endAction}`}
+                >
+                  {sec.name} · {sec.endAction}
+                </span>
+              ))}
+              {track.cues.map((cue) => (
+                <span
+                  key={cue.id}
+                  className={styles.cueMark}
+                  style={{ left: cue.timeSec * pps }}
+                  title={`${cue.name} · ${formatTimecode(cue.timeSec, fps)}`}
+                  onPointerDown={(e) => {
+                    e.stopPropagation();
+                    transport.seek(cue.timeSec);
+                  }}
+                >
+                  {cue.name}
+                </span>
               ))}
             </div>
             {rows.map((layer) => {

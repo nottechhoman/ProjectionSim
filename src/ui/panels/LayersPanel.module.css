@@ -253,3 +253,85 @@
 .layerOff {
   opacity: 0.45;
 }
+
+.goBtn {
+  width: 100%;
+  min-height: 64px;
+  font: inherit;
+  font-size: 26px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: #06210f;
+  background: #3ddc84;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.goBtn:hover {
+  background: #5ce79a;
+}
+
+.standby {
+  margin: 6px 0 10px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.standby b {
+  color: var(--text);
+}
+
+.cueRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+.cueRow input {
+  min-width: 0;
+  flex: 1;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 3px 5px;
+}
+
+.cueRow select {
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+}
+
+.cueTime {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.cueNext {
+  border-left: 3px solid #3ddc84;
+  padding-left: 4px;
+}
+
+.kbd {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+/* Cues panel docks on the right of the viewport so it can sit beside Layers. */
+.shellRight {
+  left: auto;
+  right: 12px;
+  width: min(360px, calc(100% - 24px));
+}

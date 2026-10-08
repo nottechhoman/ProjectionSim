@@ -250,7 +250,7 @@ export function Toolbar({ compact = false }: ToolbarProps) {
                 <MenuItem selected={showProjectionBeam} onSelect={() => useAppStore.getState().toggleProjectionBeam()}>
                   Projection beam
                 </MenuItem>
-                <MenuItem selected={measureMode} onSelect={() => { setMeasureMode(!measureMode); close(); }} hint="M">
+                <MenuItem selected={measureMode} onSelect={() => { setMeasureMode(!measureMode); close(); }}>
                   Measure distance
                 </MenuItem>
                 <MenuItem selected={rasterPreviewPanelVisible} onSelect={() => { toggleRasterPreviewPanel(); close(); }}>

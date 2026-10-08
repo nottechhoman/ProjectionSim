@@ -1,6 +1,8 @@
 import { useRef, useState, type ChangeEvent } from 'react';
 import { useAppStore } from '../../store';
 import { transport } from '../../playback/clock';
+import { go, stop, togglePlay } from '../../playback/controls';
+import type { PlayMode } from '../../playback/showControl';
 import { formatTimecode } from '../../playback/timecode';
 import { usePlayhead, useTransportState } from '../../playback/useTransport';
 import { activeTrack } from '../../mapping/model';
@@ -23,6 +25,10 @@ export function MediaDock() {
   const timelineVisible = useAppStore((s) => s.timelineVisible);
   const toggleTimeline = useAppStore((s) => s.toggleTimeline);
   const showTimeline = profile !== 'phone' && timelineVisible;
+  const playMode = useAppStore((s) => s.playMode);
+  const setPlayMode = useAppStore((s) => s.setPlayMode);
+  const cuesVisible = useAppStore((s) => s.cuesPanelVisible);
+  const setCuesVisible = useAppStore((s) => s.setCuesPanelVisible);
 
   const pick = (kind: 'video' | 'image') => {
     setPendingKind(kind);
@@ -42,7 +48,7 @@ export function MediaDock() {
         <button
           type="button"
           className={`${styles.playBtn} ${playing ? styles.playing : ''}`}
-          onClick={() => (playing ? transport.pause() : transport.play())}
+          onClick={togglePlay}
           aria-label={playing ? 'Pause' : 'Play'}
           title={playing ? 'Pause (Space)' : 'Play (Space)'}
           data-testid="transport-play"
@@ -52,10 +58,7 @@ export function MediaDock() {
         <button
           type="button"
           className={styles.ghostBtn}
-          onClick={() => {
-            transport.pause();
-            transport.seek(0);
-          }}
+          onClick={stop}
           aria-label="Stop"
           title="Stop (Esc)"
           data-testid="transport-stop"
@@ -77,7 +80,33 @@ export function MediaDock() {
             <option key={r} value={r}>{r}×</option>
           ))}
         </select>
+        {profile !== 'phone' ? (
+          <select
+            className={styles.targetSelect}
+            value={playMode}
+            onChange={(e) => setPlayMode(e.target.value as PlayMode)}
+            aria-label="Play mode"
+            title="Play mode (L toggles loop section)"
+            data-testid="play-mode"
+          >
+            <option value="play">Play</option>
+            <option value="playSection">Play section</option>
+            <option value="loopSection">Loop section</option>
+          </select>
+        ) : null}
+        <button type="button" className={styles.goBtn} onClick={go} title="GO — next cue (Enter)" data-testid="transport-go">
+          GO
+        </button>
         <div className={styles.actions}>
+          <button
+            type="button"
+            className={`${styles.ghostBtn} ${cuesVisible ? styles.on : ''}`}
+            onClick={() => setCuesVisible(!cuesVisible)}
+            data-testid="cues-toggle"
+            title="Cues & sections"
+          >
+            Cues
+          </button>
           {profile !== 'phone' ? (
             <button
               type="button"

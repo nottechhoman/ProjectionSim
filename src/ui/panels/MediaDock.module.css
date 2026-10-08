@@ -269,3 +269,25 @@
   color: var(--text);
   letter-spacing: 0.02em;
 }
+
+.goBtn {
+  min-height: var(--tap);
+  padding: 0 14px;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: #06210f;
+  background: #3ddc84;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.goBtn:hover {
+  background: #5ce79a;
+}
+
+.on {
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
