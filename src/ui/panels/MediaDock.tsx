@@ -4,6 +4,8 @@ import { transport } from '../../playback/clock';
 import { formatTimecode } from '../../playback/timecode';
 import { usePlayhead, useTransportState } from '../../playback/useTransport';
 import { activeTrack } from '../../mapping/model';
+import { useDeviceProfile } from '../useDeviceProfile';
+import { TimelineDock } from './TimelineDock';
 import styles from './MediaDock.module.css';
 
 const RATES = [0.25, 0.5, 1, 1.5, 2];
@@ -17,6 +19,10 @@ export function MediaDock() {
   const { playing, rate } = useTransportState();
   const t = usePlayhead();
   const track = activeTrack(show);
+  const profile = useDeviceProfile();
+  const timelineVisible = useAppStore((s) => s.timelineVisible);
+  const toggleTimeline = useAppStore((s) => s.toggleTimeline);
+  const showTimeline = profile !== 'phone' && timelineVisible;
 
   const pick = (kind: 'video' | 'image') => {
     setPendingKind(kind);
@@ -59,7 +65,7 @@ export function MediaDock() {
         <span className={styles.timecode} data-testid="transport-timecode">
           {formatTimecode(t, show.fps)}
         </span>
-        <span className={styles.trackTime}>/ {formatTimecode(track.durationSec, show.fps)}</span>
+        {profile !== 'phone' ? <span className={styles.trackTime}>/ {formatTimecode(track.durationSec, show.fps)}</span> : null}
         <select
           className={styles.targetSelect}
           value={rate}
@@ -72,14 +78,31 @@ export function MediaDock() {
           ))}
         </select>
         <div className={styles.actions}>
-          <button type="button" className={styles.ghostBtn} onClick={() => pick('image')} data-testid="media-add-image" title="Add an image layer">
-            ＋ Image
-          </button>
-          <button type="button" className={styles.accentBtn} onClick={() => pick('video')} data-testid="media-add-video" title="Add a video layer">
-            ＋ Video
-          </button>
+          {profile !== 'phone' ? (
+            <button
+              type="button"
+              className={styles.ghostBtn}
+              onClick={toggleTimeline}
+              aria-expanded={timelineVisible}
+              data-testid="timeline-toggle"
+              title={timelineVisible ? 'Hide timeline' : 'Show timeline'}
+            >
+              Timeline {timelineVisible ? '▾' : '▴'}
+            </button>
+          ) : null}
+          {profile !== 'phone' ? (
+            <>
+              <button type="button" className={styles.ghostBtn} onClick={() => pick('image')} data-testid="media-add-image" title="Add an image layer">
+                ＋ Image
+              </button>
+              <button type="button" className={styles.accentBtn} onClick={() => pick('video')} data-testid="media-add-video" title="Add a video layer">
+                ＋ Video
+              </button>
+            </>
+          ) : null}
         </div>
       </div>
+      {showTimeline ? <TimelineDock compact={profile === 'tablet'} /> : null}
       <input ref={fileRef} type="file" hidden accept={pendingKind === 'video' ? 'video/*' : 'image/*'} onChange={handleFile} />
     </section>
   );

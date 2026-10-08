@@ -1164,10 +1164,17 @@ export class SceneEngine {
 
     // v4: timeline → live layers → media sync → screen textures → content feeds.
     const track = activeTrack(this.show);
+    // Stop at the end of the track (sections / end actions come with the cue system).
+    if (transport.playing && transport.time() >= track.durationSec) {
+      transport.pause();
+      transport.seek(track.durationSec);
+    }
     const t = transport.time();
     this.liveLayers = evaluate(track, t, (id) => mediaTextureCache.get(id)?.video?.duration ?? null, this.show.fps);
     this.mediaSync.setTime(t);
-    this.mediaSync.sync(this.liveLayers, track, transport.playing, transport.rate, this.show.fps);
+    // Pre-roll the next play() only when videos are involved.
+    transport.prerollMs = track.layers.some((l) => l.enabled && l.media.kind === 'video') ? this.mediaSync.startupMs : 0;
+    this.mediaSync.sync(this.liveLayers, track, transport.playing, transport.rate, this.show.fps, transport);
     mediaTextureCache.updateVideos();
     this.renderContent();
 

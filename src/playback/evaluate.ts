@@ -68,6 +68,19 @@ export function clipLength(layer: Pick<Layer, 'inSec' | 'outSec'>, mediaDuration
   return Math.max(0, end - layer.inSec);
 }
 
+/**
+ * Media time of a video layer at timeline time t (null outside the layer, or after
+ * a play-once clip ends). Same rule as evaluate().
+ */
+export function layerMediaTimeAt(layer: Layer, t: number, mediaDurationSec: number | null, fps = 30): number | null {
+  const local = t - layer.startSec;
+  if (local < -EPS || local >= layer.durationSec - EPS) return null;
+  const elapsed = Math.max(0, local) * layer.speed;
+  const len = clipLength(layer, mediaDurationSec);
+  if (len === null) return layer.inSec + elapsed;
+  return wrapMediaTime(elapsed, layer.inSec, len, layer.playMode, 1 / fps);
+}
+
 /** Live layers at time t, bottom to top. */
 export function evaluate(track: Track, t: number, mediaDuration: MediaDurationLookup = () => null, fps = 30): LiveLayer[] {
   const out: LiveLayer[] = [];
@@ -78,13 +91,9 @@ export function evaluate(track: Track, t: number, mediaDuration: MediaDurationLo
     const local = Math.max(0, localSec);
     let mediaTimeSec: number | null = null;
     if (layer.media.kind === 'video') {
-      const len = clipLength(layer, layer.media.assetId ? mediaDuration(layer.media.assetId) : null);
-      const elapsed = local * layer.speed;
-      if (len === null) mediaTimeSec = layer.inSec + elapsed;
-      else {
-        mediaTimeSec = wrapMediaTime(elapsed, layer.inSec, len, layer.playMode, 1 / fps);
-        if (mediaTimeSec === null) return; // played once and finished
-      }
+      const duration = layer.media.assetId ? (mediaDuration(layer.media.assetId) ?? null) : null;
+      mediaTimeSec = layerMediaTimeAt(layer, t, duration, fps);
+      if (mediaTimeSec === null) return; // played once and finished
     }
     const opacity = layer.opacity * fadeEnvelope(local, layer.durationSec, layer.fadeInSec, layer.fadeOutSec);
     out.push({ layer, index, opacity, mediaTimeSec, localSec: local });

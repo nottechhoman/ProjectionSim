@@ -1,6 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { SceneEngine } from '../scene/SceneEngine';
 import { useAppStore } from '../store';
+import { transport } from '../playback/clock';
+import { mediaTextureCache } from '../media';
 
 export function Viewport() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -62,6 +64,8 @@ export function Viewport() {
 
     (window as Window & { __projectionLabEngine?: SceneEngine; __projectionLabStore?: typeof useAppStore }).__projectionLabEngine = engine;
     (window as Window & { __projectionLabEngine?: SceneEngine; __projectionLabStore?: typeof useAppStore }).__projectionLabStore = useAppStore;
+    (window as Window & { __projectionLabTransport?: typeof transport }).__projectionLabTransport = transport;
+    (window as Window & { __projectionLabMedia?: typeof mediaTextureCache }).__projectionLabMedia = mediaTextureCache;
 
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;

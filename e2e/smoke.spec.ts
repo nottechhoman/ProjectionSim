@@ -40,8 +40,8 @@ test('layers panel: add a pattern layer and pick its mapping', async ({ page }) 
   await expect(page.getByTestId('layers-panel')).toBeVisible();
   await page.getByTestId('layer-add-pattern').click();
   await expect(page.getByTestId('layer-inspector')).toBeVisible();
-  const selects = page.locator('[data-testid^="layer-mapping-"]');
-  await expect(selects).toHaveCount(3);
+  const selects = page.getByTestId('layers-panel').locator('[data-testid^="layer-mapping-"]');
+  await expect(selects).toHaveCount(2);
 });
 
 test('visible coverage responds to blocker and preserves calculation target', async ({ page }) => {

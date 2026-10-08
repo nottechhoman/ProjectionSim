@@ -155,6 +155,9 @@ interface AppState extends PersistedStateSlice {
   setSelectedLayerId: (id: string | null) => void;
   setLayersPanelVisible: (visible: boolean) => void;
   toggleLayersPanel: () => void;
+  setTrackDuration: (sec: number) => void;
+  timelineVisible: boolean;
+  toggleTimeline: () => void;
   setRasterPreviewPanelVisible: (visible: boolean) => void;
   toggleRasterPreviewPanel: () => void;
   bumpRasterPreviewRevision: () => void;
@@ -647,6 +650,13 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   setSelectedLayerId: (id) => set(id ? { selectedLayerId: id, selectedObjectId: null } : { selectedLayerId: null }),
   setLayersPanelVisible: (visible) => set({ layersPanelVisible: visible }),
+  setTrackDuration: (sec) => {
+    const durationSec = Math.min(24 * 3600, Math.max(1, sec));
+    pushSceneHistory(get, set);
+    set((s) => ({ show: updateActiveTrack(s.show, (track) => ({ ...track, durationSec })) }));
+  },
+  timelineVisible: true,
+  toggleTimeline: () => set((s) => ({ timelineVisible: !s.timelineVisible })),
   toggleLayersPanel: () => set((s) => ({ layersPanelVisible: !s.layersPanelVisible })),
   setRasterPreviewPanelVisible: (visible) => set({ rasterPreviewPanelVisible: visible }),
   toggleRasterPreviewPanel: () =>
