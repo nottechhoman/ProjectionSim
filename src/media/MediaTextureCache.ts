@@ -8,6 +8,8 @@ export interface LoadedMedia {
 
 export class MediaTextureCache {
   private readonly entries = new Map<string, LoadedMedia>();
+  /** Bumped whenever media is loaded or disposed (renderers cache on it). */
+  version = 0;
 
   get(assetId: string): LoadedMedia | undefined {
     return this.entries.get(assetId);
@@ -30,6 +32,7 @@ export class MediaTextureCache {
     const aspect = image.width / image.height;
     const entry: LoadedMedia = { texture, video: null, aspect };
     this.entries.set(assetId, entry);
+    this.version += 1;
     return entry;
   }
 
@@ -53,6 +56,7 @@ export class MediaTextureCache {
     const aspect = video.videoWidth / video.videoHeight;
     const entry: LoadedMedia = { texture, video, aspect };
     this.entries.set(assetId, entry);
+    this.version += 1;
     return entry;
   }
 
@@ -73,6 +77,7 @@ export class MediaTextureCache {
       URL.revokeObjectURL(entry.video.src);
     }
     this.entries.delete(assetId);
+    this.version += 1;
   }
 
   disposeAll(): void {

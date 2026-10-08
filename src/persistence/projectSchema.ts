@@ -6,10 +6,12 @@ import type {
   ViewPreset,
 } from '../types';
 
-export const PROJECT_FILE_VERSION = 2 as const;
+/** v4 project files (content on layers + mappings). v1 / v2 files are migrated on load. */
+export const PROJECT_FILE_VERSION = 3 as const;
+export const PROJECT_FILE_VERSION_V2 = 2 as const;
 export const PROJECT_FILE_VERSION_LEGACY = 1 as const;
 
-export interface ProjectSnapshotV2 {
+export interface ProjectSnapshotV3 {
   version: typeof PROJECT_FILE_VERSION;
   savedAt: string;
   name: string;
@@ -18,9 +20,8 @@ export interface ProjectSnapshotV2 {
   mediaAssets: import('../types').MediaAssetRecord[];
   materialPreviewMode: import('../types').MaterialPreviewMode;
   projectionCompositeMode: import('../types').ProjectionCompositeMode;
-  mappingMode?: import('../types').MappingMode;
-  contentCanvas?: import('../types').ContentCanvas;
-  sharedContentSourceProjectorId?: string | null;
+  /** v4: mappings, tracks and layers. */
+  show: import('../types').Show;
   calculationTargetId?: string | null;
   analysisQuality?: import('../types').AnalysisQuality;
   calculationTargetSide?: import('../types').CalculationTargetSide;
@@ -58,4 +59,4 @@ export interface ProjectSnapshotV1 {
   bottomPanelVisible: boolean;
 }
 
-export type ProjectSnapshot = ProjectSnapshotV2;
+export type ProjectSnapshot = ProjectSnapshotV3;

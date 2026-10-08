@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('studio: auto edge blend, blend-mask export, UV mapping and warp', async ({ page }) => {
+test('studio: auto edge blend, blend-mask export, mappings and warp', async ({ page }) => {
   await page.goto('/');
   await page.getByTestId('add-menu').click();
   await page.getByRole('menuitem', { name: /Projector/ }).click();
@@ -15,11 +15,12 @@ test('studio: auto edge blend, blend-mask export, UV mapping and warp', async ({
   await page.getByTestId('export-masks').click();
   expect((await download).suggestedFilename()).toMatch(/blend-mask-\d+x\d+\.png$/);
 
-  // UV mapping
-  await page.getByTestId('studio-tab-uv').click();
+  // Mappings: add a Feed mapping and edit its regions
+  await page.getByTestId('studio-tab-mappings').click();
+  await page.getByLabel('New mapping kind').selectOption('feed');
+  await page.getByTestId('mapping-add').click();
+  await expect(page.getByTestId('mapping-kind')).toHaveValue('feed');
   await expect(page.getByTestId('uv-editor')).toBeVisible();
-  await page.getByTestId('uv-enabled').check();
-  await expect(page.getByTestId('uv-enabled')).toBeChecked();
 
   // Warp
   await page.getByTestId('studio-tab-warp').click();

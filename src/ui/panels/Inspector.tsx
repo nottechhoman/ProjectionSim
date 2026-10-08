@@ -1,6 +1,8 @@
 import { useAppStore } from '../../store';
 import { getCalculationTargetObject } from '../../store/reliabilitySettings';
-import type { ProjectionSides, TestPattern, Vec3 } from '../../types';
+import type { ProjectionSides, Vec3 } from '../../types';
+import { activeTrack } from '../../mapping/model';
+import { LayerInspector } from './LayerInspector';
 import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../../types';
 import { computeProjectorLookAtQuaternion, defaultLookAtTarget } from '../../optics/lookAt';
 import { supportsProjectionSides } from '../../projection/projectionSides';
@@ -9,16 +11,6 @@ import { fromDisplayUnit, toDisplayUnit } from '../../utils/units';
 import { NumInput } from '../components/NumInput';
 import { CalcResults } from './CalcResults';
 import styles from './Inspector.module.css';
-
-const PATTERNS: { value: TestPattern; label: string }[] = [
-  { value: 'checkerboard', label: 'Checkerboard' },
-  { value: 'uvGrid', label: 'UV Grid' },
-  { value: 'colorBars', label: 'Color Bars' },
-  { value: 'white', label: 'White' },
-  { value: 'projectorId', label: 'Projector ID' },
-  { value: 'black', label: 'Black (black-level check)' },
-  { value: 'gray', label: 'Gray 50%' },
-];
 
 export function Inspector() {
   const selectedObjectId = useAppStore((s) => s.selectedObjectId);
@@ -39,8 +31,9 @@ export function Inspector() {
   const updateSceneObjectFlags = useAppStore((s) => s.updateSceneObjectFlags);
   const updateSceneObjectDimensions = useAppStore((s) => s.updateSceneObjectDimensions);
   const updateSceneObjectLedWall = useAppStore((s) => s.updateSceneObjectLedWall);
-  const mediaAssets = useAppStore((s) => s.mediaAssets);
-  const setProjectorMedia = useAppStore((s) => s.setProjectorMedia);
+  const show = useAppStore((s) => s.show);
+  const selectedLayerId = useAppStore((s) => s.selectedLayerId);
+  const openStudioTab = useAppStore((s) => s.openStudioTab);
   const calculationTargetId = useAppStore((s) => s.calculationTargetId);
   const overlap = useAppStore((s) => s.calculationResults.overlap);
   const autoBlendFromOverlap = useAppStore((s) => s.autoBlendFromOverlap);
@@ -70,14 +63,29 @@ export function Inspector() {
     </div>
   );
 
+  const selectedLayer = activeTrack(show).layers.find((l) => l.id === selectedLayerId);
+  if (!selectedObjectId && selectedLayer) {
+    return (
+      <div className={styles.panel}>
+        {header}
+        <LayerInspector layer={selectedLayer} />
+      </div>
+    );
+  }
+
   if (!selectedObjectId || (!projector && !sceneObject)) {
     return (
       <div className={styles.panel}>
         {header}
-        <div className={styles.empty}>Select an object or projector</div>
+        <div className={styles.empty}>Select an object, projector or layer</div>
       </div>
     );
   }
+
+  const mappingsFor = (id: string) => show.mappings.filter((m) => m.screenIds.includes(id));
+  const lockedMappings = projector
+    ? show.mappings.filter((m) => m.perspective?.lockToProjectorId === projector.id)
+    : [];
 
   const transform = projector?.transform ?? sceneObject!.transform;
   const euler = quaternionToEulerYXZ(transform.quaternion);
@@ -328,7 +336,7 @@ export function Inspector() {
           <div className={styles.section}>
             <div className={styles.sectionTitle}>LED Display</div>
             <p className={styles.hint}>
-              Direct pixel surface — assign image or video; independent from projector content.
+              Direct pixel surface — it shows its own screen texture: put layers on a mapping that includes this wall.
             </p>
             <NumInput
               label="Resolution width (px)"
@@ -352,61 +360,6 @@ export function Inspector() {
                 });
               }}
             />
-            <div className={styles.row}>
-              <label htmlFor="led-media-source">Media source</label>
-              <select
-                id="led-media-source"
-                value={sceneObject.ledWall?.mediaSource ?? 'image'}
-                onChange={(e) => {
-                  pushSceneHistoryCheckpoint();
-                  const source = e.target.value as 'image' | 'video';
-                  updateSceneObjectLedWall(sceneObject.id, {
-                    mediaSource: source,
-                    mediaAssetId: null,
-                  });
-                }}
-              >
-                <option value="image">Image</option>
-                <option value="video">Video</option>
-              </select>
-            </div>
-            <div className={styles.row}>
-              <label htmlFor="led-media-asset">Media asset</label>
-              <select
-                id="led-media-asset"
-                value={sceneObject.ledWall?.mediaAssetId ?? ''}
-                onChange={(e) => {
-                  pushSceneHistoryCheckpoint();
-                  updateSceneObjectLedWall(sceneObject.id, {
-                    mediaAssetId: e.target.value || null,
-                  });
-                }}
-              >
-                <option value="">None</option>
-                {mediaAssets
-                  .filter((asset) => asset.kind === (sceneObject.ledWall?.mediaSource ?? 'image'))
-                  .map((asset) => (
-                    <option key={asset.id} value={asset.id}>{asset.name}</option>
-                  ))}
-              </select>
-            </div>
-            <div className={styles.row}>
-              <label htmlFor="led-media-fit">Fit mode</label>
-              <select
-                id="led-media-fit"
-                value={sceneObject.ledWall?.mediaFit ?? 'contain'}
-                onChange={(e) => {
-                  pushSceneHistoryCheckpoint();
-                  updateSceneObjectLedWall(sceneObject.id, {
-                    mediaFit: e.target.value as 'contain' | 'cover' | 'stretch',
-                  });
-                }}
-              >
-                <option value="contain">Contain</option>
-                <option value="cover">Cover</option>
-                <option value="stretch">Stretch</option>
-              </select>
-            </div>
           </div>
         )}
         <div className={styles.section}>
@@ -469,6 +422,15 @@ export function Inspector() {
               </select>
             </div>
           )}
+          {sceneObject.receivesProjection || sceneObject.type === 'ledWall' ? (
+            <p className={styles.hint}>
+              Mappings on this screen:{' '}
+              {mappingsFor(sceneObject.id).map((m) => m.name).join(', ') || 'none'}{' '}
+              <button type="button" className={styles.linkBtn} onClick={() => openStudioTab('mappings')}>
+                Edit mappings
+              </button>
+            </p>
+          ) : null}
           <button type="button" className={styles.dangerBtn} onClick={() => removeSceneObject(sceneObject.id)}>
             Delete object
           </button>
@@ -495,89 +457,15 @@ export function Inspector() {
               onChange={(v) => patchProjector({ brightness: Math.max(0, v) })}
             />
             <p className={styles.hint}>
-              Assign a different pattern, image, or video per projector. Use toolbar Composite → Raw to show all
-              projectors at once.
+              Projectors show the screens&apos; layers. Locked mappings:{' '}
+              {lockedMappings.map((m) => m.name).join(', ') || 'none'}.{' '}
+              <button type="button" className={styles.linkBtn} onClick={() => openStudioTab('mappings')}>
+                Edit mappings
+              </button>
             </p>
             <button type="button" className={styles.dangerBtn} onClick={() => removeProjector(projector.id)}>
               Delete projector
             </button>
-          </div>
-
-          <div className={styles.section}>
-            <div className={styles.sectionTitle}>Media Source</div>
-            <div className={styles.row}>
-              <label>Source</label>
-              <select
-                value={projector.mediaSource}
-                onChange={(e) =>
-                  setProjectorMedia(
-                    projector.id,
-                    e.target.value as 'pattern' | 'image' | 'video',
-                    e.target.value === 'pattern' ? null : projector.mediaAssetId,
-                  )
-                }
-              >
-                <option value="pattern">Test pattern</option>
-                <option value="image">Image</option>
-                <option value="video">Video</option>
-              </select>
-            </div>
-            {projector.mediaSource === 'pattern' && (
-              <div className={styles.row}>
-                <label>Pattern</label>
-                <select
-                  value={projector.testPattern}
-                  onChange={(e) =>
-                    patchProjector({ testPattern: e.target.value as TestPattern })
-                  }
-                >
-                  {PATTERNS.map((p) => (
-                    <option key={p.value} value={p.value}>{p.label}</option>
-                  ))}
-                </select>
-              </div>
-            )}
-            {(projector.mediaSource === 'image' || projector.mediaSource === 'video') && (
-              <>
-                <div className={styles.row}>
-                  <label>Asset</label>
-                  <select
-                    value={projector.mediaAssetId ?? ''}
-                    onChange={(e) =>
-                      setProjectorMedia(projector.id, projector.mediaSource, e.target.value || null)
-                    }
-                  >
-                    <option value="">— select —</option>
-                    {mediaAssets
-                      .filter((a) => a.kind === projector.mediaSource)
-                      .map((a) => (
-                        <option key={a.id} value={a.id}>{a.name}</option>
-                      ))}
-                  </select>
-                </div>
-                {mediaAssets.filter((a) => a.kind === projector.mediaSource).length === 0 && (
-                  <p className={styles.hint}>No {projector.mediaSource} imported yet — use toolbar Import.</p>
-                )}
-                <div className={styles.row}>
-                  <label>Fit</label>
-                  <select
-                    value={projector.mediaFit}
-                    onChange={(e) =>
-                      setProjectorMedia(
-                        projector.id,
-                        projector.mediaSource,
-                        projector.mediaAssetId,
-                        e.target.value as 'contain' | 'cover' | 'stretch',
-                      )
-                    }
-                  >
-                    <option value="contain">Contain</option>
-                    <option value="cover">Cover</option>
-                    <option value="stretch">Stretch</option>
-                  </select>
-                </div>
-              </>
-            )}
           </div>
 
           <div className={styles.section}>

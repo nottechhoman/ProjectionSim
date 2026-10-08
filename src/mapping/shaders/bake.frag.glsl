@@ -1,0 +1,196 @@
+// v4 screen-texture bake — one draw per (screen, layer); GL blending composites
+// layers bottom to top. CPU mirror: src/mapping/sample.ts — keep them in sync.
+
+// mapping
+uniform int mapKind;          // 0 direct, 1 perspective, 2 parallel, 3 feed, 4 cylindrical, 5 spherical
+uniform mat4 mapMatrix;       // perspective: view-projection; parallel/cyl/sph: inverse frame
+uniform vec4 mapParams;       // parallel: size w,h · cyl: arc rad, height · sph: arc rad, elevation rad
+uniform vec2 mapRes;          // mapping canvas pixels
+uniform int directFit;        // 0 stretch, 1 fit, 2 crop, 3 pixel
+uniform float screenAspect;   // physical aspect of the screen texture layout
+uniform vec2 screenTexSize;
+
+// feed rect for this screen (surface UV projections fitted to the object's bounds)
+uniform int surfProj;         // 0 mesh UV, 1 planar, 2 cylindrical, 3 spherical
+uniform int surfAxes;         // planar: 0 XY, 1 XZ, 2 ZY
+uniform mat4 surfRootInv;
+uniform vec3 surfBoundsMin;
+uniform vec3 surfBoundsSize;
+uniform vec3 surfTheta;       // ref, min, max
+uniform vec2 surfPhi;         // min, max
+uniform vec4 surfRegion;      // x, y, w, h (top-left origin)
+uniform vec4 surfXform;       // rotation rad, flipU, flipV, wrap
+uniform vec2 surfRepeat;
+
+// layer
+uniform int mediaKind;        // 0 nothing, 1 texture, 2 pattern, 3 solid
+uniform sampler2D mediaMap;
+uniform float mediaAspect;
+uniform int patternType;
+uniform vec3 layerColor;
+uniform vec4 layerRect;       // x, y, w, h normalized, top-left origin
+uniform float layerRot;       // radians
+uniform int layerFit;         // 0 contain, 1 cover, 2 stretch
+uniform float layerOpacity;
+uniform int blendMode;        // 0 normal, 1 add, 2 multiply
+
+in vec3 vWorld;
+in vec2 vUv;
+out vec4 fragColor;
+
+const float PI = 3.14159265359;
+
+float wrapPi(float a) {
+  return a - 2.0 * PI * floor((a + PI) / (2.0 * PI));
+}
+
+bool inUnit(vec2 p) {
+  return p.x >= 0.0 && p.x <= 1.0 && p.y >= 0.0 && p.y <= 1.0;
+}
+
+vec2 rawSurfaceUv() {
+  if (surfProj == 0) return vUv;
+  vec3 l = (surfRootInv * vec4(vWorld, 1.0)).xyz;
+  vec3 mn = surfBoundsMin;
+  vec3 sz = max(surfBoundsSize, vec3(1e-6));
+  if (surfProj == 1) {
+    if (surfAxes == 1) return vec2((l.x - mn.x) / sz.x, (mn.z + sz.z - l.z) / sz.z);
+    if (surfAxes == 2) return vec2((mn.z + sz.z - l.z) / sz.z, (l.y - mn.y) / sz.y);
+    return vec2((l.x - mn.x) / sz.x, (l.y - mn.y) / sz.y);
+  }
+  float t = wrapPi(atan(l.x, l.z) - surfTheta.x);
+  float u = (surfTheta.z - t) / max(1e-6, surfTheta.z - surfTheta.y);
+  if (surfProj == 2) return vec2(u, (l.y - mn.y) / sz.y);
+  float f = atan(l.y, max(length(l.xz), 1e-6));
+  return vec2(u, (f - surfPhi.x) / max(1e-6, surfPhi.y - surfPhi.x));
+}
+
+float wrapScalar(float x, float mode, inout bool ok) {
+  if (mode > 1.5) {
+    float m = x - 2.0 * floor(x / 2.0);
+    return m > 1.0 ? 2.0 - m : m;
+  }
+  if (mode > 0.5) return fract(x);
+  if (x < -1e-4 || x > 1.0001) ok = false;
+  return clamp(x, 0.0, 1.0);
+}
+
+bool feedUv(out vec2 uv) {
+  bool ok = true;
+  vec2 s = rawSurfaceUv();
+  if (surfXform.y > 0.5) s.x = 1.0 - s.x;
+  if (surfXform.z > 0.5) s.y = 1.0 - s.y;
+  float a = surfXform.x;
+  if (a != 0.0) {
+    vec2 c = s - 0.5;
+    s = vec2(cos(a) * c.x - sin(a) * c.y, sin(a) * c.x + cos(a) * c.y) + 0.5;
+  }
+  s *= surfRepeat;
+  s.x = wrapScalar(s.x, surfXform.w, ok);
+  s.y = wrapScalar(s.y, surfXform.w, ok);
+  uv = vec2(surfRegion.x + s.x * surfRegion.z, 1.0 - surfRegion.y - surfRegion.w + s.y * surfRegion.w);
+  return ok;
+}
+
+bool directUv(out vec2 uv) {
+  uv = vUv;
+  if (directFit == 3) {
+    uv = (vUv - 0.5) * (screenTexSize / mapRes) + 0.5;
+  } else if (directFit != 0) {
+    float canvasAspect = mapRes.x / mapRes.y;
+    vec2 sc = vec2(1.0);
+    bool wider = canvasAspect > screenAspect;
+    if (directFit == 1) {
+      if (wider) sc.y = screenAspect / canvasAspect; else sc.x = canvasAspect / screenAspect;
+    } else {
+      if (wider) sc.x = canvasAspect / screenAspect; else sc.y = screenAspect / canvasAspect;
+    }
+    uv = (vUv - 0.5) / sc + 0.5;
+  }
+  return inUnit(uv);
+}
+
+// Texel → mapping canvas UV (bottom-left origin).
+bool canvasUv(out vec2 uv) {
+  uv = vec2(0.0);
+  if (mapKind == 0) return directUv(uv);
+  if (mapKind == 3) return feedUv(uv);
+  if (mapKind == 1) {
+    vec4 clip = mapMatrix * vec4(vWorld, 1.0);
+    if (clip.w <= 1e-6) return false;
+    uv = clip.xy / clip.w * 0.5 + 0.5;
+    return inUnit(uv);
+  }
+  vec3 l = (mapMatrix * vec4(vWorld, 1.0)).xyz;
+  if (mapKind == 2) {
+    uv = vec2(l.x / mapParams.x + 0.5, l.y / mapParams.y + 0.5);
+    return inUnit(uv);
+  }
+  float t = wrapPi(atan(l.x, l.z));
+  if (mapKind == 4) {
+    uv = vec2(0.5 - t / mapParams.x, l.y / mapParams.y + 0.5);
+    return inUnit(uv);
+  }
+  float f = atan(l.y, max(length(l.xz), 1e-6));
+  uv = vec2(0.5 - t / mapParams.x, f / mapParams.y + 0.5);
+  return inUnit(uv);
+}
+
+// Canvas UV → layer media UV (bottom-left); false outside the rect / letterbox.
+bool layerUv(vec2 c, out vec2 m) {
+  m = vec2(0.0);
+  vec2 px = vec2(c.x, 1.0 - c.y) * mapRes;
+  vec2 rs = layerRect.zw * mapRes;
+  vec2 rc = layerRect.xy * mapRes + rs * 0.5;
+  if (layerRot != 0.0) {
+    float a = -layerRot;
+    vec2 d = px - rc;
+    px = rc + vec2(cos(a) * d.x - sin(a) * d.y, sin(a) * d.x + cos(a) * d.y);
+  }
+  vec2 l = (px - (rc - rs * 0.5)) / rs;
+  if (!inUnit(l)) return false;
+  if (layerFit != 2 && mediaAspect > 0.0) {
+    float ra = rs.x / rs.y;
+    vec2 sc = vec2(1.0);
+    if (layerFit == 0) {
+      if (mediaAspect > ra) sc.y = ra / mediaAspect; else sc.x = mediaAspect / ra;
+    } else {
+      if (mediaAspect > ra) sc.x = mediaAspect / ra; else sc.y = ra / mediaAspect;
+    }
+    l = (l - 0.5) / sc + 0.5;
+    if (!inUnit(l)) return false;
+  }
+  m = vec2(l.x, 1.0 - l.y);
+  return true;
+}
+
+float checker(vec2 uv) {
+  vec2 c = floor(uv * 16.0);
+  return mod(c.x + c.y, 2.0);
+}
+
+vec3 patternColor(int p, vec2 uv, vec3 tint) {
+  if (p == 0) return mix(vec3(0.1), vec3(0.9), checker(uv));
+  if (p == 1) return vec3(uv, 0.0);
+  if (p == 2) return vec3(uv.x, uv.y, 0.5);
+  if (p == 3) return vec3(1.0);
+  if (p == 4) return tint;
+  if (p == 5) return vec3(0.0);
+  return vec3(0.5);
+}
+
+void main() {
+  vec2 c;
+  if (!canvasUv(c)) discard;
+  vec2 m;
+  if (!layerUv(c, m)) discard;
+  vec3 col;
+  if (mediaKind == 1) col = texture(mediaMap, m).rgb;
+  else if (mediaKind == 2) col = patternColor(patternType, m, layerColor);
+  else if (mediaKind == 3) col = layerColor;
+  else discard;
+  float a = clamp(layerOpacity, 0.0, 1.0);
+  // Blend factors are set per mode on the material (see ScreenTextureBaker).
+  if (blendMode == 2) fragColor = vec4(mix(vec3(1.0), col, a), 1.0);
+  else fragColor = vec4(col, a);
+}

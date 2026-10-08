@@ -1,16 +1,6 @@
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
+import { useMemo, useRef, useState, useSyncExternalStore, type PointerEvent as ReactPointerEvent } from 'react';
 import { useAppStore } from '../../store';
-import type {
-  BlendCurve,
-  BlendSettings,
-  ProjectorConfig,
-  SceneObject,
-  SurfaceUvMapping,
-  SurfaceUvProjection,
-  UvRegion,
-  UvWrapMode,
-  Vec2,
-} from '../../types';
+import type { BlendCurve, BlendSettings, ProjectorConfig, Vec2 } from '../../types';
 import { DEFAULT_PROJECTOR_WARP } from '../../types';
 import {
   autoBlendWeights,
@@ -22,11 +12,8 @@ import {
   MIN_AUTO_WIDTH,
 } from '../../blending/advancedBlend';
 import { blendWeightWithGamma } from '../../blending/blendWeights';
-import {
-  defaultProjectionForType,
-  normalizeSurfaceUvMapping,
-  surfaceToContentUv,
-} from '../../uvmapping/surfaceUv';
+import { MappingsTab } from './MappingsTab';
+import { MiniNum, svgPoint } from './studioControls';
 import { applyMat3, fitWarpToRasterPoints, isValidWarpQuad, squareToQuad } from '../../warp/homography';
 import type { SceneEngine } from '../../scene/SceneEngine';
 import { isCompactLayout } from '../deviceProfile';
@@ -41,10 +28,8 @@ import {
   type OutputContent,
 } from '../../output/outputWindows';
 
-export type StudioTab = 'blend' | 'uv' | 'warp' | 'outputs';
+import type { StudioTab } from '../../store';
 type Tab = StudioTab;
-
-const SURFACE_COLORS = ['#4fc3f7', '#ffb74d', '#81c784', '#ba68c8', '#f06292', '#4db6ac', '#e57373', '#aed581'];
 
 function engine(): SceneEngine | undefined {
   return (window as Window & { __projectionLabEngine?: SceneEngine }).__projectionLabEngine;
@@ -64,14 +49,6 @@ export function downloadCanvas(canvas: HTMLCanvasElement, filename: string): voi
 
 function slug(name: string): string {
   return name.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'projector';
-}
-
-/** Pointer position inside an SVG in viewBox units. */
-function svgPoint(svg: SVGSVGElement, clientX: number, clientY: number): Vec2 {
-  const ctm = svg.getScreenCTM();
-  if (!ctm) return { x: 0, y: 0 };
-  const p = new DOMPoint(clientX, clientY).matrixTransform(ctm.inverse());
-  return { x: p.x, y: p.y };
 }
 
 function Slider({
@@ -118,26 +95,6 @@ function Slider({
         }}
       />
     </div>
-  );
-}
-
-function MiniNum({ label, value, step = 0.01, onChange }: { label: string; value: number; step?: number; onChange: (v: number) => void }) {
-  const [draft, setDraft] = useState(String(+value.toFixed(4)));
-  useEffect(() => setDraft(String(+value.toFixed(4))), [value]);
-  return (
-    <label className={styles.mini}>
-      {label}
-      <input
-        type="number"
-        step={step}
-        value={draft}
-        onChange={(e) => {
-          setDraft(e.target.value);
-          const v = parseFloat(e.target.value);
-          if (Number.isFinite(v)) onChange(v);
-        }}
-      />
-    </label>
   );
 }
 
@@ -391,342 +348,6 @@ function BlendTab() {
           server or projector blend layer.
         </p>
       </div>
-    </>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// UV mapping tab
-// ---------------------------------------------------------------------------
-
-type DragMode = 'move' | 'nw' | 'ne' | 'sw' | 'se';
-
-function mappingOf(obj: SceneObject): SurfaceUvMapping {
-  return obj.uvMapping
-    ? normalizeSurfaceUvMapping(obj.uvMapping)
-    : { ...normalizeSurfaceUvMapping(undefined), projection: defaultProjectionForType(obj.type) };
-}
-
-function UvTab() {
-  const sceneObjects = useAppStore((s) => s.sceneObjects);
-  const selectedObjectId = useAppStore((s) => s.selectedObjectId);
-  const setSelectedObject = useAppStore((s) => s.setSelectedObject);
-  const update = useAppStore((s) => s.updateSceneObjectUvMapping);
-  const checkpoint = useAppStore((s) => s.pushSceneHistoryCheckpoint);
-  const contentCanvas = useAppStore((s) => s.contentCanvas);
-  const mappingMode = useAppStore((s) => s.mappingMode);
-  const setMappingMode = useAppStore((s) => s.setMappingMode);
-  const previewMode = useAppStore((s) => s.materialPreviewMode);
-  const setPreviewMode = useAppStore((s) => s.setMaterialPreviewMode);
-  const projectors = useAppStore((s) => s.projectors);
-  const sharedSourceId = useAppStore((s) => s.sharedContentSourceProjectorId);
-
-  const surfaces = sceneObjects.filter((o) => o.receivesProjection && o.type !== 'ledWall');
-  const [localSel, setLocalSel] = useState<string | null>(null);
-  const selected =
-    surfaces.find((o) => o.id === selectedObjectId) ??
-    surfaces.find((o) => o.id === localSel) ??
-    surfaces[0] ??
-    null;
-  const mapping = selected ? mappingOf(selected) : null;
-
-  const source = projectors.find((p) => p.id === sharedSourceId) ?? projectors[0];
-  const aspect = contentCanvas.enabled
-    ? contentCanvas.widthPx / contentCanvas.heightPx
-    : source?.optics.aspectRatio ?? 16 / 9;
-  const W = 400;
-  const H = Math.round(W / aspect);
-  const pad = 14;
-
-  const svgRef = useRef<SVGSVGElement>(null);
-  const drag = useRef<{ id: string; mode: DragMode; start: Vec2; region: UvRegion } | null>(null);
-
-  const [segments, setSegments] = useState<[number, number, number, number][]>([]);
-  const dimsKey = selected ? JSON.stringify([selected.dimensions, selected.curved, selected.modelAssetId, selected.modelScale]) : '';
-  useEffect(() => {
-    if (!selected || !mapping) {
-      setSegments([]);
-      return;
-    }
-    const t = setTimeout(() => setSegments(engine()?.getSurfaceUvSegments(selected.id, mapping.projection) ?? []), 30);
-    return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected?.id, mapping?.projection, dimsKey]);
-
-  const set = (patch: Partial<SurfaceUvMapping>, history = true) => {
-    if (selected) update(selected.id, patch, history);
-  };
-
-  const onPointerDown = (e: ReactPointerEvent, obj: SceneObject, mode: DragMode) => {
-    e.stopPropagation();
-    const svg = svgRef.current;
-    if (!svg) return;
-    (e.target as Element).setPointerCapture?.(e.pointerId);
-    setSelectedObject(obj.id);
-    setLocalSel(obj.id);
-    checkpoint();
-    const p = svgPoint(svg, e.clientX, e.clientY);
-    drag.current = { id: obj.id, mode, start: p, region: { ...mappingOf(obj).region } };
-  };
-
-  const onPointerMove = (e: ReactPointerEvent) => {
-    const d = drag.current;
-    const svg = svgRef.current;
-    if (!d || !svg) return;
-    const p = svgPoint(svg, e.clientX, e.clientY);
-    let dx = (p.x - d.start.x) / W;
-    let dy = (p.y - d.start.y) / H;
-    if (e.shiftKey) {
-      dx = Math.round(dx * 20) / 20;
-      dy = Math.round(dy * 20) / 20;
-    }
-    const r = { ...d.region };
-    const min = 0.02;
-    if (d.mode === 'move') {
-      r.x += dx;
-      r.y += dy;
-    } else {
-      if (d.mode === 'nw' || d.mode === 'sw') {
-        const nx = Math.min(r.x + r.width - min, r.x + dx);
-        r.width += r.x - nx;
-        r.x = nx;
-      } else {
-        r.width = Math.max(min, r.width + dx);
-      }
-      if (d.mode === 'nw' || d.mode === 'ne') {
-        const ny = Math.min(r.y + r.height - min, r.y + dy);
-        r.height += r.y - ny;
-        r.y = ny;
-      } else {
-        r.height = Math.max(min, r.height + dy);
-      }
-    }
-    update(d.id, { region: r, enabled: true }, false);
-  };
-
-  const endDrag = () => {
-    drag.current = null;
-  };
-
-  const layoutSideBySide = () => {
-    const targets = surfaces;
-    if (targets.length === 0) return;
-    checkpoint();
-    targets.forEach((obj, i) => {
-      update(
-        obj.id,
-        { enabled: true, region: { x: i / targets.length, y: 0, width: 1 / targets.length, height: 1 } },
-        false,
-      );
-    });
-  };
-
-  const toSvg = (c: Vec2) => ({ x: c.x * W, y: (1 - c.y) * H });
-  const wire = useMemo(() => {
-    if (!mapping) return '';
-    const parts: string[] = [];
-    for (const [ax, ay, bx, by] of segments) {
-      const a = surfaceToContentUv({ x: ax, y: ay }, mapping);
-      const b = surfaceToContentUv({ x: bx, y: by }, mapping);
-      if (!a || !b) continue;
-      // Wrapped (repeat / mirror) UVs jump across tile borders — drop those edges.
-      if (mapping.wrap !== 'clamp' && (Math.abs(a.x - b.x) > 0.5 / mapping.repeatU || Math.abs(a.y - b.y) > 0.5 / mapping.repeatV)) continue;
-      const pa = toSvg(a);
-      const pb = toSvg(b);
-      parts.push(`M${pa.x.toFixed(1)},${pa.y.toFixed(1)}L${pb.x.toFixed(1)},${pb.y.toFixed(1)}`);
-    }
-    return parts.join('');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [segments, mapping, W, H]);
-
-  const sharedActive = mappingMode === 'sharedCanvas' || contentCanvas.enabled;
-
-  return (
-    <>
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>Surfaces</div>
-        <div className={styles.surfaceList}>
-          {surfaces.length === 0 ? <p className={styles.hint}>No receiving surfaces.</p> : null}
-          {surfaces.map((obj, i) => {
-            const m = mappingOf(obj);
-            return (
-              <button
-                type="button"
-                key={obj.id}
-                className={`${styles.surfaceItem} ${selected?.id === obj.id ? styles.surfaceItemOn : ''}`}
-                onClick={() => {
-                  setSelectedObject(obj.id);
-                  setLocalSel(obj.id);
-                }}
-              >
-                <i className={styles.swatch} style={{ background: SURFACE_COLORS[i % SURFACE_COLORS.length] }} />
-                {obj.name}
-                <span className={styles.surfaceMeta}>
-                  {m.enabled ? `${m.projection} · ${Math.round(m.region.width * 100)}×${Math.round(m.region.height * 100)}%` : 'legacy shared'}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-        {!sharedActive ? (
-          <p className={styles.warn}>
-            UV mapping applies in Shared mapping (or with the content canvas).{' '}
-            <button type="button" className={styles.btn} onClick={() => setMappingMode('sharedCanvas')}>
-              Switch to Shared
-            </button>
-          </p>
-        ) : null}
-      </div>
-
-      <div className={styles.section}>
-        <div className={styles.sectionTitle}>
-          UV editor — content space {contentCanvas.enabled ? `(canvas ${contentCanvas.widthPx}×${contentCanvas.heightPx})` : `(source ${source?.name ?? ''})`}
-        </div>
-        <svg
-          ref={svgRef}
-          className={styles.editor}
-          viewBox={`${-pad} ${-pad} ${W + pad * 2} ${H + pad * 2}`}
-          onPointerMove={onPointerMove}
-          onPointerUp={endDrag}
-          onPointerLeave={endDrag}
-          data-testid="uv-editor"
-        >
-          <rect x={0} y={0} width={W} height={H} fill="#1b1b1f" stroke="#555" />
-          {Array.from({ length: 9 }, (_, i) => (
-            <g key={i} stroke="#2c2c33">
-              <line x1={((i + 1) / 10) * W} x2={((i + 1) / 10) * W} y1={0} y2={H} />
-              <line y1={((i + 1) / 10) * H} y2={((i + 1) / 10) * H} x1={0} x2={W} />
-            </g>
-          ))}
-          {surfaces.map((obj, i) => {
-            const m = mappingOf(obj);
-            if (!m.enabled) return null;
-            const color = SURFACE_COLORS[i % SURFACE_COLORS.length];
-            const r = m.region;
-            const isSel = obj.id === selected?.id;
-            const x = r.x * W;
-            const y = r.y * H;
-            const w = r.width * W;
-            const h = r.height * H;
-            return (
-              <g key={obj.id} opacity={isSel ? 1 : 0.6}>
-                <rect
-                  x={x}
-                  y={y}
-                  width={w}
-                  height={h}
-                  fill={color}
-                  fillOpacity={isSel ? 0.12 : 0.08}
-                  stroke={color}
-                  strokeWidth={isSel ? 2 : 1}
-                  style={{ cursor: 'move' }}
-                  onPointerDown={(e) => onPointerDown(e, obj, 'move')}
-                />
-                <text x={x + 5} y={y + 13} fill={color} fontSize={11} pointerEvents="none">
-                  {obj.name}
-                </text>
-                {isSel
-                  ? ([
-                      ['nw', x, y],
-                      ['ne', x + w, y],
-                      ['sw', x, y + h],
-                      ['se', x + w, y + h],
-                    ] as [DragMode, number, number][]).map(([mode, hx, hy]) => (
-                      <rect
-                        key={mode}
-                        x={hx - 5}
-                        y={hy - 5}
-                        width={10}
-                        height={10}
-                        fill="#fff"
-                        stroke={color}
-                        strokeWidth={2}
-                        style={{ cursor: `${mode}-resize` }}
-                        onPointerDown={(e) => onPointerDown(e, obj, mode)}
-                      />
-                    ))
-                  : null}
-              </g>
-            );
-          })}
-          {mapping?.enabled && wire ? (
-            <path d={wire} stroke="#e0e0e0" strokeOpacity={0.55} strokeWidth={0.6} fill="none" pointerEvents="none" />
-          ) : null}
-        </svg>
-        <p className={styles.hint}>
-          Drag a region to move it, corners to resize (Shift snaps to 5 %). The white wireframe is
-          the selected surface&apos;s UV layout after flip / rotate / repeat.
-        </p>
-        <div className={styles.btnRow}>
-          <button type="button" className={styles.btn} onClick={layoutSideBySide} disabled={surfaces.length === 0}>
-            Auto-layout side by side
-          </button>
-          <button
-            type="button"
-            className={`${styles.btn} ${previewMode === 'surfaceUv' ? styles.btnPrimary : ''}`}
-            onClick={() => setPreviewMode(previewMode === 'surfaceUv' ? 'projectionPreview' : 'surfaceUv')}
-            data-testid="preview-surface-uv"
-          >
-            Surface UV preview
-          </button>
-        </div>
-      </div>
-
-      {selected && mapping ? (
-        <div className={styles.section}>
-          <div className={styles.sectionTitle}>{selected.name} — mapping</div>
-          <label className={styles.check}>
-            <input type="checkbox" checked={mapping.enabled} onChange={(e) => set({ enabled: e.target.checked })} data-testid="uv-enabled" />
-            Use per-surface UV mapping
-          </label>
-          <div className={styles.row}>
-            <span className={styles.rowLabel}>Projection</span>
-            <select value={mapping.projection} onChange={(e) => set({ projection: e.target.value as SurfaceUvProjection, enabled: true })}>
-              <option value="meshUv">Mesh UV (from geometry)</option>
-              <option value="planar">Planar (box-fit)</option>
-              <option value="cylindrical">Cylindrical (arc-fit)</option>
-              <option value="spherical">Spherical</option>
-            </select>
-          </div>
-          <div className={styles.grid4}>
-            <MiniNum label="Region X" value={mapping.region.x} onChange={(v) => set({ region: { ...mapping.region, x: v } })} />
-            <MiniNum label="Region Y" value={mapping.region.y} onChange={(v) => set({ region: { ...mapping.region, y: v } })} />
-            <MiniNum label="Width" value={mapping.region.width} onChange={(v) => set({ region: { ...mapping.region, width: v } })} />
-            <MiniNum label="Height" value={mapping.region.height} onChange={(v) => set({ region: { ...mapping.region, height: v } })} />
-          </div>
-          <div className={styles.grid4} style={{ marginTop: 6 }}>
-            <MiniNum label="Rotate °" value={mapping.rotationDeg} step={1} onChange={(v) => set({ rotationDeg: v })} />
-            <MiniNum label="Repeat U" value={mapping.repeatU} step={0.1} onChange={(v) => set({ repeatU: v })} />
-            <MiniNum label="Repeat V" value={mapping.repeatV} step={0.1} onChange={(v) => set({ repeatV: v })} />
-            <label className={styles.mini}>
-              Wrap
-              <select
-                value={mapping.wrap}
-                onChange={(e) => set({ wrap: e.target.value as UvWrapMode })}
-                style={{ font: 'inherit', background: '#2a2a2e', color: '#eee', border: '1px solid #3a3a40', borderRadius: 4, padding: '3px 2px' }}
-              >
-                <option value="clamp">Clamp</option>
-                <option value="repeat">Repeat</option>
-                <option value="mirror">Mirror</option>
-              </select>
-            </label>
-          </div>
-          <div className={styles.btnRow}>
-            <label className={styles.check}>
-              <input type="checkbox" checked={mapping.flipU} onChange={(e) => set({ flipU: e.target.checked })} /> Flip U
-            </label>
-            <label className={styles.check}>
-              <input type="checkbox" checked={mapping.flipV} onChange={(e) => set({ flipV: e.target.checked })} /> Flip V
-            </label>
-            <button type="button" className={styles.btn} onClick={() => set({ rotationDeg: (mapping.rotationDeg + 90) % 360 })}>
-              Rotate 90°
-            </button>
-            <button type="button" className={styles.btn} onClick={() => set({ region: { x: 0, y: 0, width: 1, height: 1 } })}>
-              Full content
-            </button>
-          </div>
-        </div>
-      ) : null}
     </>
   );
 }
@@ -1162,7 +783,7 @@ export function StudioPanel() {
           {(
             [
               ['blend', 'Edge Blend'],
-              ['uv', 'UV Mapping'],
+              ['mappings', 'Mappings'],
               ['warp', 'Warp'],
               ['outputs', 'Outputs'],
             ] as [Tab, string][]
@@ -1179,7 +800,7 @@ export function StudioPanel() {
           ))}
         </div>
         <div className={styles.body}>
-          {tab === 'blend' ? <BlendTab /> : tab === 'uv' ? <UvTab /> : tab === 'warp' ? <WarpTab /> : <OutputsTab />}
+          {tab === 'blend' ? <BlendTab /> : tab === 'mappings' ? <MappingsTab /> : tab === 'warp' ? <WarpTab /> : <OutputsTab />}
         </div>
       </div>
     </div>

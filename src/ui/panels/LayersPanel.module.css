@@ -233,3 +233,23 @@
     min-height: 36px;
   }
 }
+
+.mapSelect {
+  max-width: 42%;
+  font: inherit;
+  font-size: 11px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  padding: 3px 2px;
+}
+
+.mapSelectMissing {
+  border-color: #b26a2c;
+  color: #e0a060;
+}
+
+.layerOff {
+  opacity: 0.45;
+}

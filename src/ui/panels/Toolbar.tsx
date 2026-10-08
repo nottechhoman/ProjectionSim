@@ -1,9 +1,7 @@
 import { useRef, type ChangeEvent } from 'react';
 import { useAppStore } from '../../store';
-import type { DisplayUnit, MappingMode, ProjectionCompositeMode, ViewPreset } from '../../types';
+import type { DisplayUnit, ProjectionCompositeMode, ViewPreset } from '../../types';
 import { MAX_PROJECTORS } from '../../types';
-import { resolveSharedCanvasSupport } from '../../projection/sharedCanvasMapping';
-import { listSharedContentSourceProjectors } from '../../store/reliabilitySettings';
 import { APP_NAME, APP_NAME_SHORT } from '../../branding/appName';
 import { Menu, MenuItem, MenuSection, MenuSegments } from '../components/Menu';
 import styles from './Toolbar.module.css';
@@ -30,15 +28,10 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const transformMode = useAppStore((s) => s.transformMode);
   const materialPreviewMode = useAppStore((s) => s.materialPreviewMode);
   const projectionCompositeMode = useAppStore((s) => s.projectionCompositeMode);
-  const mappingMode = useAppStore((s) => s.mappingMode);
-  const contentCanvasPanelVisible = useAppStore((s) => s.contentCanvasPanelVisible);
-  const toggleContentCanvasPanel = useAppStore((s) => s.toggleContentCanvasPanel);
+  const layersPanelVisible = useAppStore((s) => s.layersPanelVisible);
+  const toggleLayersPanel = useAppStore((s) => s.toggleLayersPanel);
   const rasterPreviewPanelVisible = useAppStore((s) => s.rasterPreviewPanelVisible);
   const toggleRasterPreviewPanel = useAppStore((s) => s.toggleRasterPreviewPanel);
-  const contentCanvasEnabled = useAppStore((s) => s.contentCanvas.enabled);
-  const sharedContentSourceProjectorId = useAppStore((s) => s.sharedContentSourceProjectorId);
-  const sceneObjects = useAppStore((s) => s.sceneObjects);
-  const projectors = useAppStore((s) => s.projectors);
   const projectorCount = useAppStore((s) => s.projectors.length);
   const projectName = useAppStore((s) => s.projectName);
   const setDisplayUnit = useAppStore((s) => s.setDisplayUnit);
@@ -46,8 +39,6 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const setTransformMode = useAppStore((s) => s.setTransformMode);
   const setMaterialPreviewMode = useAppStore((s) => s.setMaterialPreviewMode);
   const setProjectionCompositeMode = useAppStore((s) => s.setProjectionCompositeMode);
-  const setMappingMode = useAppStore((s) => s.setMappingMode);
-  const setSharedContentSourceProjectorId = useAppStore((s) => s.setSharedContentSourceProjectorId);
   const addProjector = useAppStore((s) => s.addProjector);
   const addBox = useAppStore((s) => s.addBox);
   const addCurvedScreen = useAppStore((s) => s.addCurvedScreen);
@@ -67,7 +58,6 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const showProjectionBeam = useAppStore((s) => s.showProjectionBeam);
   const studioVisible = useAppStore((s) => s.uvEditorPanelVisible);
   const toggleStudio = useAppStore((s) => s.toggleUvEditorPanel);
-  const sharedCanvasSupport = resolveSharedCanvasSupport(sceneObjects);
 
   const handleOpenFile = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -248,36 +238,13 @@ export function Toolbar({ compact = false }: ToolbarProps) {
                   </MenuItem>
                 ))}
               </MenuSection>
-              <MenuSection title="Mapping">
-                <MenuSegments
-                  options={[
-                    { id: 'raw' as MappingMode, label: 'Raw', title: 'Each projector uses its own raster' },
-                    { id: 'sharedCanvas' as MappingMode, label: 'Shared', title: 'Content aligned to the receiving surface' },
-                  ]}
-                  value={mappingMode}
-                  onChange={setMappingMode}
-                  isDisabled={(mode) =>
-                    (mode === 'sharedCanvas' && !sharedCanvasSupport.supported) ||
-                    (mode === 'raw' && contentCanvasEnabled)
-                  }
-                />
-                {mappingMode === 'sharedCanvas' && !contentCanvasEnabled && projectors.length > 0 && (
-                  <label className={styles.menuField}>
-                    <span>Content source</span>
-                    <select
-                      aria-label="Shared content source"
-                      data-testid="shared-content-source-select"
-                      value={sharedContentSourceProjectorId ?? ''}
-                      onChange={(e) => setSharedContentSourceProjectorId(e.target.value || null)}
-                    >
-                      {listSharedContentSourceProjectors(projectors).map((proj) => (
-                        <option key={proj.id} value={proj.id}>
-                          {proj.name}{proj.enabled ? '' : ' (disabled)'}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
+              <MenuSection title="Content">
+                <MenuItem onSelect={() => { useAppStore.getState().openStudioTab('mappings'); close(); }}>
+                  Mappings…
+                </MenuItem>
+                <MenuItem selected={layersPanelVisible} onSelect={() => { toggleLayersPanel(); close(); }}>
+                  Layers
+                </MenuItem>
               </MenuSection>
               <MenuSection title="Tools">
                 <MenuItem selected={showProjectionBeam} onSelect={() => useAppStore.getState().toggleProjectionBeam()}>
@@ -285,9 +252,6 @@ export function Toolbar({ compact = false }: ToolbarProps) {
                 </MenuItem>
                 <MenuItem selected={measureMode} onSelect={() => { setMeasureMode(!measureMode); close(); }} hint="M">
                   Measure distance
-                </MenuItem>
-                <MenuItem selected={contentCanvasPanelVisible} onSelect={() => { toggleContentCanvasPanel(); close(); }}>
-                  Content canvas
                 </MenuItem>
                 <MenuItem selected={rasterPreviewPanelVisible} onSelect={() => { toggleRasterPreviewPanel(); close(); }}>
                   Projector output preview
@@ -320,7 +284,7 @@ export function Toolbar({ compact = false }: ToolbarProps) {
             className={`${styles.primary} ${studioVisible ? styles.primaryOn : ''}`}
             onClick={toggleStudio}
             data-testid="studio-toggle"
-            title="Mapping & Blend Studio: edge blending, per-surface UV mapping, corner-pin warp, outputs"
+            title="Mapping & Blend Studio: mappings, edge blending, corner-pin warp, outputs"
           >
             Studio
           </button>

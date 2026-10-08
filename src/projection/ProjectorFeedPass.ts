@@ -8,6 +8,7 @@ import { RASTER_PREVIEW_INTERVAL_MS, rasterPreviewSize } from './rasterPreview';
 
 /** colour = what the projector is fed (content × signal-space blend mask); mask = mask only. */
 export type FeedKind = 'color' | 'mask';
+type RenderKind = FeedKind | 'content';
 
 interface PreviewSlot {
   target: THREE.WebGLRenderTarget;
@@ -16,18 +17,57 @@ interface PreviewSlot {
 }
 
 /**
- * v2 projector feed renderer. Renders the receiving surfaces from each projector's
- * own camera with the same unified shader as the viewport (feedIndex = that
- * projector), so the feed includes surface UV mapping, corner-pin warp, auto blend
- * weights (which depend on every other projector) and occlusion.
+ * Projector feed renderer.
+ *
+ * v4 content feed: the baked screen textures rendered from each projector's own
+ * (unwarped) camera — what the projector is asked to show before blend and warp.
+ *
+ * Output feed (previews, output windows, exports): the content feed through the
+ * corner-pin warp, times the blend mask (auto blend weights depend on every other
+ * projector), rendered with the same unified shader as the viewport.
  */
 export class ProjectorFeedPass {
+  private readonly contentTargets = new Map<string, THREE.WebGLRenderTarget>();
   private readonly material = createMultiProjectiveMaterial();
   /** Full-target quad for the raw-mapping full-frame background. */
   private readonly frameQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.material);
   private readonly frameCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 2);
   private readonly slots = new Map<string, PreviewSlot>();
   private lastUpdate = 0;
+
+  contentTexture(projectorId: string): THREE.Texture | null {
+    return this.contentTargets.get(projectorId)?.texture ?? null;
+  }
+
+  /** Render one projector's content feed (textured screens seen from its camera). */
+  renderContentFeed(
+    renderer: THREE.WebGLRenderer,
+    projector: ProjectorConfig,
+    index: number,
+    meshes: THREE.Mesh[],
+    prepare: (material: THREE.ShaderMaterial) => void,
+    maxLongEdge: number,
+  ): THREE.Texture {
+    const cap = Math.min(maxLongEdge, renderer.capabilities.maxTextureSize);
+    const { width: rw, height: rh } = projector.optics.resolution;
+    const scale = Math.min(1, cap / Math.max(rw, rh));
+    const width = Math.max(1, Math.round(rw * scale));
+    const height = Math.max(1, Math.round(rh * scale));
+    let target = this.contentTargets.get(projector.id);
+    if (!target || target.width !== width || target.height !== height) {
+      target?.dispose();
+      target = new THREE.WebGLRenderTarget(width, height, {
+        minFilter: THREE.LinearFilter,
+        magFilter: THREE.LinearFilter,
+        format: THREE.RGBAFormat,
+      });
+      target.texture.colorSpace = THREE.SRGBColorSpace;
+      this.contentTargets.set(projector.id, target);
+    }
+    prepare(this.material);
+    this.renderInto(renderer, projector, index, 'content', meshes, target);
+    return target.texture;
+  }
 
   getCanvas(projectorId: string): HTMLCanvasElement | null {
     return this.slots.get(projectorId)?.canvas ?? null;
@@ -46,6 +86,7 @@ export class ProjectorFeedPass {
     this.lastUpdate = now;
 
     const keep = new Set(projectors.map((p) => p.id));
+    this.retainContent(keep);
     for (const [id, slot] of this.slots) {
       if (!keep.has(id)) {
         slot.target.dispose();
@@ -116,7 +157,19 @@ export class ProjectorFeedPass {
     this.renderInto(renderer, projector, index, kind, meshes, target);
   }
 
+  /** Drop content feeds of projectors that are no longer composited. */
+  retainContent(ids: Set<string>): void {
+    for (const [id, target] of this.contentTargets) {
+      if (!ids.has(id)) {
+        target.dispose();
+        this.contentTargets.delete(id);
+      }
+    }
+  }
+
   disposeProjector(id: string): void {
+    this.contentTargets.get(id)?.dispose();
+    this.contentTargets.delete(id);
     const slot = this.slots.get(id);
     if (!slot) return;
     slot.target.dispose();
@@ -131,6 +184,7 @@ export class ProjectorFeedPass {
 
   dispose(): void {
     this.releaseTargets();
+    this.retainContent(new Set());
     this.frameQuad.geometry.dispose();
     this.material.dispose();
   }
@@ -139,7 +193,7 @@ export class ProjectorFeedPass {
     renderer: THREE.WebGLRenderer,
     projector: ProjectorConfig,
     index: number,
-    kind: FeedKind,
+    kind: RenderKind,
     meshes: THREE.Mesh[],
     target: THREE.WebGLRenderTarget,
     /** Preview only: dim spill and outline surfaces. Never used for real outputs. */
@@ -156,16 +210,15 @@ export class ProjectorFeedPass {
       mesh.material = this.material;
     }
     this.material.uniforms.feedIndex.value = index;
-    this.material.uniforms.feedKind.value = kind === 'mask' ? 1 : 0;
+    this.material.uniforms.feedKind.value = kind === 'mask' ? 1 : kind === 'content' ? 2 : 0;
     this.material.uniforms.previewKind.value = 0;
     this.material.uniforms.forceUvPreview.value = 0;
     this.material.uniforms.falloffPreview.value = 0;
     this.material.uniforms.feedSize.value.set(target.width, target.height);
     this.material.uniforms.feedView.value = view ? 1 : 0;
-    // Raw mapping: content is locked to the projector raster, so the feed is the whole
-    // frame (spill included). Shared/canvas mapping pins content to surfaces instead,
-    // so only pixels that land on a receiving surface carry content.
-    const fullFrame = this.material.uniforms.mappingMode.value !== 1;
+    // Output feeds start from the full warped frame (content displaced by the warp can
+    // land off-surface); surfaces with their blend weights are drawn over it.
+    const fullFrame = kind !== 'content';
     try {
       const camera = buildProjectorCamera(projector.optics, getProjectorWorldMatrix(projector));
       renderer.autoClear = false;
@@ -182,7 +235,7 @@ export class ProjectorFeedPass {
         this.material.uniforms.feedLayer.value = 2;
       } else {
         this.material.uniforms.feedLayer.value = 0;
-      this.material.uniforms.feedView.value = 0;
+        this.material.uniforms.feedView.value = 0;
       }
       for (const mesh of meshes) {
         if (!mesh.visible) continue;

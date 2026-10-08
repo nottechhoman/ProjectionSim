@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { computeNominalProjection } from '../optics/nominal';
 import { computeSampledCoverageAnalysis, ANALYSIS_QUALITY_PRESETS } from './coverageAnalysis';
-import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from '../store/defaultScene';
+import { defaultShow, DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from '../store/defaultScene';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import type { ProjectorConfig, SceneObject, CalculationTargetSide } from '../types';
 import { snapshotToSlice, sliceToSnapshot } from '../store/persistenceHelpers';
@@ -259,7 +259,8 @@ describe('Coverage reliability — sampled analysis', () => {
 
   it('14. persistence and reports include analysis target and sampled metrics', () => {
     const slice = snapshotToSlice({
-      version: 2,
+      version: 3,
+      show: defaultShow(),
       savedAt: new Date().toISOString(),
       name: 'Coverage',
       sceneObjects: DEFAULT_SCENE_OBJECTS,

@@ -181,3 +181,12 @@
     min-height: 40px;
   }
 }
+
+.linkBtn {
+  font: inherit;
+  background: none;
+  border: none;
+  color: #4fc3f7;
+  cursor: pointer;
+  padding: 0;
+}

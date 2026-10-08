@@ -261,3 +261,11 @@
     justify-content: flex-end;
   }
 }
+
+.timecode {
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+  letter-spacing: 0.02em;
+}

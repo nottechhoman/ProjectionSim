@@ -1,13 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS } from './defaultScene';
+import { DEFAULT_SCENE_OBJECTS } from './defaultScene';
 import {
   fallbackCalculationTargetId,
   legacyDefaultCalculationTargetId,
-  legacyDefaultSharedContentSourceId,
   listCalculationTargets,
   reconcileReliabilityIds,
   resolveCalculationTargetId,
-  resolveSharedContentSourceId,
 } from './reliabilitySettings';
 import type { SceneObject } from '../types';
 import { eulerYXZToQuaternion } from '../utils/euler';
@@ -82,36 +80,12 @@ describe('reliabilitySettings', () => {
     expect(resolveCalculationTargetId(scene, 'screen-1')).toBe('screen-1');
   });
 
-  it('resolves shared content source independently of enabled state', () => {
-    const projectors = [
-      { ...DEFAULT_PROJECTORS[0], id: 'p1', enabled: false },
-      { ...DEFAULT_PROJECTORS[0], id: 'p2', name: 'Projector 2', enabled: true },
-    ];
-    expect(resolveSharedContentSourceId(projectors, 'p1')).toBe('p1');
-  });
-
-  it('reconciles deleted shared source to first projector', () => {
-    const next = reconcileReliabilityIds({
-      sceneObjects: DEFAULT_SCENE_OBJECTS,
-      projectors: DEFAULT_PROJECTORS,
-      sharedContentSourceProjectorId: 'missing',
-      calculationTargetId: 'screen-1',
-    });
-    expect(next.sharedContentSourceProjectorId).toBe('proj-1');
-  });
-
   it('reconciles deleted calculation target using flat-first fallback', () => {
     const next = reconcileReliabilityIds({
       sceneObjects: DEFAULT_SCENE_OBJECTS,
-      projectors: DEFAULT_PROJECTORS,
-      sharedContentSourceProjectorId: 'proj-1',
       calculationTargetId: 'missing',
     });
     expect(next.calculationTargetId).toBe('screen-1');
   });
 
-  it('legacy shared source uses selected projector then first projector', () => {
-    expect(legacyDefaultSharedContentSourceId(DEFAULT_PROJECTORS, 'proj-1')).toBe('proj-1');
-    expect(legacyDefaultSharedContentSourceId(DEFAULT_PROJECTORS, 'missing')).toBe('proj-1');
-  });
 });

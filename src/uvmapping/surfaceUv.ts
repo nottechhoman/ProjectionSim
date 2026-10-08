@@ -1,15 +1,9 @@
-import type { SurfaceUvMapping, SurfaceUvProjection, UvRegion, UvWrapMode, Vec2, Vec3 } from '../types';
-import { DEFAULT_SURFACE_UV_MAPPING } from '../types';
+import type { SurfaceUvProjection, UvWrapMode, Vec2, Vec3 } from '../types';
 
 /**
- * v2 per-surface UV mapping — CPU mirror of `surfaceContentUv()` in
- * multiProjection.frag.glsl.
- *
- * Pipeline for a surface point:
- *   surface UV (mesh UV or planar / cylindrical / spherical projection, fitted to
- *   the object's bounds) → flip → rotate about centre → repeat → wrap → region.
- * The result is a content UV (0–1, bottom-left origin) into the shared content
- * (content canvas, or the shared source projector's media / pattern).
+ * Surface UV projections fitted to an object's bounds (used by Feed mappings) —
+ * CPU mirror of `rawSurfaceUv()` in bake.frag.glsl. The region / flip / rotate /
+ * repeat / wrap step lives in src/mapping/sample.ts (feedRectUv).
  */
 
 export const PROJECTION_INT: Record<SurfaceUvProjection, number> = {
@@ -153,76 +147,3 @@ export function projectSurfaceUv(
   }
 }
 
-function wrapScalar(x: number, mode: UvWrapMode): number | null {
-  if (mode === 'repeat') return x - Math.floor(x);
-  if (mode === 'mirror') {
-    const m = x - 2 * Math.floor(x / 2);
-    return m > 1 ? 2 - m : m;
-  }
-  return x < -1e-9 || x > 1 + 1e-9 ? null : Math.min(1, Math.max(0, x));
-}
-
-/** Surface UV → content UV (bottom-left origin); null when clamped out. */
-export function surfaceToContentUv(s: Vec2, mapping: SurfaceUvMapping): Vec2 | null {
-  let u = mapping.flipU ? 1 - s.x : s.x;
-  let v = mapping.flipV ? 1 - s.y : s.y;
-  const a = (mapping.rotationDeg * Math.PI) / 180;
-  if (a !== 0) {
-    const cx = u - 0.5;
-    const cy = v - 0.5;
-    const c = Math.cos(a);
-    const sn = Math.sin(a);
-    u = c * cx - sn * cy + 0.5;
-    v = sn * cx + c * cy + 0.5;
-  }
-  u *= mapping.repeatU;
-  v *= mapping.repeatV;
-  const wu = wrapScalar(u, mapping.wrap);
-  const wv = wrapScalar(v, mapping.wrap);
-  if (wu === null || wv === null) return null;
-  const r = mapping.region;
-  return { x: r.x + wu * r.width, y: 1 - r.y - r.height + wv * r.height };
-}
-
-export function clampRegion(region: Partial<UvRegion> | undefined): UvRegion {
-  const d = DEFAULT_SURFACE_UV_MAPPING.region;
-  const n = (v: unknown, fb: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fb);
-  const width = Math.min(4, Math.max(0.01, n(region?.width, d.width)));
-  const height = Math.min(4, Math.max(0.01, n(region?.height, d.height)));
-  return {
-    x: Math.min(2, Math.max(-2, n(region?.x, d.x))),
-    y: Math.min(2, Math.max(-2, n(region?.y, d.y))),
-    width,
-    height,
-  };
-}
-
-export function normalizeSurfaceUvMapping(raw: Partial<SurfaceUvMapping> | undefined | null): SurfaceUvMapping {
-  const d = DEFAULT_SURFACE_UV_MAPPING;
-  if (!raw) return structuredClone(d);
-  const proj: SurfaceUvProjection =
-    raw.projection === 'planar' || raw.projection === 'cylindrical' || raw.projection === 'spherical'
-      ? raw.projection
-      : 'meshUv';
-  const wrap: UvWrapMode = raw.wrap === 'repeat' || raw.wrap === 'mirror' ? raw.wrap : 'clamp';
-  const rep = (v: unknown) =>
-    typeof v === 'number' && Number.isFinite(v) ? Math.min(32, Math.max(0.05, v)) : 1;
-  return {
-    enabled: raw.enabled === true,
-    projection: proj,
-    region: clampRegion(raw.region),
-    rotationDeg: typeof raw.rotationDeg === 'number' && Number.isFinite(raw.rotationDeg) ? raw.rotationDeg : 0,
-    flipU: raw.flipU === true,
-    flipV: raw.flipV === true,
-    repeatU: rep(raw.repeatU),
-    repeatV: rep(raw.repeatV),
-    wrap,
-  };
-}
-
-/** Default projection per object type (mesh UV works for all built-in primitives). */
-export function defaultProjectionForType(type: string): SurfaceUvProjection {
-  if (type === 'curvedScreen') return 'cylindrical';
-  if (type === 'box') return 'planar';
-  return 'meshUv';
-}

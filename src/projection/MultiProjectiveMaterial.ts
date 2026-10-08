@@ -1,35 +1,22 @@
 import * as THREE from 'three';
 import multiVert from './shaders/multiProjection.vert.glsl?raw';
 import multiFrag from './shaders/multiProjection.frag.glsl?raw';
-import type {
-  BlendSettings,
-  MediaFitMode,
-  ProjectionCompositeMode,
-  ProjectorConfig,
-  TestPattern,
-} from '../types';
+import type { BlendSettings, ProjectionCompositeMode, ProjectorConfig } from '../types';
 import { DEFAULT_BLEND_SETTINGS } from '../types';
 import { BLEND_CURVE_INT } from '../blending/advancedBlend';
 import { warpInverseMatrix } from '../warp/homography';
 import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../types';
-import { FIT_MODE_INT } from '../media/MediaTextureCache';
-import { patternToInt } from './ProjectiveMaterial';
 import { falloffReferenceDistance } from '../optics/falloff';
 import { getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
-import { mediaTextureCache } from '../media';
 
 const MAX = 4;
 
-const PATTERN_MAP: Record<TestPattern, number> = {
-  checkerboard: 0,
-  uvGrid: 1,
-  colorBars: 2,
-  white: 3,
-  projectorId: 4,
-  black: 5,
-  gray: 6,
-};
+const NO_FEED = (() => {
+  const t = new THREE.DataTexture(new Uint8Array([0, 0, 0, 255]), 1, 1);
+  t.needsUpdate = true;
+  return t;
+})();
 
 const COMPOSITE_INT: Record<ProjectionCompositeMode, number> = {
   solo: 0,
@@ -39,14 +26,14 @@ const COMPOSITE_INT: Record<ProjectionCompositeMode, number> = {
 };
 
 export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
-  const fallback = new THREE.DataTexture(new Uint8Array([255, 255, 255]), 1, 1);
+  const fallback = new THREE.DataTexture(new Uint8Array([255, 255, 255, 255]), 1, 1);
   fallback.needsUpdate = true;
 
   const depthMaps: THREE.Texture[] = [];
-  const mediaMaps: THREE.Texture[] = [];
+  const feedMaps: THREE.Texture[] = [];
   for (let i = 0; i < MAX; i++) {
     depthMaps.push(fallback);
-    mediaMaps.push(fallback);
+    feedMaps.push(fallback);
   }
 
   return new THREE.ShaderMaterial({
@@ -54,18 +41,10 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
     uniforms: {
       projectorMatrices: { value: Array.from({ length: MAX }, () => new THREE.Matrix4()) },
       depthMaps: { value: depthMaps },
-      mediaMaps: { value: mediaMaps },
+      feedMaps: { value: feedMaps },
       depthBias: { value: 0.002 },
       useOcclusion: { value: 0 },
       brightness: { value: new Float32Array(MAX) },
-      patternTypes: { value: new Float32Array(MAX) },
-      useMediaTexture: { value: new Float32Array(MAX) },
-      fitModes: { value: new Float32Array(MAX) },
-      mediaAspects: { value: new Float32Array(MAX) },
-      rasterAspects: { value: new Float32Array(MAX) },
-      projectorColors: {
-        value: Array.from({ length: MAX }, () => new THREE.Color('#ffffff')),
-      },
       blendEdges: { value: Array.from({ length: MAX }, () => new THREE.Vector4()) },
       outerEdgeFade: { value: new Float32Array(MAX) },
       blendGamma: { value: new Float32Array(MAX) },
@@ -74,20 +53,8 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       compositeMode: { value: 0 },
       forceUvPreview: { value: 0 },
       surfaceBaseColor: { value: new THREE.Color(0.55, 0.55, 0.55) },
-      mappingMode: { value: 0 },
-      screenMapKind: { value: 0 },
-      screenMapMatrixInv: { value: new THREE.Matrix4() },
-      screenMapParams: { value: new THREE.Vector4(1, 1, 90, 0) },
-      sharedUseMediaTexture: { value: 0 },
-      sharedMediaMap: { value: fallback },
-      sharedPatternType: { value: 0 },
-      sharedFitMode: { value: 0 },
-      sharedMediaAspect: { value: 1.0 },
-      sharedRasterAspect: { value: 16 / 9 },
-      sharedProjectorColor: { value: new THREE.Color('#ffffff') },
-      sharedBrightness: { value: 1.0 },
-      useContentCanvas: { value: 0 },
-      canvasMap: { value: fallback },
+      screenMap: { value: fallback },
+      hasScreenMap: { value: 0 },
       projectionSides: { value: 0 },
       falloffPreview: { value: 0 },
       projectorWorldPos: {
@@ -114,27 +81,11 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       feedSize: { value: new THREE.Vector2(1, 1) },
       feedView: { value: 0 },
       feedSpill: { value: 0.22 },
-      // v2 per-surface UV mapping (overwritten per mesh in onBeforeRender)
-      surfMap: { value: 0 },
-      surfProj: { value: 0 },
-      surfAxes: { value: 0 },
-      surfRootInv: { value: new THREE.Matrix4() },
-      surfBoundsMin: { value: new THREE.Vector3(-0.5, -0.5, -0.5) },
-      surfBoundsSize: { value: new THREE.Vector3(1, 1, 1) },
-      surfTheta: { value: new THREE.Vector3(0, -Math.PI, Math.PI) },
-      surfPhi: { value: new THREE.Vector2(-Math.PI / 2, Math.PI / 2) },
-      surfRegion: { value: new THREE.Vector4(0, 0, 1, 1) },
-      surfXform: { value: new THREE.Vector4(0, 0, 0, 0) },
-      surfRepeat: { value: new THREE.Vector2(1, 1) },
     },
     vertexShader: multiVert,
     fragmentShader: multiFrag,
     side: THREE.DoubleSide,
   });
-}
-
-function fitModeToInt(fit: MediaFitMode): number {
-  return FIT_MODE_INT[fit];
 }
 
 export function updateMultiProjectiveMaterial(
@@ -143,9 +94,8 @@ export function updateMultiProjectiveMaterial(
   depthTextures: THREE.Texture[],
   compositeMode: ProjectionCompositeMode,
   forceUvPreview = false,
-  contentProjector?: ProjectorConfig | null,
-  mappingMode = 0,
   falloffPreview = false,
+  feedTextures: (THREE.Texture | null)[] = [],
 ): void {
   const count = Math.min(projectors.length, MAX);
   material.uniforms.projectorCount.value = count;
@@ -154,24 +104,17 @@ export function updateMultiProjectiveMaterial(
 
   const matrices = material.uniforms.projectorMatrices.value as THREE.Matrix4[];
   const brightness = material.uniforms.brightness.value as Float32Array;
-  const patternTypes = material.uniforms.patternTypes.value as Float32Array;
-  const useMediaTexture = material.uniforms.useMediaTexture.value as Float32Array;
-  const fitModes = material.uniforms.fitModes.value as Float32Array;
-  const mediaAspects = material.uniforms.mediaAspects.value as Float32Array;
-  const rasterAspects = material.uniforms.rasterAspects.value as Float32Array;
-  const projectorColors = material.uniforms.projectorColors.value as THREE.Color[];
   const blendEdges = material.uniforms.blendEdges.value as THREE.Vector4[];
   const outerEdgeFade = material.uniforms.outerEdgeFade.value as Float32Array;
   const blendGamma = material.uniforms.blendGamma.value as Float32Array;
   const depthMaps = material.uniforms.depthMaps.value as THREE.Texture[];
-  const mediaMaps = material.uniforms.mediaMaps.value as THREE.Texture[];
+  const feedMaps = material.uniforms.feedMaps.value as THREE.Texture[];
   const projectorWorldPos = material.uniforms.projectorWorldPos.value as THREE.Vector3[];
   const falloffRefDistance = material.uniforms.falloffRefDistance.value as Float32Array;
   const warpInv = material.uniforms.warpInv.value as THREE.Matrix3[];
 
   for (let i = 0; i < MAX; i++) {
     if (i >= count) {
-      useMediaTexture[i] = 0;
       warpInv[i].identity();
       continue;
     }
@@ -184,9 +127,6 @@ export function updateMultiProjectiveMaterial(
     projectorWorldPos[i].setFromMatrixPosition(worldMatrix);
     falloffRefDistance[i] = falloffReferenceDistance(proj);
     brightness[i] = proj.brightness;
-    patternTypes[i] = PATTERN_MAP[proj.testPattern];
-    rasterAspects[i] = proj.optics.aspectRatio;
-    projectorColors[i].set(proj.color);
     blendEdges[i].set(
       proj.blendEdges.left,
       proj.blendEdges.right,
@@ -200,49 +140,13 @@ export function updateMultiProjectiveMaterial(
     );
     depthMaps[i] = depthTextures[i] ?? depthMaps[i] ?? depthMaps[0];
 
-    const useMedia =
-      (proj.mediaSource === 'image' || proj.mediaSource === 'video') && proj.mediaAssetId;
-    if (useMedia) {
-      const entry = mediaTextureCache.get(proj.mediaAssetId!);
-      if (entry) {
-        useMediaTexture[i] = 1;
-        mediaMaps[i] = entry.texture;
-        mediaAspects[i] = entry.aspect;
-        fitModes[i] = fitModeToInt(proj.mediaFit);
-      } else {
-        useMediaTexture[i] = 0;
-      }
-    } else {
-      useMediaTexture[i] = 0;
-    }
+    // Never leave a stale feed bound: the content pass renders into these textures.
+    feedMaps[i] = feedTextures[i] ?? NO_FEED;
   }
 
   material.uniforms.depthMaps.value = depthMaps;
-  material.uniforms.mediaMaps.value = mediaMaps;
+  material.uniforms.feedMaps.value = feedMaps;
 
-  const source = contentProjector ?? projectors[0];
-  if (source) {
-    material.uniforms.sharedPatternType.value = PATTERN_MAP[source.testPattern];
-    material.uniforms.sharedRasterAspect.value = source.optics.aspectRatio;
-    material.uniforms.sharedBrightness.value = source.brightness;
-    (material.uniforms.sharedProjectorColor.value as THREE.Color).set(source.color);
-    const useMedia =
-      (source.mediaSource === 'image' || source.mediaSource === 'video') && source.mediaAssetId;
-    if (useMedia) {
-      const entry = mediaTextureCache.get(source.mediaAssetId!);
-      if (entry) {
-        material.uniforms.sharedUseMediaTexture.value = 1;
-        material.uniforms.sharedMediaMap.value = entry.texture;
-        material.uniforms.sharedMediaAspect.value = entry.aspect;
-        material.uniforms.sharedFitMode.value = fitModeToInt(source.mediaFit);
-      } else {
-        material.uniforms.sharedUseMediaTexture.value = 0;
-      }
-    } else {
-      material.uniforms.sharedUseMediaTexture.value = 0;
-    }
-  }
-  material.uniforms.mappingMode.value = mappingMode;
   material.uniforms.falloffPreview.value = falloffPreview ? 1 : 0;
 }
 
@@ -269,4 +173,3 @@ export function applyAdvancedBlendUniforms(
   u.previewKind.value = PREVIEW_KIND_INT[previewKind];
 }
 
-export { patternToInt };

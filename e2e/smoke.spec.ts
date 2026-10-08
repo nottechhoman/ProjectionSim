@@ -15,32 +15,33 @@ test('shows scene and inspector panels', async ({ page }) => {
   await expect(page.getByText('Inspector', { exact: true })).toBeVisible();
 });
 
-test('keeps shared content source and calculation target stable across selection', async ({ page }) => {
+test('adding a projector adds a locked perspective mapping; calculation target stays stable', async ({ page }) => {
   await page.goto('/');
 
   await page.getByTestId('add-menu').click();
   await page.getByRole('menuitem', { name: /Projector/ }).click();
-  await page.getByTestId('more-menu').click();
-  await page.getByRole('button', { name: 'Shared' }).click();
-
-  const sourceSelect = page.getByTestId('shared-content-source-select');
-  await expect(sourceSelect).toBeVisible();
-  await sourceSelect.selectOption({ label: 'Projector 1' });
-
-  await page.getByRole('listitem').filter({ hasText: 'Projector 2' }).first().click();
-  await expect(sourceSelect).toHaveValue('proj-1');
+  await page.getByTestId('studio-toggle').click();
+  await page.getByTestId('studio-tab-mappings').click();
+  await expect(page.getByTestId('mapping-list')).toContainText('Projector 2 view');
 
   const targetSelect = page.getByTestId('calculation-target-select');
+  await page.getByRole('listitem').filter({ hasText: 'Screen' }).first().click();
   await targetSelect.selectOption({ label: 'Screen (flat)' });
   await expect(targetSelect).toHaveValue('screen-1');
-
   await page.getByRole('listitem').filter({ hasText: 'Floor' }).click();
   await expect(targetSelect).toHaveValue('screen-1');
   await expect(page.getByTestId('calculation-target-label')).toContainText('Screen (flat)');
+});
 
-  await page.getByRole('button', { name: 'Curved Screen' }).click();
-  await expect(targetSelect).toHaveValue('screen-1');
-  await expect(page.getByTestId('calculation-target-label')).toContainText('Screen (flat)');
+test('layers panel: add a pattern layer and pick its mapping', async ({ page }) => {
+  await page.goto('/');
+  await page.getByTestId('more-menu').click();
+  await page.getByRole('menuitem', { name: 'Layers' }).click();
+  await expect(page.getByTestId('layers-panel')).toBeVisible();
+  await page.getByTestId('layer-add-pattern').click();
+  await expect(page.getByTestId('layer-inspector')).toBeVisible();
+  const selects = page.locator('[data-testid^="layer-mapping-"]');
+  await expect(selects).toHaveCount(3);
 });
 
 test('visible coverage responds to blocker and preserves calculation target', async ({ page }) => {
