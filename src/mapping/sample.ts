@@ -286,6 +286,8 @@ export function blendOver(dst: Rgb, src: Rgb, alpha: number, mode: Layer['blendM
 export interface LiveLayerLike {
   layer: Layer;
   opacity: number;
+  /** Animated placement (defaults to the layer's rect). */
+  rect?: Layer['rect'];
 }
 
 /**
@@ -301,7 +303,7 @@ export function compositeTexel(
   forProjectorId: string | null,
 ): Rgb {
   let color: Rgb = [0, 0, 0];
-  for (const { layer, opacity } of live) {
+  for (const { layer, opacity, rect } of live) {
     const mapping = mappings.find((m) => m.id === layer.mappingId);
     if (!mapping || opacity <= 0) continue;
     if (!mappingVisibleTo(mapping, forProjectorId)) continue;
@@ -311,7 +313,7 @@ export function compositeTexel(
     if (media.kind !== 'pattern' && media.kind !== 'solid') continue;
     const res = mappingResolution(mapping, projectors);
     const c = mapping.filtering === 'nearest' ? snapToCanvasPixel(uv, res) : uv;
-    const mUv = layerMediaUv({ rect: layer.rect, fit: 'stretch' }, c, res, 0);
+    const mUv = layerMediaUv({ rect: rect ?? layer.rect, fit: 'stretch' }, c, res, 0);
     if (!mUv) continue;
     const src = media.kind === 'solid' ? hexToRgb(media.color) : patternColor(media.pattern, mUv, hexToRgb(media.color));
     color = blendOver(color, src, opacity, layer.blendMode);

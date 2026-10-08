@@ -269,8 +269,9 @@ export class ScreenTextureBaker {
       if (media.kind === 'pattern') u.patternType.value = PATTERN_INT[media.pattern];
       (u.layerColor.value as THREE.Color).setRGB(...hexToRgb(media.color));
     }
-    (u.layerRect.value as THREE.Vector4).set(layer.rect.x, layer.rect.y, layer.rect.width, layer.rect.height);
-    u.layerRot.value = THREE.MathUtils.degToRad(layer.rect.rotationDeg);
+    const rect = entry.rect ?? layer.rect;
+    (u.layerRect.value as THREE.Vector4).set(rect.x, rect.y, rect.width, rect.height);
+    u.layerRot.value = THREE.MathUtils.degToRad(rect.rotationDeg);
     u.layerOpacity.value = entry.opacity;
     u.blendMode.value = BLEND_INT[layer.blendMode];
     setBlend(this.material, layer.blendMode);

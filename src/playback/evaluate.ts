@@ -1,4 +1,5 @@
-import type { Layer, LayerPlayMode, Track } from '../types';
+import type { Layer, LayerPlayMode, LayerRect, Track } from '../types';
+import { animateLayer } from './keyframes';
 
 /**
  * Pure timeline evaluation: which layers are live at time t, how opaque they are
@@ -15,6 +16,8 @@ export interface LiveLayer {
   mediaTimeSec: number | null;
   /** Seconds since the layer started (timeline time, before speed). */
   localSec: number;
+  /** Placement after keyframes (the layer's rect when not animated). */
+  rect: LayerRect;
 }
 
 /** Media duration in seconds for an asset, if known (videos once metadata loads). */
@@ -95,8 +98,9 @@ export function evaluate(track: Track, t: number, mediaDuration: MediaDurationLo
       mediaTimeSec = layerMediaTimeAt(layer, t, duration, fps);
       if (mediaTimeSec === null) return; // played once and finished
     }
-    const opacity = layer.opacity * fadeEnvelope(local, layer.durationSec, layer.fadeInSec, layer.fadeOutSec);
-    out.push({ layer, index, opacity, mediaTimeSec, localSec: local });
+    const anim = animateLayer(layer, local);
+    const opacity = anim.opacity * fadeEnvelope(local, layer.durationSec, layer.fadeInSec, layer.fadeOutSec);
+    out.push({ layer, index, opacity, mediaTimeSec, localSec: local, rect: anim.rect });
   });
   return out;
 }

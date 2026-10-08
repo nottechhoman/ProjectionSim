@@ -8,7 +8,16 @@ import { moveClip, trimClipEnd, trimClipStart } from '../../playback/edit';
 import { formatTimecode, snapToFrame } from '../../playback/timecode';
 import { sectionAt } from '../../playback/showControl';
 import { mediaTextureCache } from '../../media';
-import type { Layer } from '../../types';
+import type { KeyframeProp, Layer } from '../../types';
+import { KEYFRAME_LABEL, KEYFRAME_PROPS } from '../../playback/keyframes';
+
+export const KEY_COLORS: Record<KeyframeProp, string> = {
+  opacity: '#ffffff',
+  x: '#ff7a7a',
+  y: '#7aff9b',
+  scale: '#ffd25a',
+  rotationDeg: '#8fb8ff',
+};
 import { MappingSelect } from './LayersPanel';
 import { TrackSelector } from './TrackSelector';
 import styles from './TimelineDock.module.css';
@@ -64,6 +73,10 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
   const tickStep = pickTickStep(pps);
 
   const drag = useRef<{ id: string; mode: DragMode; startX: number; layer: Layer } | null>(null);
+  const keyDrag = useRef<{ layerId: string; prop: KeyframeProp; keyId: string; startX: number; timeSec: number } | null>(null);
+  const selectedKeyframe = useAppStore((s) => s.selectedKeyframe);
+  const setSelectedKeyframe = useAppStore((s) => s.setSelectedKeyframe);
+  const updateKeyframe = useAppStore((s) => s.updateKeyframe);
   const scrub = useRef(false);
 
   const secAt = (clientX: number) => {
@@ -239,6 +252,37 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
                     <span className={`${styles.handle} ${styles.handleL}`} onPointerDown={(e) => onClipDown(e, layer, 'trimL')} onPointerMove={onClipMove} onPointerUp={endDrag} />
                     <span className={`${styles.handle} ${styles.handleR}`} onPointerDown={(e) => onClipDown(e, layer, 'trimR')} onPointerMove={onClipMove} onPointerUp={endDrag} />
                   </div>
+                  {KEYFRAME_PROPS.flatMap((prop, pi) =>
+                    (layer.keyframes?.[prop] ?? []).map((key) => {
+                      const sel = selectedKeyframe?.keyId === key.id;
+                      return (
+                        <span
+                          key={`${prop}-${key.id}`}
+                          className={`${styles.diamond} ${sel ? styles.diamondSel : ''}`}
+                          style={{ left: (layer.startSec + key.timeSec) * pps, top: `calc(50% + ${(pi - 2) * 3}px)`, background: KEY_COLORS[prop] }}
+                          title={`${KEYFRAME_LABEL[prop]} = ${+key.value.toFixed(3)} at +${key.timeSec.toFixed(2)} s (${key.ease}) — drag to move, Delete to remove`}
+                          data-testid={`key-${prop}-${key.id}`}
+                          onPointerDown={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+                            selectLayer(layer.id);
+                            setSelectedKeyframe({ layerId: layer.id, prop, keyId: key.id });
+                            checkpoint();
+                            keyDrag.current = { layerId: layer.id, prop, keyId: key.id, startX: e.clientX, timeSec: key.timeSec };
+                          }}
+                          onPointerMove={(e) => {
+                            const d = keyDrag.current;
+                            if (!d) return;
+                            const time = Math.max(0, snapToFrame(d.timeSec + (e.clientX - d.startX) / pps, fps));
+                            updateKeyframe(d.layerId, d.prop, d.keyId, { timeSec: time }, false);
+                          }}
+                          onPointerUp={() => (keyDrag.current = null)}
+                          onPointerCancel={() => (keyDrag.current = null)}
+                        />
+                      );
+                    }),
+                  )}
                 </div>
               );
             })}

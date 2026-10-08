@@ -20,6 +20,7 @@ import type {
   Vec3,
 } from '../types';
 import { quaternionToEulerYXZ } from '../utils/euler';
+import { normalizeKeyframes } from '../playback/keyframes';
 
 /**
  * v4 content model: mappings (how a canvas lands on screens) and layers (what is
@@ -385,6 +386,7 @@ export function normalizeLayer(raw: unknown, index: number): Layer | null {
     volume: clamp(num(raw.volume, 1), 0, 1),
     muted: raw.muted === true,
     enabled: raw.enabled !== false,
+    ...(normalizeKeyframes(raw.keyframes) ? { keyframes: normalizeKeyframes(raw.keyframes) } : {}),
   };
 }
 

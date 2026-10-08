@@ -3,6 +3,7 @@ import { useAppStore } from '../../store';
 import type { Layer, LayerBlendMode, LayerPlayMode, MediaFitMode, MediaRef, TestPattern } from '../../types';
 import { NumInput } from '../components/NumInput';
 import { MappingSelect } from './LayersPanel';
+import { KeyframeEditor } from './KeyframeEditor';
 import styles from './Inspector.module.css';
 
 const PATTERNS: { value: TestPattern; label: string }[] = [
@@ -135,6 +136,8 @@ export function LayerInspector({ layer }: { layer: Layer }) {
           Fill canvas
         </button>
       </div>
+
+      <KeyframeEditor layer={layer} />
 
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Timing</div>

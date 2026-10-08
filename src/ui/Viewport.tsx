@@ -119,6 +119,15 @@ export function Viewport() {
         case 'M':
           addCueAtPlayhead();
           return;
+        case 'Delete':
+        case 'Backspace': {
+          const sel = store.selectedKeyframe;
+          if (sel) {
+            e.preventDefault();
+            store.removeKeyframe(sel.layerId, sel.prop, sel.keyId);
+          }
+          return;
+        }
       }
       if (e.key === 'w' || e.key === 'W') store.setTransformMode('translate');
       if (e.key === 'e' || e.key === 'E') store.setTransformMode('rotate');

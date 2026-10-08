@@ -409,6 +409,19 @@ export interface LayerRect {
   rotationDeg: number;
 }
 
+export type KeyframeProp = 'opacity' | 'x' | 'y' | 'scale' | 'rotationDeg';
+export type KeyframeEase = 'linear' | 'easeInOut';
+
+/** A value at a time (seconds from the layer's start); ease shapes the segment to the next key. */
+export interface Keyframe {
+  id: string;
+  timeSec: number;
+  value: number;
+  ease: KeyframeEase;
+}
+
+export type LayerKeyframes = Partial<Record<KeyframeProp, Keyframe[]>>;
+
 export interface Layer {
   id: string;
   name: string;
@@ -432,6 +445,8 @@ export interface Layer {
   volume: number;
   muted: boolean;
   enabled: boolean;
+  /** Animated properties (x / y / rotation override the rect, scale scales it about its centre). */
+  keyframes?: LayerKeyframes;
 }
 
 export interface Track {

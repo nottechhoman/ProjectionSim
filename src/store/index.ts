@@ -9,7 +9,10 @@ import {
   importMediaBlob,
 } from '../media/assetImport';
 import type { PlayMode } from '../playback/showControl';
+import { keyAt, upsertKeyframe, withPropKeys } from '../playback/keyframes';
 import type {
+  Keyframe,
+  KeyframeProp,
   Cue,
   TrackSection,
   CalculationResults,
@@ -167,6 +170,12 @@ interface AppState extends PersistedStateSlice {
   setLayersPanelVisible: (visible: boolean) => void;
   toggleLayersPanel: () => void;
   setTrackDuration: (sec: number) => void;
+  // v4 keyframes
+  selectedKeyframe: { layerId: string; prop: KeyframeProp; keyId: string } | null;
+  setSelectedKeyframe: (sel: { layerId: string; prop: KeyframeProp; keyId: string } | null) => void;
+  setKeyframe: (layerId: string, prop: KeyframeProp, timeSec: number, value: number) => void;
+  updateKeyframe: (layerId: string, prop: KeyframeProp, keyId: string, patch: Partial<Keyframe>, recordHistory?: boolean) => void;
+  removeKeyframe: (layerId: string, prop: KeyframeProp, keyId: string) => void;
   // v4 setlist
   addTrack: () => void;
   duplicateTrack: (id: string) => void;
@@ -703,6 +712,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     const durationSec = Math.min(24 * 3600, Math.max(1, sec));
     pushSceneHistory(get, set);
     set((s) => ({ show: updateActiveTrack(s.show, (track) => ({ ...track, durationSec })) }));
+  },
+  selectedKeyframe: null,
+  setSelectedKeyframe: (sel) => set({ selectedKeyframe: sel }),
+  setKeyframe: (layerId, prop, timeSec, value) => {
+    const layer = activeTrack(get().show).layers.find((l) => l.id === layerId);
+    if (!layer) return;
+    const frame = 1 / get().show.fps;
+    const existing = keyAt(layer.keyframes?.[prop], timeSec, frame);
+    const key: Keyframe = { id: existing?.id ?? newId('key'), timeSec: Math.max(0, timeSec), value, ease: existing?.ease ?? 'linear' };
+    get().updateLayer(layerId, { keyframes: withPropKeys(layer.keyframes, prop, upsertKeyframe(layer.keyframes?.[prop], key, frame)) });
+    set({ selectedKeyframe: { layerId, prop, keyId: key.id } });
+  },
+  updateKeyframe: (layerId, prop, keyId, patch, recordHistory = true) => {
+    const layer = activeTrack(get().show).layers.find((l) => l.id === layerId);
+    const keys = layer?.keyframes?.[prop];
+    if (!layer || !keys) return;
+    const next = keys
+      .map((k) => (k.id === keyId ? { ...k, ...patch, id: keyId, timeSec: Math.max(0, patch.timeSec ?? k.timeSec) } : k))
+      .sort((a, b) => a.timeSec - b.timeSec);
+    get().updateLayer(layerId, { keyframes: withPropKeys(layer.keyframes, prop, next) }, recordHistory);
+  },
+  removeKeyframe: (layerId, prop, keyId) => {
+    const layer = activeTrack(get().show).layers.find((l) => l.id === layerId);
+    const keys = layer?.keyframes?.[prop];
+    if (!layer || !keys) return;
+    get().updateLayer(layerId, { keyframes: withPropKeys(layer.keyframes, prop, keys.filter((k) => k.id !== keyId)) });
+    set((s) => ({ selectedKeyframe: s.selectedKeyframe?.keyId === keyId ? null : s.selectedKeyframe }));
   },
   addTrack: () => {
     pushSceneHistory(get, set);
