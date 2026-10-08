@@ -27,6 +27,21 @@ export interface ControlSettings {
   oscUrl: string;
 }
 
+/**
+ * OSC connects by default where a bridge is expected: the dev server (which starts
+ * one) and local hosts. On a hosted copy it is opt-in (one tick in External
+ * control), so visitors without a bridge get no connection errors.
+ */
+function oscOnByDefault(): boolean {
+  try {
+    if (import.meta.env?.DEV) return true;
+    const host = typeof location !== 'undefined' ? location.hostname : '';
+    return host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+  } catch {
+    return false;
+  }
+}
+
 export const DEFAULT_CONTROL_SETTINGS: ControlSettings = {
   midiEnabled: false,
   midiInputId: null,
@@ -35,7 +50,7 @@ export const DEFAULT_CONTROL_SETTINGS: ControlSettings = {
   mscDeviceId: 0x7f,
   mtcChase: false,
   mtcOffsetSec: 0,
-  oscEnabled: true,
+  oscEnabled: oscOnByDefault(),
   oscUrl: 'ws://127.0.0.1:9100',
 };
 
@@ -87,7 +102,7 @@ export function normalizeControlSettings(raw: unknown): ControlSettings {
     mscDeviceId: Math.min(0x7f, Math.max(0, Math.round(num(d.mscDeviceId, 0x7f)))),
     mtcChase: d.mtcChase === true,
     mtcOffsetSec: num(d.mtcOffsetSec, 0),
-    oscEnabled: d.oscEnabled !== false,
+    oscEnabled: typeof d.oscEnabled === 'boolean' ? d.oscEnabled : DEFAULT_CONTROL_SETTINGS.oscEnabled,
     oscUrl: typeof d.oscUrl === 'string' && d.oscUrl ? d.oscUrl : DEFAULT_CONTROL_SETTINGS.oscUrl,
   };
 }

@@ -145,7 +145,7 @@ export function ControlPanel() {
                   </>
                 )
               ) : (
-                'OSC is off.'
+                <>OSC is off. Tick “Receive OSC” and run <code>npm run osc-bridge</code> on this computer.</>
               )}
             </p>
             <p className={styles.hint} data-testid="osc-last">
