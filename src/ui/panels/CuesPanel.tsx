@@ -148,6 +148,12 @@ export function CuesPanel() {
           </div>
 
           <div className={styles.section}>
+            <button type="button" className={styles.addBtn} onClick={() => useAppStore.getState().setControlPanelVisible(true)} data-testid="open-control">
+              External control (MIDI / MSC / MTC / OSC)…
+            </button>
+          </div>
+
+          <div className={styles.section}>
             <div className={styles.sectionTitle}>Keys</div>
             <div className={styles.kbd}>
               Space play / pause · Enter GO · Esc stop · ← → frame · Shift+← → previous / next cue · L loop section · M add cue

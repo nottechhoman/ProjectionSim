@@ -8,6 +8,8 @@ import { Inspector } from './panels/Inspector';
 import { BottomPanel } from './panels/BottomPanel';
 import { LayersPanel } from './panels/LayersPanel';
 import { CuesPanel } from './panels/CuesPanel';
+import { ControlPanel } from './panels/ControlPanel';
+import { control } from '../control/service';
 import { RasterPreviewPanel } from './panels/RasterPreviewPanel';
 import { StudioPanel } from './panels/StudioPanel';
 import { MediaDock } from './panels/MediaDock';
@@ -48,6 +50,11 @@ export default function App() {
   const rightDocked = rightPanelVisible && !rightPanelPoppedOut && !compact;
   const leftDrawer = compact && leftPanelVisible && !leftPanelPoppedOut;
   const rightDrawer = compact && rightPanelVisible && !rightPanelPoppedOut;
+
+  useEffect(() => {
+    control.start();
+    (window as Window & { __projectionLabControl?: typeof control }).__projectionLabControl = control;
+  }, []);
 
   useEffect(() => {
     if (!compact) return;
@@ -103,6 +110,7 @@ export default function App() {
         <Viewport />
         {!compact ? <LayersPanel /> : null}
         {!compact ? <CuesPanel /> : null}
+        {!compact ? <ControlPanel /> : null}
         {!compact ? <RasterPreviewPanel /> : null}
         {!compact ? <StudioPanel /> : null}
       </div>
@@ -219,6 +227,7 @@ export default function App() {
 
       {compact && layersPanelVisible ? <LayersPanel /> : null}
       {compact ? <CuesPanel /> : null}
+      {compact ? <ControlPanel /> : null}
       {compact && rasterPreviewPanelVisible ? <RasterPreviewPanel /> : null}
       {compact && studioVisible ? <StudioPanel /> : null}
 

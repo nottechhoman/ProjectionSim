@@ -245,6 +245,9 @@ export function Toolbar({ compact = false }: ToolbarProps) {
                 <MenuItem selected={layersPanelVisible} onSelect={() => { toggleLayersPanel(); close(); }}>
                   Layers
                 </MenuItem>
+                <MenuItem onSelect={() => { useAppStore.getState().setControlPanelVisible(true); close(); }}>
+                  External control (MIDI / OSC)…
+                </MenuItem>
               </MenuSection>
               <MenuSection title="Tools">
                 <MenuItem selected={showProjectionBeam} onSelect={() => useAppStore.getState().toggleProjectionBeam()}>

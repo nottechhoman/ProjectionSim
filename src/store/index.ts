@@ -190,6 +190,8 @@ interface AppState extends PersistedStateSlice {
   setPlayMode: (mode: PlayMode) => void;
   cuesPanelVisible: boolean;
   setCuesPanelVisible: (visible: boolean) => void;
+  controlPanelVisible: boolean;
+  setControlPanelVisible: (visible: boolean) => void;
   addCue: (timeSec: number, name?: string) => void;
   updateCue: (id: string, patch: Partial<Cue>) => void;
   removeCue: (id: string) => void;
@@ -780,7 +782,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   playMode: 'play',
   setPlayMode: (mode) => set({ playMode: mode }),
   cuesPanelVisible: false,
-  setCuesPanelVisible: (visible) => set({ cuesPanelVisible: visible }),
+  setCuesPanelVisible: (visible) => set(visible ? { cuesPanelVisible: true, controlPanelVisible: false } : { cuesPanelVisible: false }),
+  controlPanelVisible: false,
+  setControlPanelVisible: (visible) => set(visible ? { controlPanelVisible: true, cuesPanelVisible: false } : { controlPanelVisible: false }),
   addCue: (timeSec, name) => {
     pushSceneHistory(get, set);
     set((s) => ({
