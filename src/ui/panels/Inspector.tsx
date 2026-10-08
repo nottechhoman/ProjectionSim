@@ -3,6 +3,7 @@ import { getCalculationTargetObject } from '../../store/reliabilitySettings';
 import type { ProjectionSides, Vec3 } from '../../types';
 import { activeTrack } from '../../mapping/model';
 import { LayerInspector } from './LayerInspector';
+import { UvHealth } from './UvHealth';
 import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../../types';
 import { computeProjectorLookAtQuaternion, defaultLookAtTarget } from '../../optics/lookAt';
 import { supportsProjectionSides } from '../../projection/projectionSides';
@@ -422,6 +423,7 @@ export function Inspector() {
               </select>
             </div>
           )}
+          {sceneObject.receivesProjection || sceneObject.type === 'ledWall' ? <UvHealth obj={sceneObject} /> : null}
           {sceneObject.receivesProjection || sceneObject.type === 'ledWall' ? (
             <p className={styles.hint}>
               Mappings on this screen:{' '}

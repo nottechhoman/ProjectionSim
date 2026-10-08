@@ -54,6 +54,12 @@ import {
   newId,
   pruneMappingRefs,
   updateActiveTrack,
+  addTrackToShow,
+  duplicateTrackInShow,
+  moveTrackInShow,
+  removeTrackFromShow,
+  renameTrackInShow,
+  setActiveTrackInShow,
 } from '../mapping/model';
 import { deriveAutoBlendEdgesFromOverlap } from '../blending/autoBlend';
 import { eulerYXZToQuaternion } from '../utils/euler';
@@ -138,6 +144,7 @@ interface AppState extends PersistedStateSlice {
     },
   ) => void;
   removeSceneObject: (id: string) => void;
+  setSceneObjectUvAtlas: (id: string, on: boolean) => void;
   setDisplayUnit: (u: DisplayUnit) => void;
   setViewPreset: (preset: ViewPreset) => void;
   setMaterialPreviewMode: (mode: MaterialPreviewMode) => void;
@@ -148,6 +155,7 @@ interface AppState extends PersistedStateSlice {
   duplicateMapping: (id: string) => void;
   removeMapping: (id: string) => void;
   setSelectedMappingId: (id: string | null) => void;
+  importMappingMask: (mappingId: string, file: File) => Promise<void>;
   // v4 layers
   addLayer: (media: MediaRef, mappingId?: string | null) => void;
   updateLayer: (id: string, patch: Partial<Layer>, recordHistory?: boolean) => void;
@@ -159,6 +167,13 @@ interface AppState extends PersistedStateSlice {
   setLayersPanelVisible: (visible: boolean) => void;
   toggleLayersPanel: () => void;
   setTrackDuration: (sec: number) => void;
+  // v4 setlist
+  addTrack: () => void;
+  duplicateTrack: (id: string) => void;
+  renameTrack: (id: string, name: string) => void;
+  removeTrack: (id: string) => void;
+  moveTrack: (id: string, direction: -1 | 1) => void;
+  setActiveTrack: (id: string) => void;
   timelineVisible: boolean;
   toggleTimeline: () => void;
   // v4 show control (sections, cues, play mode)
@@ -320,6 +335,12 @@ function defaultRect(screenId: string) {
     repeatV: 1,
     wrap: 'clamp' as const,
   };
+}
+
+/** Switching tracks starts the new one from the top, stopped. */
+function resetTransport(): void {
+  transport.pause();
+  transport.seek(0);
 }
 
 /** Mapping a new layer lands on: the selected mapping, else the first one. */
@@ -532,6 +553,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     get().recomputeCalculations();
   },
   pushSceneHistoryCheckpoint: () => pushSceneHistory(get, set),
+  setSceneObjectUvAtlas: (id, on) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ sceneObjects: s.sceneObjects.map((o) => (o.id === id ? { ...o, uvAtlas: on } : o)) }));
+  },
   setDisplayUnit: (u) => set({ displayUnit: u }),
   setViewPreset: (preset) => set({ viewPreset: preset }),
   setMaterialPreviewMode: (mode) => set({ materialPreviewMode: mode }),
@@ -592,6 +617,16 @@ export const useAppStore = create<AppState>((set, get) => ({
     });
   },
   setSelectedMappingId: (id) => set({ selectedMappingId: id }),
+  importMappingMask: async (mappingId, file) => {
+    try {
+      const record = await importMediaBlob(file, file.name, 'image', file.type || 'image/png');
+      set((s) => ({ mediaAssets: [...s.mediaAssets, record] }));
+      get().updateMapping(mappingId, { maskAssetId: record.id });
+      set({ projectMessage: `Mask "${file.name}" set` });
+    } catch (err) {
+      set({ projectMessage: err instanceof Error ? err.message : 'Mask import failed' });
+    }
+  },
   addLayer: (media, mappingId) => {
     const state = get();
     const mapId = mappingId === undefined ? defaultMappingId(state) : mappingId;
@@ -668,6 +703,41 @@ export const useAppStore = create<AppState>((set, get) => ({
     const durationSec = Math.min(24 * 3600, Math.max(1, sec));
     pushSceneHistory(get, set);
     set((s) => ({ show: updateActiveTrack(s.show, (track) => ({ ...track, durationSec })) }));
+  },
+  addTrack: () => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: addTrackToShow(s.show), selectedLayerId: null }));
+    resetTransport();
+  },
+  duplicateTrack: (id) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: duplicateTrackInShow(s.show, id) }));
+    resetTransport();
+  },
+  renameTrack: (id, name) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: renameTrackInShow(s.show, id, name) }));
+  },
+  removeTrack: (id) => {
+    const show = get().show;
+    if (show.tracks.length <= 1) {
+      set({ projectMessage: 'A show needs at least one track' });
+      return;
+    }
+    pushSceneHistory(get, set);
+    const wasActive = show.activeTrackId === id;
+    set((s) => ({ show: removeTrackFromShow(s.show, id), selectedLayerId: wasActive ? null : s.selectedLayerId }));
+    if (wasActive) resetTransport();
+  },
+  moveTrack: (id, direction) => {
+    pushSceneHistory(get, set);
+    set((s) => ({ show: moveTrackInShow(s.show, id, direction) }));
+  },
+  setActiveTrack: (id) => {
+    if (get().show.activeTrackId === id) return;
+    pushSceneHistory(get, set);
+    set((s) => ({ show: setActiveTrackInShow(s.show, id), selectedLayerId: null }));
+    resetTransport();
   },
   timelineVisible: true,
   toggleTimeline: () => set((s) => ({ timelineVisible: !s.timelineVisible })),

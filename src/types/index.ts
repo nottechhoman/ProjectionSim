@@ -169,6 +169,8 @@ export interface SceneObject {
   modelAssetId?: string;
   /** Scale factor applied to imported models (1 = file units as meters) */
   modelScale?: number;
+  /** v4: replace an imported model's UVs with a generated non-overlapping atlas. */
+  uvAtlas?: boolean;
   /** Direct-display LED wall settings (type ledWall only). Content comes from layers. */
   ledWall?: {
     pixelResolution: { width: number; height: number };

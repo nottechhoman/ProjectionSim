@@ -310,7 +310,8 @@ export function compositeTexel(
     const media = layer.media;
     if (media.kind !== 'pattern' && media.kind !== 'solid') continue;
     const res = mappingResolution(mapping, projectors);
-    const mUv = layerMediaUv({ rect: layer.rect, fit: 'stretch' }, uv, res, 0);
+    const c = mapping.filtering === 'nearest' ? snapToCanvasPixel(uv, res) : uv;
+    const mUv = layerMediaUv({ rect: layer.rect, fit: 'stretch' }, c, res, 0);
     if (!mUv) continue;
     const src = media.kind === 'solid' ? hexToRgb(media.color) : patternColor(media.pattern, mUv, hexToRgb(media.color));
     color = blendOver(color, src, opacity, layer.blendMode);
@@ -323,4 +324,9 @@ export function mappingVisibleTo(mapping: Mapping, forProjectorId: string | null
   const p = mapping.kind === 'perspective' ? mapping.perspective : undefined;
   if (!p?.projectorOnly || !p.lockToProjectorId) return true;
   return p.lockToProjectorId === forProjectorId;
+}
+
+/** Nearest filtering: the centre of the mapping-canvas pixel containing uv. */
+export function snapToCanvasPixel(uv: Vec2, res: { w: number; h: number }): Vec2 {
+  return { x: (Math.floor(uv.x * res.w) + 0.5) / res.w, y: (Math.floor(uv.y * res.h) + 0.5) / res.h };
 }

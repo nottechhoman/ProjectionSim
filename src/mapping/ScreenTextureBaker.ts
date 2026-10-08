@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import bakeVert from './shaders/bake.vert.glsl?raw';
 import bakeFrag from './shaders/bake.frag.glsl?raw';
-import type { Layer, LayerBlendMode, Mapping, ProjectorConfig, SceneObject } from '../types';
+import type { Layer, LayerBlendMode, Mapping, MappingFiltering, ProjectorConfig, SceneObject } from '../types';
 import type { DeviceProfile } from '../ui/deviceProfile';
 import type { LiveLayer } from '../playback/evaluate';
 import { mediaTextureCache } from '../media';
@@ -53,6 +53,7 @@ export function screenTextureSize(
 }
 
 const BLEND_INT: Record<LayerBlendMode, number> = { normal: 0, add: 1, multiply: 2 };
+const FILTER_INT: Record<MappingFiltering, number> = { nearest: 0, bilinear: 1, msaa2x: 2 };
 
 function setBlend(material: THREE.ShaderMaterial, mode: LayerBlendMode): void {
   material.blending = THREE.CustomBlending;
@@ -123,6 +124,9 @@ export class ScreenTextureBaker {
         layerFit: { value: 0 },
         layerOpacity: { value: 1 },
         blendMode: { value: 0 },
+        filterMode: { value: 1 },
+        maskMap: { value: this.fallback },
+        hasMask: { value: 0 },
       },
     });
   }
@@ -273,6 +277,10 @@ export class ScreenTextureBaker {
 
     const res = mappingResolution(mapping, projectors);
     (u.mapRes.value as THREE.Vector2).set(res.w, res.h);
+    u.filterMode.value = FILTER_INT[mapping.filtering];
+    const mask = mapping.maskAssetId ? mediaTextureCache.get(mapping.maskAssetId) : undefined;
+    u.hasMask.value = mask ? 1 : 0;
+    u.maskMap.value = mask ? mask.texture : this.fallback;
     u.mapKind.value = MAPPING_KIND_INT[mapping.kind];
     let matrix = matrices.get(mapping.id);
     if (!matrix) {

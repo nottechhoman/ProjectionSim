@@ -9,6 +9,7 @@ import { usePlayhead } from '../../playback/useTransport';
 import type { SectionEndAction } from '../../types';
 import { isCompactLayout } from '../deviceProfile';
 import { useDeviceProfile } from '../useDeviceProfile';
+import { TrackSelector } from './TrackSelector';
 import styles from './LayersPanel.module.css';
 
 function TimeInput({ value, fps, onChange }: { value: number; fps: number; onChange: (sec: number) => void }) {
@@ -59,6 +60,10 @@ export function CuesPanel() {
           </button>
         </div>
         <div className={styles.body}>
+          <div className={styles.section}>
+            <div className={styles.sectionTitle}>Setlist</div>
+            <TrackSelector />
+          </div>
           <div className={styles.section}>
             <button type="button" className={styles.goBtn} onClick={go} data-testid="cue-go" title="GO (Enter)">
               GO

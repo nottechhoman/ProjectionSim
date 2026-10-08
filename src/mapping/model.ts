@@ -484,3 +484,60 @@ export function pruneMappingRefs(
 export function mediaAssetIdOf(media: MediaRef): string | null {
   return media.kind === 'video' || media.kind === 'image' ? media.assetId : null;
 }
+
+// ---------------------------------------------------------------------------
+// Setlist (tracks) — pure helpers
+// ---------------------------------------------------------------------------
+
+export function addTrackToShow(show: Show, name?: string): Show {
+  const track = createTrack(name ?? `Track ${show.tracks.length + 1}`);
+  return { ...show, tracks: [...show.tracks, track], activeTrackId: track.id };
+}
+
+/** Copy a track (new ids for it, its layers, sections and cues) right after it, and make it active. */
+export function duplicateTrackInShow(show: Show, id: string): Show {
+  const index = show.tracks.findIndex((t) => t.id === id);
+  if (index < 0) return show;
+  const src = show.tracks[index];
+  const copy: Track = {
+    ...structuredClone(src),
+    id: newId('track'),
+    name: `${src.name} copy`,
+    layers: src.layers.map((l) => ({ ...structuredClone(l), id: newId('layer') })),
+    sections: src.sections.map((s) => ({ ...s, id: newId('section') })),
+    cues: src.cues.map((c) => ({ ...c, id: newId('cue') })),
+  };
+  const tracks = [...show.tracks];
+  tracks.splice(index + 1, 0, copy);
+  return { ...show, tracks, activeTrackId: copy.id };
+}
+
+export function renameTrackInShow(show: Show, id: string, name: string): Show {
+  const trimmed = name.trim();
+  if (!trimmed) return show;
+  return { ...show, tracks: show.tracks.map((t) => (t.id === id ? { ...t, name: trimmed } : t)) };
+}
+
+/** Remove a track; the last remaining track cannot be removed. */
+export function removeTrackFromShow(show: Show, id: string): Show {
+  if (show.tracks.length <= 1) return show;
+  const index = show.tracks.findIndex((t) => t.id === id);
+  if (index < 0) return show;
+  const tracks = show.tracks.filter((t) => t.id !== id);
+  const activeTrackId = show.activeTrackId === id ? tracks[Math.min(index, tracks.length - 1)].id : show.activeTrackId;
+  return { ...show, tracks, activeTrackId };
+}
+
+export function moveTrackInShow(show: Show, id: string, direction: -1 | 1): Show {
+  const index = show.tracks.findIndex((t) => t.id === id);
+  const target = index + direction;
+  if (index < 0 || target < 0 || target >= show.tracks.length) return show;
+  const tracks = [...show.tracks];
+  const [item] = tracks.splice(index, 1);
+  tracks.splice(target, 0, item);
+  return { ...show, tracks };
+}
+
+export function setActiveTrackInShow(show: Show, id: string): Show {
+  return show.tracks.some((t) => t.id === id) ? { ...show, activeTrackId: id } : show;
+}

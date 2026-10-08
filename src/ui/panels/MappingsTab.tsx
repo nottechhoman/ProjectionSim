@@ -25,6 +25,7 @@ import { feedRectUv } from '../../mapping/sample';
 import { quaternionToEulerYXZ } from '../../utils/euler';
 import type { SceneEngine } from '../../scene/SceneEngine';
 import { MiniNum, svgPoint } from './studioControls';
+import { uvProblem } from './UvHealth';
 import styles from './StudioPanel.module.css';
 
 const SURFACE_COLORS = ['#4fc3f7', '#ffb74d', '#81c784', '#ba68c8', '#f06292', '#4db6ac', '#e57373', '#aed581'];
@@ -163,6 +164,20 @@ function MappingEditor({ mapping, screens }: { mapping: Mapping; screens: SceneO
   const update = useAppStore((s) => s.updateMapping);
   const setKind = useAppStore((s) => s.setMappingKind);
   const set = (patch: Partial<Mapping>, history = true) => update(mapping.id, patch, history);
+  const mediaAssets = useAppStore((s) => s.mediaAssets);
+  const importMask = useAppStore((s) => s.importMappingMask);
+  const maskInput = useRef<HTMLInputElement>(null);
+  const [uvIssues, setUvIssues] = useState<Record<string, string | null>>({});
+  const screensKey = JSON.stringify(screens.map((o) => [o.id, o.modelAssetId, o.uvAtlas, o.dimensions]));
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const out: Record<string, string | null> = {};
+      for (const o of screens) out[o.id] = uvProblem(engine()?.getUvReport(o.id) ?? null);
+      setUvIssues(out);
+    }, 150);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [screensKey]);
   const res = mappingResolution(mapping, projectors);
   const locked = mapping.kind === 'perspective' && !!mapping.perspective?.lockToProjectorId;
   const [name, setName] = useState(mapping.name);
@@ -218,6 +233,36 @@ function MappingEditor({ mapping, screens }: { mapping: Mapping; screens: SceneO
           </label>
         </div>
         {locked ? <p className={styles.hint}>Canvas follows the locked projector&apos;s resolution.</p> : null}
+        <div className={styles.row}>
+          <span className={styles.rowLabel}>Mask</span>
+          <select
+            value={mapping.maskAssetId ?? ''}
+            onChange={(e) => set({ maskAssetId: e.target.value || null })}
+            data-testid="mapping-mask"
+          >
+            <option value="">None</option>
+            {mediaAssets
+              .filter((a) => a.kind === 'image')
+              .map((a) => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+          </select>
+          <button type="button" className={styles.btn} onClick={() => maskInput.current?.click()}>
+            Import…
+          </button>
+          <input
+            ref={maskInput}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void importMask(mapping.id, file);
+              e.target.value = '';
+            }}
+          />
+        </div>
+        <p className={styles.hint}>Mask brightness (white = show, black = hide) over the mapping canvas multiplies every layer on this mapping.</p>
         <div className={styles.sectionTitle} style={{ marginTop: 10 }}>Screens</div>
         {screens.length === 0 ? <p className={styles.hint}>No screens: turn on “Receives projection” on an object, or add an LED wall.</p> : null}
         <div className={styles.btnRow} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 4 }}>
@@ -230,6 +275,11 @@ function MappingEditor({ mapping, screens }: { mapping: Mapping; screens: SceneO
                 data-testid={`mapping-screen-${obj.id}`}
               />
               {obj.name} <span className={styles.surfaceMeta}>{obj.type}</span>
+              {uvIssues[obj.id] ? (
+                <span title={`This screen ${uvIssues[obj.id]} — see the Inspector`} style={{ color: '#e0c070' }}>
+                  ⚠ UVs
+                </span>
+              ) : null}
             </label>
           ))}
         </div>

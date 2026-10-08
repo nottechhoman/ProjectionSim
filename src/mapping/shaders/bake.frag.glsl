@@ -34,9 +34,19 @@ uniform int layerFit;         // 0 contain, 1 cover, 2 stretch
 uniform float layerOpacity;
 uniform int blendMode;        // 0 normal, 1 add, 2 multiply
 
+// v4 M4: mapping filtering (0 nearest, 1 bilinear, 2 two-sample supersampling)
+// and mask (luminance of an image over the mapping canvas multiplies the layer).
+uniform int filterMode;
+uniform sampler2D maskMap;
+uniform int hasMask;
+
 in vec3 vWorld;
 in vec2 vUv;
 out vec4 fragColor;
+
+// The sample point being shaded (texel centre, or a sub-sample of it).
+vec3 gP;
+vec2 gT;
 
 const float PI = 3.14159265359;
 
@@ -49,8 +59,8 @@ bool inUnit(vec2 p) {
 }
 
 vec2 rawSurfaceUv() {
-  if (surfProj == 0) return vUv;
-  vec3 l = (surfRootInv * vec4(vWorld, 1.0)).xyz;
+  if (surfProj == 0) return gT;
+  vec3 l = (surfRootInv * vec4(gP, 1.0)).xyz;
   vec3 mn = surfBoundsMin;
   vec3 sz = max(surfBoundsSize, vec3(1e-6));
   if (surfProj == 1) {
@@ -93,9 +103,9 @@ bool feedUv(out vec2 uv) {
 }
 
 bool directUv(out vec2 uv) {
-  uv = vUv;
+  uv = gT;
   if (directFit == 3) {
-    uv = (vUv - 0.5) * (screenTexSize / mapRes) + 0.5;
+    uv = (gT - 0.5) * (screenTexSize / mapRes) + 0.5;
   } else if (directFit != 0) {
     float canvasAspect = mapRes.x / mapRes.y;
     vec2 sc = vec2(1.0);
@@ -105,7 +115,7 @@ bool directUv(out vec2 uv) {
     } else {
       if (wider) sc.x = canvasAspect / screenAspect; else sc.y = screenAspect / canvasAspect;
     }
-    uv = (vUv - 0.5) / sc + 0.5;
+    uv = (gT - 0.5) / sc + 0.5;
   }
   return inUnit(uv);
 }
@@ -116,12 +126,12 @@ bool canvasUv(out vec2 uv) {
   if (mapKind == 0) return directUv(uv);
   if (mapKind == 3) return feedUv(uv);
   if (mapKind == 1) {
-    vec4 clip = mapMatrix * vec4(vWorld, 1.0);
+    vec4 clip = mapMatrix * vec4(gP, 1.0);
     if (clip.w <= 1e-6) return false;
     uv = clip.xy / clip.w * 0.5 + 0.5;
     return inUnit(uv);
   }
-  vec3 l = (mapMatrix * vec4(vWorld, 1.0)).xyz;
+  vec3 l = (mapMatrix * vec4(gP, 1.0)).xyz;
   if (mapKind == 2) {
     uv = vec2(l.x / mapParams.x + 0.5, l.y / mapParams.y + 0.5);
     return inUnit(uv);
@@ -179,18 +189,53 @@ vec3 patternColor(int p, vec2 uv, vec3 tint) {
   return vec3(0.5);
 }
 
-void main() {
+const vec3 LUMA = vec3(0.2126, 0.7152, 0.0722);
+
+// Colour and weight (coverage × mask) of the layer at one sample point.
+vec4 shadeAt(vec3 P, vec2 T) {
+  gP = P;
+  gT = T;
   vec2 c;
-  if (!canvasUv(c)) discard;
+  if (!canvasUv(c)) return vec4(0.0);
+  // Nearest: snap to the mapping canvas pixel centre.
+  if (filterMode == 0) c = (floor(c * mapRes) + 0.5) / mapRes;
   vec2 m;
-  if (!layerUv(c, m)) discard;
+  if (!layerUv(c, m)) return vec4(0.0);
   vec3 col;
-  if (mediaKind == 1) col = texture(mediaMap, m).rgb;
-  else if (mediaKind == 2) col = patternColor(patternType, m, layerColor);
+  if (mediaKind == 1) {
+    if (filterMode == 0) {
+      ivec2 sz = textureSize(mediaMap, 0);
+      col = texelFetch(mediaMap, clamp(ivec2(m * vec2(sz)), ivec2(0), sz - 1), 0).rgb;
+    } else {
+      col = texture(mediaMap, m).rgb;
+    }
+  } else if (mediaKind == 2) col = patternColor(patternType, m, layerColor);
   else if (mediaKind == 3) col = layerColor;
-  else discard;
-  float a = clamp(layerOpacity, 0.0, 1.0);
+  else return vec4(0.0);
+  float mask = hasMask == 1 ? clamp(dot(texture(maskMap, c).rgb, LUMA), 0.0, 1.0) : 1.0;
+  return vec4(col, mask);
+}
+
+void main() {
+  // Derivatives first (outside any branch).
+  vec3 dx = dFdx(vWorld);
+  vec3 dy = dFdy(vWorld);
+  vec2 tx = dFdx(vUv);
+  vec2 ty = dFdy(vUv);
+  vec4 s;
+  if (filterMode == 2) {
+    // Two rotated-grid sub-samples per texel.
+    vec4 a = shadeAt(vWorld - 0.25 * dx + 0.25 * dy, vUv - 0.25 * tx + 0.25 * ty);
+    vec4 b = shadeAt(vWorld + 0.25 * dx - 0.25 * dy, vUv + 0.25 * tx - 0.25 * ty);
+    float w = a.a + b.a;
+    if (w <= 0.0) discard;
+    s = vec4((a.rgb * a.a + b.rgb * b.a) / w, w * 0.5);
+  } else {
+    s = shadeAt(vWorld, vUv);
+    if (s.a <= 0.0) discard;
+  }
+  float a = clamp(layerOpacity, 0.0, 1.0) * s.a;
   // Blend factors are set per mode on the material (see ScreenTextureBaker).
-  if (blendMode == 2) fragColor = vec4(mix(vec3(1.0), col, a), 1.0);
-  else fragColor = vec4(col, a);
+  if (blendMode == 2) fragColor = vec4(mix(vec3(1.0), s.rgb, a), 1.0);
+  else fragColor = vec4(s.rgb, a);
 }

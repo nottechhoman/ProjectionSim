@@ -10,6 +10,7 @@ import { sectionAt } from '../../playback/showControl';
 import { mediaTextureCache } from '../../media';
 import type { Layer } from '../../types';
 import { MappingSelect } from './LayersPanel';
+import { TrackSelector } from './TrackSelector';
 import styles from './TimelineDock.module.css';
 
 type DragMode = 'move' | 'trimL' | 'trimR';
@@ -124,7 +125,7 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
   return (
     <div className={styles.timeline} style={style} data-testid="timeline-dock">
       <div className={styles.bar}>
-        <span>{track.name}</span>
+        <TrackSelector />
         <span>Length</span>
         <input
           aria-label="Track length (seconds)"

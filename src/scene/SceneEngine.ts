@@ -15,6 +15,7 @@ import { computeSurfaceUvFrame, projectSurfaceUv, type SurfaceUvFrame } from '..
 import { ScreenTextureBaker, SCREEN_TEXTURE_MAX, type BakeSurface } from '../mapping/ScreenTextureBaker';
 import { activeTrack, createShow } from '../mapping/model';
 import { mappingVisibleTo } from '../mapping/sample';
+import { applyUvAtlas, uvReportForMeshes, type UvReport } from '../mapping/uvAtlas';
 import { evaluate, type LiveLayer } from '../playback/evaluate';
 import { transport } from '../playback/clock';
 import { transportStep, type PlayMode } from '../playback/showControl';
@@ -85,7 +86,7 @@ function dimensionsKey(obj: SceneObject): string {
   const curved = obj.curved
     ? `${obj.curved.radius}:${obj.curved.arcAngleDeg}:${obj.curved.height}`
     : '';
-  const model = obj.modelAssetId ? `${obj.modelAssetId}:${obj.modelScale ?? 1}` : '';
+  const model = obj.modelAssetId ? `${obj.modelAssetId}:${obj.modelScale ?? 1}:${obj.uvAtlas ? 'atlas' : 'uv'}` : '';
   const led = obj.ledWall ? `${obj.ledWall.pixelResolution.width}x${obj.ledWall.pixelResolution.height}` : '';
   const sides = obj.projectionSides ?? 'front';
   return `${obj.type}:${obj.dimensions.width}:${obj.dimensions.height}:${depth}:${curved}:${model}:${led}:${sides}`;
@@ -109,6 +110,12 @@ function createObjectMesh(obj: SceneObject): THREE.Object3D {
       if (!prototype) return createBox(obj);
       const group = cloneModelGroup(prototype);
       group.userData.isModel = true;
+      if (obj.uvAtlas) {
+        // Own copies of the geometry (the prototype is shared) before rewriting UVs.
+        const meshes = collectMeshes(group);
+        for (const mesh of meshes) mesh.geometry = mesh.geometry.clone();
+        applyUvAtlas(meshes, group);
+      }
       return group;
     }
     default:
@@ -977,6 +984,14 @@ export class SceneEngine {
       this.occlusionDepthMulti.set(key, textures);
     }
     return texturesByKey.size > 0;
+  }
+
+  /** UV health of an object's meshes (overlap / outside 0–1), cached per mesh build. */
+  getUvReport(objectId: string): UvReport | null {
+    const root = this.objectMeshes.get(objectId);
+    if (!root) return null;
+    if (!root.userData.uvReport) root.userData.uvReport = uvReportForMeshes(collectMeshes(root));
+    return root.userData.uvReport as UvReport;
   }
 
   /** Canvas CSS-pixel position (top-left origin) of a world point in the editor view. For tests only. */
