@@ -85,7 +85,7 @@ export function IlluminanceLegend() {
         ))}
       </div>
       <div style={{ marginTop: 4, opacity: 0.65 }}>
-        Lines every 10 %. Pink = over max. Uses lumens, distance, angle
+        Lines every 10 %. Black = no light. Magenta = over max. Uses lumens, distance, angle
         {unit === 'nits' ? ` and screen gain ${settings.screenGain}` : ''}; follows the Raw / Blend mode.
       </div>
     </div>

@@ -210,13 +210,20 @@ vec3 illuminanceRamp(float t) {
   vec3 c3 = vec3(0.35, 0.82, 0.25);
   vec3 c4 = vec3(0.98, 0.82, 0.15);
   vec3 c5 = vec3(0.92, 0.22, 0.12);
-  if (t > 1.0) return mix(c5, vec3(1.0, 0.85, 0.95), clamp((t - 1.0) * 2.0, 0.0, 1.0));
+  // Over the scale max: saturated magenta (never white, so it can't be mistaken for unlit).
+  if (t > 1.0) return mix(c5, vec3(0.95, 0.15, 0.85), clamp((t - 1.0) * 4.0, 0.0, 1.0));
   float x = clamp(t, 0.0, 1.0) * 5.0;
   if (x < 1.0) return mix(c0, c1, x);
   if (x < 2.0) return mix(c1, c2, x - 1.0);
   if (x < 3.0) return mix(c2, c3, x - 2.0);
   if (x < 4.0) return mix(c3, c4, x - 3.0);
   return mix(c4, c5, x - 4.0);
+}
+
+// Colour for a scene fragment no projector lights. In the brightness preview that is
+// "no light" (near black), not the surface's own colour, which may be white.
+vec3 unlitColor() {
+  return previewKind == 3 ? vec3(0.03, 0.03, 0.045) : surfaceBaseColor;
 }
 
 // Physical raster UV → content image UV through the inverse corner-pin.
@@ -292,7 +299,7 @@ void main() {
 
   if (!receivesOnThisFace()) {
     if (feedIndex >= 0 && feedLayer == 2) discard;
-    fragColor = feedIndex >= 0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(surfaceBaseColor, 1.0);
+    fragColor = feedIndex >= 0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(unlitColor(), 1.0);
     return;
   }
 
@@ -328,7 +335,7 @@ void main() {
 
   if (hitCount == 0) {
     if (feedIndex >= 0 && feedLayer == 2) discard;
-    fragColor = feedIndex >= 0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(surfaceBaseColor, 1.0);
+    fragColor = feedIndex >= 0 ? vec4(0.0, 0.0, 0.0, 1.0) : vec4(unlitColor(), 1.0);
     return;
   }
 
