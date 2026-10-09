@@ -69,6 +69,15 @@ export function IlluminanceLegend() {
             ))}
         </select>
       </div>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+        <input
+          type="checkbox"
+          data-testid="illuminance-spill"
+          checked={settings.spillEverywhere}
+          onChange={(e) => setPrevizSettings({ spillEverywhere: e.target.checked })}
+        />
+        Show spill on every surface (walls, floor, objects)
+      </label>
       <div style={{ height: 10, borderRadius: 3, background: illuminanceRampCss() }} />
       <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2, opacity: 0.8 }}>
         {ticks.map((t, i) => (
