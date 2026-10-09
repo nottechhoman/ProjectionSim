@@ -20,7 +20,7 @@ import {
   listBlockerDescriptors,
   type BlockerDescriptor,
 } from './occlusion';
-import { illuminanceAt, projectorLightModel, type ProjectorLightModel } from '../optics/illuminance';
+import { illuminanceAt, projectorLightModel, projectorLumens, type ProjectorLightModel } from '../optics/illuminance';
 
 export const ANALYSIS_QUALITY_PRESETS: Record<
   AnalysisQuality,
@@ -53,7 +53,7 @@ interface SideAggregate {
   uncoveredArea: number;
   visibleOverlapArea: number;
   occlusionLossArea: number;
-  perProjector: Map<string, { geometric: number; visible: number; blocked: number }>;
+  perProjector: Map<string, { geometric: number; visible: number; blocked: number; flux: number }>;
   lux: { min: number; max: number; weighted: number; area: number };
 }
 
@@ -205,9 +205,9 @@ function aggregateSamples(
   blockers: BlockerDescriptor[],
   receiverId: string,
 ): SideAggregate {
-  const perProjector = new Map<string, { geometric: number; visible: number; blocked: number }>();
+  const perProjector = new Map<string, { geometric: number; visible: number; blocked: number; flux: number }>();
   for (const proj of eligible) {
-    perProjector.set(proj.id, { geometric: 0, visible: 0, blocked: 0 });
+    perProjector.set(proj.id, { geometric: 0, visible: 0, blocked: 0, flux: 0 });
   }
 
   let receiverArea = 0;
@@ -240,7 +240,9 @@ function aggregateSamples(
         visibleHits.push(proj.id);
         metrics.visible += sample.area;
         const L = lights.get(proj.id)!;
-        sampleLux += illuminanceAt(L.lumens, L.a1, L.origin, L.forward, sample.position, sample.faceNormal);
+        const e = illuminanceAt(L.lumens, L.a1, L.origin, L.forward, sample.position, sample.faceNormal);
+        sampleLux += e;
+        metrics.flux += e * sample.area;
       } else {
         metrics.blocked += sample.area;
       }
@@ -282,7 +284,7 @@ function sideMetricsFromAggregate(agg: SideAggregate): SampledCoverageSideMetric
 }
 
 function mergeAggregates(a: SideAggregate, b: SideAggregate): SideAggregate {
-  const perProjector = new Map<string, { geometric: number; visible: number; blocked: number }>();
+  const perProjector = new Map<string, { geometric: number; visible: number; blocked: number; flux: number }>();
   for (const [id, m] of a.perProjector) {
     perProjector.set(id, { ...m });
   }
@@ -292,6 +294,7 @@ function mergeAggregates(a: SideAggregate, b: SideAggregate): SideAggregate {
       existing.geometric += m.geometric;
       existing.visible += m.visible;
       existing.blocked += m.blocked;
+      existing.flux += m.flux;
     } else {
       perProjector.set(id, { ...m });
     }
@@ -318,12 +321,14 @@ function aggregateToPerProjector(
   eligible: ProjectorConfig[],
 ): SampledCoverageAnalysis['perProjector'] {
   return eligible.map((proj) => {
-    const m = agg.perProjector.get(proj.id) ?? { geometric: 0, visible: 0, blocked: 0 };
+    const m = agg.perProjector.get(proj.id) ?? { geometric: 0, visible: 0, blocked: 0, flux: 0 };
     return {
       projectorId: proj.id,
       geometricCoveredArea: m.geometric,
       visibleCoveredArea: m.visible,
       blockedArea: m.blocked,
+      lumensOnTarget: m.flux,
+      lumensTotal: projectorLumens(proj),
     };
   });
 }

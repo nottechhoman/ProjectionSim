@@ -49,11 +49,17 @@ describe('illuminance', () => {
   });
 
   it('normalizes settings', () => {
-    expect(normalizePrevizSettings(undefined)).toEqual({ unit: 'nits', scaleMax: 500, screenGain: 1 });
+    expect(normalizePrevizSettings(undefined)).toEqual({
+      unit: 'nits',
+      scaleMax: 500,
+      screenGain: 1,
+      spillEverywhere: true,
+    });
     expect(normalizePrevizSettings({ unit: 'lux', scaleMax: -1, screenGain: 99 })).toEqual({
       unit: 'lux',
       scaleMax: 500,
       screenGain: 10,
+      spillEverywhere: true,
     });
   });
 });

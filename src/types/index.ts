@@ -229,6 +229,8 @@ export interface PrevizSettings {
   scaleMax: number;
   /** Screen gain for nits (1 = matte white). */
   screenGain: number;
+  /** Paint the heatmap on every surface (walls, floor, set pieces), not only screens, to show spill. */
+  spillEverywhere: boolean;
 }
 
 export interface IlluminanceStats {
@@ -288,6 +290,10 @@ export interface ProjectorCoverageMetrics {
   geometricCoveredArea: number;
   visibleCoveredArea: number;
   blockedArea: number;
+  /** v5: luminous flux (lm) from this projector landing on the target (visible, before blending). */
+  lumensOnTarget?: number;
+  /** v5: lumens × brightness multiplier. */
+  lumensTotal?: number;
 }
 
 /** Area-weighted surface sampling results — distinct from analytic overlap metrics. */

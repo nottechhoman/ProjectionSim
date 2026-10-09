@@ -6,6 +6,8 @@ import styles from './Inspector.module.css';
 /** v5 previz: brightness on the calculation target from projector lumens. */
 export function BrightnessResults() {
   const stats = useAppStore((s) => s.calculationResults.coverageAnalysis?.illuminance ?? null);
+  const perProjector = useAppStore((s) => s.calculationResults.coverageAnalysis?.perProjector ?? []);
+  const projectors = useAppStore((s) => s.projectors);
   const settings = useAppStore((s) => s.previzSettings);
   const setPrevizSettings = useAppStore((s) => s.setPrevizSettings);
   const previewMode = useAppStore((s) => s.materialPreviewMode);
@@ -53,6 +55,33 @@ export function BrightnessResults() {
         </>
       ) : (
         <div className={styles.empty}>No projector light lands on the target.</div>
+      )}
+      {perProjector.some((m) => (m.lumensTotal ?? 0) > 0) && (
+        <>
+          <div className={styles.sectionTitle} style={{ marginTop: 8 }}>
+            Light on target vs spill
+          </div>
+          {perProjector.map((m) => {
+            const total = m.lumensTotal ?? 0;
+            if (total <= 0) return null;
+            const on = Math.min(total, m.lumensOnTarget ?? 0);
+            const onPct = Math.round((on / total) * 100);
+            const name = projectors.find((p) => p.id === m.projectorId)?.name ?? m.projectorId;
+            return (
+              <div className={styles.row} key={m.projectorId} data-testid="spill-row">
+                <label>{name}</label>
+                <span className={styles.readout}>
+                  {onPct}% on target ({Math.round(on).toLocaleString()} lm) · {100 - onPct}% spill (
+                  {Math.round(total - on).toLocaleString()} lm)
+                </span>
+              </div>
+            );
+          })}
+          <p className={styles.hint}>
+            Spill is light that misses the target or is blocked before it: it lands on walls, floor or objects
+            behind and around it. The brightness heatmap shows where it lands (Show spill on every surface).
+          </p>
+        </>
       )}
       {previewMode !== 'illuminance' && (
         <button

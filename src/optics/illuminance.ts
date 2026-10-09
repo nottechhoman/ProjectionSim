@@ -82,6 +82,7 @@ export const DEFAULT_PREVIZ_SETTINGS: PrevizSettings = {
   unit: 'nits',
   scaleMax: 500,
   screenGain: 1,
+  spillEverywhere: true,
 };
 
 export function normalizePrevizSettings(raw: Partial<PrevizSettings> | undefined): PrevizSettings {
@@ -94,5 +95,7 @@ export function normalizePrevizSettings(raw: Partial<PrevizSettings> | undefined
     typeof raw?.screenGain === 'number' && Number.isFinite(raw.screenGain) && raw.screenGain > 0
       ? Math.min(10, raw.screenGain)
       : DEFAULT_PREVIZ_SETTINGS.screenGain;
-  return { unit, scaleMax, screenGain };
+  const spillEverywhere =
+    typeof raw?.spillEverywhere === 'boolean' ? raw.spillEverywhere : DEFAULT_PREVIZ_SETTINGS.spillEverywhere;
+  return { unit, scaleMax, screenGain, spillEverywhere };
 }

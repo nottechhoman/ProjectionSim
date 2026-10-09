@@ -324,3 +324,22 @@ describe('Coverage reliability — sampled analysis', () => {
     expect(combined.perSide?.back?.visibleCoveredArea).toBeCloseTo(back.visibleCoveredArea, 2);
   });
 });
+
+describe('Light on target vs spill (v5)', () => {
+  it('an image fully inside the screen puts all its lumens on it', () => {
+    const proj = cloneProjector({ lumens: 10000 });
+    const m = analyze(DEFAULT_SCENE_OBJECTS, [proj]).perProjector[0];
+    expect(m.lumensTotal).toBe(10000);
+    expect(m.lumensOnTarget! / 10000).toBeGreaterThan(0.95);
+    expect(m.lumensOnTarget! / 10000).toBeLessThan(1.05);
+  });
+
+  it('an image larger than the screen spills the rest', () => {
+    const proj = cloneProjector({ lumens: 10000, optics: { throwRatio: 0.7 } as ProjectorConfig['optics'] });
+    const m = analyze(DEFAULT_SCENE_OBJECTS, [proj]).perProjector[0];
+    // 6 m throw at 0.7:1, 16:9 → 8.57 × 4.82 m image; the 6 × 3.375 m screen catches ~49 %.
+    const width = 6 / 0.7;
+    const expected = (6 * 3.375) / (width * (width / proj.optics.aspectRatio));
+    expect(m.lumensOnTarget! / 10000).toBeCloseTo(expected, 1);
+  });
+});

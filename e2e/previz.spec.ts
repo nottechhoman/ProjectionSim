@@ -33,8 +33,11 @@ test('previz: pick a projector model and lens, read brightness, show the heatmap
   await lumens.press('Enter');
   await expect(avg).not.toHaveText(before ?? '');
 
+  await expect(page.getByTestId('spill-row').first()).toContainText('on target');
+
   await page.getByTestId('show-brightness-heatmap').click();
   await expect(page.getByTestId('illuminance-legend')).toBeVisible();
+  await expect(page.getByTestId('illuminance-spill')).toBeChecked();
   await page.waitForTimeout(500);
   await page.screenshot({ path: 'docs/screenshots/v5-brightness-heatmap.png' });
 

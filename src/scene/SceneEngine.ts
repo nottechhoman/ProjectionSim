@@ -1259,7 +1259,10 @@ export class SceneEngine {
     mediaTextureCache.updateVideos();
     this.renderContent();
 
-    const receivers = this.getReceiverRoots();
+    const receivers =
+      this.materialPreviewMode === 'illuminance' && this.previzSettings.spillEverywhere
+        ? this.getLitSurfaceRoots()
+        : this.getReceiverRoots();
     let projectorsToRender = this.activeProjectors;
 
     if (this.projectionCompositeMode === 'solo') {
@@ -1721,6 +1724,17 @@ export class SceneEngine {
       if (a.x > b.x) return [pts[1], pts[0], pts[3], pts[2]];
     }
     return pts;
+  }
+
+  /** v5 brightness preview: every visible surface light can land on (spill included), not LED walls. */
+  private getLitSurfaceRoots(): THREE.Object3D[] {
+    const roots: THREE.Object3D[] = [];
+    for (const obj of this.sceneObjects) {
+      if (obj.type === 'ledWall') continue;
+      const root = this.objectMeshes.get(obj.id);
+      if (root && root.visible) roots.push(root);
+    }
+    return roots;
   }
 
   private getReceiverRoots(): THREE.Object3D[] {
