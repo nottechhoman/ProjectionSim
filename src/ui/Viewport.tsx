@@ -129,6 +129,10 @@ export function Viewport() {
           return;
         }
       }
+      if (e.key === 'f' || e.key === 'F') {
+        engine.focusSelected(store.selectedObjectId ?? store.selectedProjectorId);
+        return;
+      }
       if (e.key === 'w' || e.key === 'W') store.setTransformMode('translate');
       if (e.key === 'e' || e.key === 'E') store.setTransformMode('rotate');
     };
