@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { FlyNavigator } from './FlyNavigator';
 import { TransformControls } from 'three/examples/jsm/controls/TransformControls.js';
 import type { useAppStore } from '../store';
 import { buildProjectorCamera, getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
@@ -306,6 +307,8 @@ export class SceneEngine {
   private readonly helpersGroup = new THREE.Group();
   private editorCamera: THREE.PerspectiveCamera | null = null;
   private controls: OrbitControls | null = null;
+  private fly: FlyNavigator | null = null;
+  private focusTween: { from: THREE.Vector3; to: THREE.Vector3; fromTarget: THREE.Vector3; toTarget: THREE.Vector3; start: number } | null = null;
   private transformControls: TransformControls | null = null;
   private depthPass: DepthPass | null = null;
   private readonly depthPassByProjector = new Map<string, DepthPass>();
@@ -334,6 +337,7 @@ export class SceneEngine {
   private blendSettings: BlendSettings = DEFAULT_BLEND_SETTINGS;
   private previzSettings: PrevizSettings = DEFAULT_PREVIZ_SETTINGS;
   private lastFrameAt = 0;
+  private lastRenderAt = 0;
   private readonly outputTargets = new Map<
     string,
     {
@@ -423,7 +427,10 @@ export class SceneEngine {
     this.controls.rotateSpeed = 0.7;
     this.controls.panSpeed = 0.8;
     this.controls.target.set(0, 1.5, 0);
+    // Right button is fly mode (FlyNavigator); pan stays on the middle button or Shift + drag.
+    this.controls.mouseButtons = { LEFT: THREE.MOUSE.ROTATE, MIDDLE: THREE.MOUSE.PAN, RIGHT: -1 as THREE.MOUSE };
     this.controls.update();
+    this.fly = new FlyNavigator(this.editorCamera, canvas, this.controls);
 
     this.transformControls = new TransformControls(this.editorCamera, canvas);
     this.transformControls.setSpace('local');
@@ -990,6 +997,39 @@ export class SceneEngine {
     return texturesByKey.size > 0;
   }
 
+  /** F: frame the selected object or projector (orbit target on it, camera backed off to fit). */
+  focusSelected(id: string | null): boolean {
+    if (!this.editorCamera || !this.controls || !id) return false;
+    const obj = this.objectMeshes.get(id) ?? this.projectorVisuals.get(id)?.body;
+    if (!obj) return false;
+    const box = new THREE.Box3().setFromObject(obj);
+    if (box.isEmpty()) return false;
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(0.3, sphere.radius);
+    const fov = THREE.MathUtils.degToRad(this.editorCamera.fov);
+    const distance = (radius / Math.sin(fov / 2)) * 1.15;
+    const dir = this.editorCamera.position.clone().sub(this.controls.target).normalize();
+    if (dir.lengthSq() === 0) dir.set(0, 0.3, 1).normalize();
+    this.focusTween = {
+      from: this.editorCamera.position.clone(),
+      to: sphere.center.clone().addScaledVector(dir, distance),
+      fromTarget: this.controls.target.clone(),
+      toTarget: sphere.center.clone(),
+      start: performance.now(),
+    };
+    return true;
+  }
+
+  private stepFocusTween(now: number): void {
+    const tw = this.focusTween;
+    if (!tw || !this.editorCamera || !this.controls) return;
+    const k = Math.min(1, (now - tw.start) / 300);
+    const e = k * k * (3 - 2 * k);
+    this.editorCamera.position.lerpVectors(tw.from, tw.to, e);
+    this.controls.target.lerpVectors(tw.fromTarget, tw.toTarget, e);
+    if (k >= 1) this.focusTween = null;
+  }
+
   /** UV health of an object's meshes (overlap / outside 0–1), cached per mesh build. */
   getUvReport(objectId: string): UvReport | null {
     const root = this.objectMeshes.get(objectId);
@@ -1184,7 +1224,11 @@ export class SceneEngine {
     const frameStart = performance.now();
     this.lastFrameAt = frameStart;
 
-    this.controls?.update();
+    const dt = this.lastRenderAt ? (frameStart - this.lastRenderAt) / 1000 : 0;
+    this.lastRenderAt = frameStart;
+    this.stepFocusTween(frameStart);
+    if (this.fly?.flying) this.fly.update(dt);
+    else this.controls?.update();
     this.resize();
     this.updateGizmoScale();
     this.editorScene.updateMatrixWorld(true);
@@ -1695,6 +1739,8 @@ export class SceneEngine {
 
     window.removeEventListener('resize', this.onResize);
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
+    this.fly?.dispose();
+    this.fly = null;
     if (this.animationId !== null) {
       cancelAnimationFrame(this.animationId);
       this.animationId = null;
