@@ -5,6 +5,9 @@ import { MAX_PROJECTORS } from '../../types';
 import { APP_NAME, APP_NAME_SHORT } from '../../branding/appName';
 import { Menu, MenuItem, MenuSection, MenuSegments } from '../components/Menu';
 import styles from './Toolbar.module.css';
+import { serializeProject } from '../../persistence';
+import { useDeviceProfile } from '../useDeviceProfile';
+import { buildViewLink } from '../viewer/shareLink';
 
 const LOGO_URL = `${import.meta.env.BASE_URL}logo.svg`;
 
@@ -55,6 +58,22 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const redo = useAppStore((s) => s.redo);
   const exportCalculationCsv = useAppStore((s) => s.exportCalculationCsv);
   const exportCalculationHtml = useAppStore((s) => s.exportCalculationHtml);
+  const setPhoneView = useAppStore((s) => s.setPhoneView);
+  const deviceProfile = useDeviceProfile();
+
+  const copyPhoneLink = async () => {
+    const snapshot = useAppStore.getState().getSnapshot();
+    const link = await buildViewLink(serializeProject(snapshot), window.location.href);
+    const kb = Math.max(1, Math.round(link.length / 1024));
+    const media =
+      snapshot.mediaAssets.length > 0 ? ' Imported images, videos and 3D models stay on this computer.' : '';
+    try {
+      await navigator.clipboard.writeText(link);
+      useAppStore.setState({ projectMessage: `Phone link copied (${kb} KB). Send it to your phone and open it there.${media}` });
+    } catch {
+      window.prompt(`Copy this link and open it on your phone.${media}`, link);
+    }
+  };
   const showProjectionBeam = useAppStore((s) => s.showProjectionBeam);
   const studioVisible = useAppStore((s) => s.uvEditorPanelVisible);
   const toggleStudio = useAppStore((s) => s.toggleUvEditorPanel);
@@ -216,6 +235,11 @@ export function Toolbar({ compact = false }: ToolbarProps) {
         <Menu label="More" align="right" testId="more-menu" title="Display, mapping and project options">
           {(close) => (
             <>
+              {deviceProfile === 'phone' && (
+                <MenuSection>
+                  <MenuItem onSelect={() => { setPhoneView(true); close(); }}>Simple phone view</MenuItem>
+                </MenuSection>
+              )}
               {compact && (
                 <MenuSection>
                   <MenuItem onSelect={() => { undo(); close(); }} disabled={historyPast.length === 0}>Undo</MenuItem>
@@ -276,6 +300,9 @@ export function Toolbar({ compact = false }: ToolbarProps) {
                 <MenuItem onSelect={() => { close(); if (window.confirm('Start a new project?')) newProject(); }}>New</MenuItem>
                 <MenuItem onSelect={() => { fileInputRef.current?.click(); close(); }}>Open…</MenuItem>
                 <MenuItem onSelect={() => { saveProjectToFile(); close(); }} hint={projectName}>Save</MenuItem>
+                <MenuItem onSelect={() => { void copyPhoneLink(); close(); }} hint="view on a phone">
+                  Copy link for phone
+                </MenuItem>
                 <MenuItem onSelect={() => { exportCalculationCsv(); close(); }}>Export report (CSV)</MenuItem>
                 <MenuItem onSelect={() => { exportCalculationHtml(); close(); }}>Export report (HTML)</MenuItem>
               </MenuSection>

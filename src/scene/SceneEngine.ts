@@ -667,8 +667,20 @@ export class SceneEngine {
     }
   }
 
+  /** v6 phone viewer: look only — no picking, no gizmo, so a stray tap can't move anything. */
+  private viewOnly = false;
+
+  setViewOnly(on: boolean): void {
+    this.viewOnly = on;
+    if (on) this.transformControls?.detach();
+  }
+
   private syncSelectionGizmo(selectedId: string | null, projectors: ProjectorConfig[]): void {
     if (this.measureMode || !this.transformControls) return;
+    if (this.viewOnly) {
+      this.transformControls.detach();
+      return;
+    }
 
     if (!selectedId) {
       this.transformControls.detach();
@@ -829,7 +841,7 @@ export class SceneEngine {
   }
 
   private onPointerDown = (event: PointerEvent): void => {
-    if (!this.editorCamera || this.gizmoDragging || event.button !== 0) return;
+    if (!this.editorCamera || this.gizmoDragging || event.button !== 0 || this.viewOnly) return;
 
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;

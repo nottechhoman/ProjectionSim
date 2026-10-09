@@ -188,6 +188,9 @@ interface AppState extends PersistedStateSlice {
   setActiveTrack: (id: string) => void;
   timelineVisible: boolean;
   toggleTimeline: () => void;
+  /** v6: simplified viewer layout on phones (the full editor is one tap away). */
+  phoneView: boolean;
+  setPhoneView: (on: boolean) => void;
   // v4 show control (sections, cues, play mode)
   playMode: PlayMode;
   setPlayMode: (mode: PlayMode) => void;
@@ -304,6 +307,16 @@ function buildReportContext(state: AppState) {
     calculationResults: state.calculationResults,
     screenGain: state.previzSettings.screenGain,
   };
+}
+
+const PHONE_VIEW_KEY = 'projectionSim.phoneView';
+
+function readPhoneViewPreference(): boolean {
+  try {
+    return localStorage.getItem(PHONE_VIEW_KEY) !== '0';
+  } catch {
+    return true;
+  }
 }
 
 function pickPersistedFields(state: AppState): PersistedStateSlice {
@@ -789,6 +802,15 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   timelineVisible: true,
   toggleTimeline: () => set((s) => ({ timelineVisible: !s.timelineVisible })),
+  phoneView: readPhoneViewPreference(),
+  setPhoneView: (on) => {
+    try {
+      localStorage.setItem(PHONE_VIEW_KEY, on ? '1' : '0');
+    } catch {
+      // storage unavailable (private mode): keep it for this session only
+    }
+    set({ phoneView: on });
+  },
   playMode: 'play',
   setPlayMode: (mode) => set({ playMode: mode }),
   cuesPanelVisible: false,

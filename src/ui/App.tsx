@@ -18,6 +18,8 @@ import { PanelResizeHandle } from './components/PanelResizeHandle';
 import { FloatingPanel } from './components/FloatingPanel';
 import { isCompactLayout } from './deviceProfile';
 import { useDeviceProfile } from './useDeviceProfile';
+import { PhoneViewer } from './viewer/PhoneViewer';
+import { decodeProjectFromLink, viewPayloadFromHash } from './viewer/shareLink';
 
 export default function App() {
   const deviceProfile = useDeviceProfile();
@@ -52,6 +54,24 @@ export default function App() {
   const leftDrawer = compact && leftPanelVisible && !leftPanelPoppedOut;
   const rightDrawer = compact && rightPanelVisible && !rightPanelPoppedOut;
 
+  const phoneView = useAppStore((s) => s.phoneView);
+
+  // v6: a "#view=…" link carries a whole project (see Project → Copy link for phone).
+  useEffect(() => {
+    const payload = viewPayloadFromHash(window.location.hash);
+    if (!payload) return;
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    void (async () => {
+      try {
+        const text = await decodeProjectFromLink(payload);
+        await useAppStore.getState().loadProjectFromFile(text);
+        useAppStore.getState().setPhoneView(true);
+      } catch {
+        useAppStore.setState({ projectMessage: 'This link could not be opened (it may be cut short).' });
+      }
+    })();
+  }, []);
+
   useEffect(() => {
     control.start();
     (window as Window & { __projectionLabControl?: typeof control }).__projectionLabControl = control;
@@ -72,6 +92,8 @@ export default function App() {
     setRasterPreviewPanelVisible(false);
     setStudioVisible(false);
   };
+
+  if (deviceProfile === 'phone' && phoneView) return <PhoneViewer />;
 
   const style = compact
     ? ({

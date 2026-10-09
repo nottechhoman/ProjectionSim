@@ -188,7 +188,10 @@ export function parseProjectJson(text: string): ProjectSnapshot {
         ? 'projectionUv'
         : data.materialPreviewMode === 'falloff'
           ? 'falloff'
-          : data.materialPreviewMode === 'blendSum' || data.materialPreviewMode === 'surfaceUv'
+          : data.materialPreviewMode === 'blendSum' ||
+              data.materialPreviewMode === 'surfaceUv' ||
+              data.materialPreviewMode === 'illuminance' ||
+              data.materialPreviewMode === 'pixelDensity'
             ? data.materialPreviewMode
           : 'projectionPreview';
   const projectionCompositeMode: ProjectionCompositeMode =

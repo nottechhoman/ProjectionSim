@@ -78,6 +78,12 @@ export function ProjectorModelSection({ projector }: { projector: ProjectorConfi
       lensShiftH: placed.lensShiftH,
       lensShiftV: placed.lensShiftV,
     });
+    useAppStore.setState({
+      projectMessage:
+        `Placed ${projector.name} ${formatLength(placed.distance, displayUnit, 2)} from ${target.name} ` +
+        `(throw ${placed.throwRatio.toFixed(2)}:1, shift V ${Math.round(placed.lensShiftV * 100)}%)` +
+        (placed.shiftLimited ? '. The lens cannot shift that far, so the height changed.' : ''),
+    });
   };
 
   const pickLensForDistance = () => {
@@ -188,29 +194,29 @@ export function ProjectorModelSection({ projector }: { projector: ProjectorConfi
         </p>
       )}
       {target && (
-        <div className={styles.row} style={{ flexWrap: 'wrap', gap: 6 }}>
+        <div className={styles.buttonStack}>
           <button
             type="button"
-            className={styles.actionBtn}
+            className={styles.toolBtn}
             data-testid="auto-place"
             title={`Move and aim this projector so its image covers ${target.name}`}
             onClick={() => place(false)}
           >
-            Place to fill {target.name}
+            Place to fill {target.name} (square-on)
           </button>
           <button
             type="button"
-            className={styles.actionBtn}
+            className={styles.toolBtn}
             data-testid="auto-place-keep-height"
             title="Keep the current hanging height; use vertical lens shift to reach the screen"
             onClick={() => place(true)}
           >
-            Place, keep height
+            Place to fill, keep this height (lens shift)
           </button>
           {model && neededThrow != null && (
             <button
               type="button"
-              className={styles.actionBtn}
+              className={styles.toolBtn}
               data-testid="pick-lens-for-distance"
               title={`From here the image needs a ${neededThrow.toFixed(2)}:1 throw`}
               onClick={pickLensForDistance}

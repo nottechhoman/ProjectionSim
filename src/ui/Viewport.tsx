@@ -5,9 +5,13 @@ import { transport } from '../playback/clock';
 import { addCueAtPlayhead, go, jumpCue, stepFrame, stop, toggleLoopSection, togglePlay } from '../playback/controls';
 import { mediaTextureCache } from '../media';
 
-export function Viewport() {
+export function Viewport({ viewOnly = false }: { viewOnly?: boolean } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<SceneEngine | null>(null);
+
+  useEffect(() => {
+    engineRef.current?.setViewOnly(viewOnly);
+  }, [viewOnly]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -15,6 +19,7 @@ export function Viewport() {
 
     const engine = new SceneEngine(canvas);
     engineRef.current = engine;
+    engine.setViewOnly(viewOnly);
 
     engine.setCallbacks({
       onFrameTime: (ms) => useAppStore.getState().setFrameTimeMs(ms),
