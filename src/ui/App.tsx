@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { useAppStore } from '../store';
 import styles from './App.module.css';
 import { Viewport } from './Viewport';
+import { IlluminanceLegend } from './components/IlluminanceLegend';
 import { Toolbar } from './panels/Toolbar';
 import { LeftPanel } from './panels/LeftPanel';
 import { Inspector } from './panels/Inspector';
@@ -108,6 +109,7 @@ export default function App() {
       </div>
       <div className={styles.center}>
         <Viewport />
+        <IlluminanceLegend />
         {!compact ? <LayersPanel /> : null}
         {!compact ? <CuesPanel /> : null}
         {!compact ? <ControlPanel /> : null}

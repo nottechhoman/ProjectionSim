@@ -2,6 +2,7 @@ import { validateOptics } from '../optics/validate';
 import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, ProjectionSides, SceneObject } from '../types';
 import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA } from '../types';
 import { normalizeBlendSettings } from '../blending/advancedBlend';
+import { normalizePrevizSettings } from '../optics/illuminance';
 import { migrateLegacyContent } from '../mapping/migrate';
 import { normalizeShow, pruneMappingRefs } from '../mapping/model';
 import { DEFAULT_PROJECTOR_WARP, type ProjectorWarp } from '../types';
@@ -222,6 +223,7 @@ export function parseProjectJson(text: string): ProjectSnapshot {
     analysisQuality,
     calculationTargetSide,
     blendSettings: normalizeBlendSettings(isObject(data.blendSettings) ? (data.blendSettings as never) : undefined),
+    previzSettings: normalizePrevizSettings(isObject(data.previzSettings) ? (data.previzSettings as never) : undefined),
     selectedObjectId,
     selectedProjectorId,
     displayUnit: data.displayUnit === 'cm' || data.displayUnit === 'mm' ? data.displayUnit : 'm',

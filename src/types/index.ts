@@ -14,7 +14,9 @@ export type MaterialPreviewMode =
   /** v2: per-fragment sum of light-space blend weights (1.0 = seamless). */
   | 'blendSum'
   /** Per-surface texture UV (the screen texture layout) as colour. */
-  | 'surfaceUv';
+  | 'surfaceUv'
+  /** v5: absolute brightness (lux or nits) from projector lumens. */
+  | 'illuminance';
 
 export type MediaFitMode = 'contain' | 'cover' | 'stretch';
 
@@ -213,6 +215,28 @@ export interface ProjectorConfig {
   lookAtTarget?: Vec3;
   /** v2: corner-pin output warp. */
   warp?: ProjectorWarp;
+  /** v5: rated light output (ANSI lumens). Defaults to 10,000. */
+  lumens?: number;
+  /** v5: chosen catalogue body + lens (src/optics/projectorCatalog.ts). */
+  catalog?: { modelId: string; lensId: string };
+}
+
+/** v5: brightness heatmap settings. */
+export interface PrevizSettings {
+  /** Heatmap / readout unit: illuminance on the surface or screen luminance. */
+  unit: 'lux' | 'nits';
+  /** Value shown at the top (red) end of the heatmap scale. */
+  scaleMax: number;
+  /** Screen gain for nits (1 = matte white). */
+  screenGain: number;
+}
+
+export interface IlluminanceStats {
+  /** Summed over projectors, before edge blending. Over lit samples only. */
+  minLux: number;
+  avgLux: number;
+  maxLux: number;
+  litArea: number;
 }
 
 export interface NominalProjection {
@@ -284,6 +308,8 @@ export interface SampledCoverageAnalysis {
     back?: SampledCoverageSideMetrics;
   };
   eligibleProjectorIds: string[];
+  /** v5: brightness on the target from projector lumens. */
+  illuminance?: IlluminanceStats | null;
   assumptions: string[];
   limitations: string[];
 }

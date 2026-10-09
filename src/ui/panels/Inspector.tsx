@@ -11,6 +11,7 @@ import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../../utils/euler';
 import { fromDisplayUnit, toDisplayUnit } from '../../utils/units';
 import { NumInput } from '../components/NumInput';
 import { CalcResults } from './CalcResults';
+import { ProjectorModelSection } from './ProjectorModelSection';
 import styles from './Inspector.module.css';
 
 export function Inspector() {
@@ -566,6 +567,8 @@ export function Inspector() {
               Outer edge fade
             </label>
           </div>
+
+          <ProjectorModelSection projector={projector} />
 
           <div className={styles.section}>
             <div className={styles.sectionTitle}>Optics</div>

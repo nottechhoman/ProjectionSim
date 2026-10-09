@@ -165,6 +165,7 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     calculationTargetId: state.calculationTargetId,
     rasterPreviewPanelVisible: state.rasterPreviewPanelVisible,
     blendSettings: state.blendSettings,
+    previzSettings: state.previzSettings,
     maxOverlap: state.blendAnalysis?.maxOverlap ?? null,
   };
 }

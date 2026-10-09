@@ -36,6 +36,6 @@ test('outputs: open a projector output window', async ({ page, context }) => {
   const popup = context.waitForEvent('page');
   await page.getByTestId('open-output-proj-1').click();
   const win = await popup;
-  await expect(win).toHaveTitle(/NAPT Output — Projector 1/);
+  await expect(win).toHaveTitle(/Projection Simulator Output — Projector 1/);
   await expect(win.locator('canvas')).toHaveCount(1);
 });

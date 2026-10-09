@@ -20,6 +20,7 @@ import {
   listBlockerDescriptors,
   type BlockerDescriptor,
 } from './occlusion';
+import { illuminanceAt, projectorLightModel, type ProjectorLightModel } from '../optics/illuminance';
 
 export const ANALYSIS_QUALITY_PRESETS: Record<
   AnalysisQuality,
@@ -53,6 +54,7 @@ interface SideAggregate {
   visibleOverlapArea: number;
   occlusionLossArea: number;
   perProjector: Map<string, { geometric: number; visible: number; blocked: number }>;
+  lux: { min: number; max: number; weighted: number; area: number };
 }
 
 function isEligibleProjector(projector: ProjectorConfig): boolean {
@@ -213,12 +215,16 @@ function aggregateSamples(
   let visibleCoveredArea = 0;
   let visibleOverlapArea = 0;
   let occlusionLossArea = 0;
+  const lux = { min: Infinity, max: 0, weighted: 0, area: 0 };
+  const lights = new Map<string, ProjectorLightModel>();
+  for (const proj of eligible) lights.set(proj.id, projectorLightModel(proj));
 
   for (const sample of samples) {
     receiverArea += sample.area;
 
     const geometricHits: string[] = [];
     const visibleHits: string[] = [];
+    let sampleLux = 0;
 
     for (const proj of eligible) {
       const worldMatrix = buildWorldMatrixFromTransform(proj.transform);
@@ -233,13 +239,21 @@ function aggregateSamples(
       if (!isOccludedAlongSegment(origin, sample.position, blockers, receiverId)) {
         visibleHits.push(proj.id);
         metrics.visible += sample.area;
+        const L = lights.get(proj.id)!;
+        sampleLux += illuminanceAt(L.lumens, L.a1, L.origin, L.forward, sample.position, sample.faceNormal);
       } else {
         metrics.blocked += sample.area;
       }
     }
 
     if (geometricHits.length > 0) geometricCoveredArea += sample.area;
-    if (visibleHits.length > 0) visibleCoveredArea += sample.area;
+    if (visibleHits.length > 0) {
+      visibleCoveredArea += sample.area;
+      lux.min = Math.min(lux.min, sampleLux);
+      lux.max = Math.max(lux.max, sampleLux);
+      lux.weighted += sampleLux * sample.area;
+      lux.area += sample.area;
+    }
     if (visibleHits.length >= 2) visibleOverlapArea += sample.area;
     if (geometricHits.length > 0 && visibleHits.length === 0) occlusionLossArea += sample.area;
   }
@@ -252,6 +266,7 @@ function aggregateSamples(
     visibleOverlapArea,
     occlusionLossArea,
     perProjector,
+    lux,
   };
 }
 
@@ -289,6 +304,12 @@ function mergeAggregates(a: SideAggregate, b: SideAggregate): SideAggregate {
     visibleOverlapArea: a.visibleOverlapArea + b.visibleOverlapArea,
     occlusionLossArea: a.occlusionLossArea + b.occlusionLossArea,
     perProjector,
+    lux: {
+      min: Math.min(a.lux.min, b.lux.min),
+      max: Math.max(a.lux.max, b.lux.max),
+      weighted: a.lux.weighted + b.lux.weighted,
+      area: a.lux.area + b.lux.area,
+    },
   };
 }
 
@@ -392,6 +413,15 @@ export function computeSampledCoverageAnalysis(
     occlusionLossArea: combined.occlusionLossArea,
     perProjector: aggregateToPerProjector(combined, eligible),
     eligibleProjectorIds: eligible.map((p) => p.id),
+    illuminance:
+      combined.lux.area > 0
+        ? {
+            minLux: combined.lux.min,
+            avgLux: combined.lux.weighted / combined.lux.area,
+            maxLux: combined.lux.max,
+            litArea: combined.lux.area,
+          }
+        : null,
     assumptions: BASE_ASSUMPTIONS,
     limitations: BASE_LIMITATIONS,
   };

@@ -1,2 +1,2 @@
-export const APP_NAME = 'Not a Projection Tool — Advanced';
-export const APP_NAME_SHORT = 'NAPT+';
+export const APP_NAME = 'Projection Simulator';
+export const APP_NAME_SHORT = 'Projection Sim';

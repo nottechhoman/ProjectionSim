@@ -2,6 +2,7 @@ import { useAppStore } from '../../store';
 import { listCalculationTargets } from '../../store/reliabilitySettings';
 import { percentOfReceiver } from '../../coverage/coverageAnalysis';
 import { formatLength } from '../../utils/units';
+import { BrightnessResults } from './BrightnessResults';
 import styles from './Inspector.module.css';
 
 export function CalcResults() {
@@ -241,6 +242,8 @@ export function CalcResults() {
               ))}
             </div>
           )}
+
+          <BrightnessResults />
 
           {overlap && projectors.filter((p) => p.enabled).length > 1 && (
             <div className={styles.section}>

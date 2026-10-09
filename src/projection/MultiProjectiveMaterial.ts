@@ -1,12 +1,13 @@
 import * as THREE from 'three';
 import multiVert from './shaders/multiProjection.vert.glsl?raw';
 import multiFrag from './shaders/multiProjection.frag.glsl?raw';
-import type { BlendSettings, ProjectionCompositeMode, ProjectorConfig } from '../types';
+import type { BlendSettings, PrevizSettings, ProjectionCompositeMode, ProjectorConfig } from '../types';
 import { DEFAULT_BLEND_SETTINGS } from '../types';
 import { BLEND_CURVE_INT } from '../blending/advancedBlend';
 import { warpInverseMatrix } from '../warp/homography';
 import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../types';
 import { falloffReferenceDistance } from '../optics/falloff';
+import { DEFAULT_PREVIZ_SETTINGS, projectorLumens, unitImageArea } from '../optics/illuminance';
 import { getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 
@@ -61,6 +62,12 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
         value: Array.from({ length: MAX }, () => new THREE.Vector3()),
       },
       falloffRefDistance: { value: new Float32Array(MAX) },
+      projLumens: { value: new Float32Array(MAX) },
+      projForward: { value: Array.from({ length: MAX }, () => new THREE.Vector3(0, 0, -1)) },
+      projUnitArea: { value: new Float32Array(MAX).fill(1) },
+      illumScaleMax: { value: DEFAULT_PREVIZ_SETTINGS.scaleMax },
+      illumUnit: { value: 1 },
+      screenGain: { value: 1 },
       // v2 warp
       warpInv: { value: Array.from({ length: MAX }, () => new THREE.Matrix3()) },
       // v2 blending
@@ -112,6 +119,9 @@ export function updateMultiProjectiveMaterial(
   const projectorWorldPos = material.uniforms.projectorWorldPos.value as THREE.Vector3[];
   const falloffRefDistance = material.uniforms.falloffRefDistance.value as Float32Array;
   const warpInv = material.uniforms.warpInv.value as THREE.Matrix3[];
+  const projLumens = material.uniforms.projLumens.value as Float32Array;
+  const projUnitArea = material.uniforms.projUnitArea.value as Float32Array;
+  const projForward = material.uniforms.projForward.value as THREE.Vector3[];
 
   for (let i = 0; i < MAX; i++) {
     if (i >= count) {
@@ -126,6 +136,9 @@ export function updateMultiProjectiveMaterial(
     matrices[i].copy(getProjectorViewProjectionMatrix(proj.optics, worldMatrix));
     projectorWorldPos[i].setFromMatrixPosition(worldMatrix);
     falloffRefDistance[i] = falloffReferenceDistance(proj);
+    projLumens[i] = projectorLumens(proj);
+    projUnitArea[i] = unitImageArea(proj.optics.throwRatio, proj.optics.aspectRatio);
+    projForward[i].set(0, 0, -1).transformDirection(worldMatrix);
     brightness[i] = proj.brightness;
     blendEdges[i].set(
       proj.blendEdges.left,
@@ -150,8 +163,16 @@ export function updateMultiProjectiveMaterial(
   material.uniforms.falloffPreview.value = falloffPreview ? 1 : 0;
 }
 
-export type PreviewKind = 'normal' | 'blendSum' | 'surfaceUv';
-const PREVIEW_KIND_INT: Record<PreviewKind, number> = { normal: 0, blendSum: 1, surfaceUv: 2 };
+export type PreviewKind = 'normal' | 'blendSum' | 'surfaceUv' | 'illuminance';
+const PREVIEW_KIND_INT: Record<PreviewKind, number> = { normal: 0, blendSum: 1, surfaceUv: 2, illuminance: 3 };
+
+/** v5: brightness heatmap scale / unit / gain. */
+export function applyPrevizUniforms(material: THREE.ShaderMaterial, settings: PrevizSettings): void {
+  const u = material.uniforms;
+  u.illumScaleMax.value = settings.scaleMax;
+  u.illumUnit.value = settings.unit === 'nits' ? 1 : 0;
+  u.screenGain.value = settings.screenGain;
+}
 
 /** v2: global advanced-blend and preview uniforms. */
 export function applyAdvancedBlendUniforms(

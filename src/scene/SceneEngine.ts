@@ -5,11 +5,13 @@ import type { useAppStore } from '../store';
 import { buildProjectorCamera, getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import {
   applyAdvancedBlendUniforms,
+  applyPrevizUniforms,
   createMultiProjectiveMaterial,
   updateMultiProjectiveMaterial,
   type PreviewKind,
 } from '../projection/MultiProjectiveMaterial';
-import type { BlendSettings, Show, SurfaceUvProjection } from '../types';
+import type { BlendSettings, PrevizSettings, Show, SurfaceUvProjection } from '../types';
+import { DEFAULT_PREVIZ_SETTINGS } from '../optics/illuminance';
 import { DEFAULT_BLEND_SETTINGS } from '../types';
 import { computeSurfaceUvFrame, projectSurfaceUv, type SurfaceUvFrame } from '../uvmapping/surfaceUv';
 import { ScreenTextureBaker, SCREEN_TEXTURE_MAX, type BakeSurface } from '../mapping/ScreenTextureBaker';
@@ -330,6 +332,7 @@ export class SceneEngine {
   private lastContentKey = '';
   private readonly feedPass = new ProjectorFeedPass();
   private blendSettings: BlendSettings = DEFAULT_BLEND_SETTINGS;
+  private previzSettings: PrevizSettings = DEFAULT_PREVIZ_SETTINGS;
   private lastFrameAt = 0;
   private readonly outputTargets = new Map<
     string,
@@ -592,6 +595,7 @@ export class SceneEngine {
     this.calculationTargetId = state.calculationTargetId;
     this.rasterPreviewPanelVisible = state.rasterPreviewPanelVisible;
     this.blendSettings = state.blendSettings;
+    this.previzSettings = state.previzSettings;
     this.maxOverlap = state.blendAnalysis?.maxOverlap ?? Math.min(2, state.projectors.filter((p) => p.enabled).length);
     this.syncProjectors(
       state.projectors,
@@ -1243,6 +1247,7 @@ export class SceneEngine {
           this.maxOverlap,
           this.previewKind(),
         );
+        applyPrevizUniforms(this.multiProjectiveMaterial, this.previzSettings);
         this.multiProjectiveMaterial.uniforms.feedIndex.value = -1;
         this.multiProjectiveMaterial.uniforms.useOcclusion.value = hasOcclusion ? 1 : 0;
         this.multiProjectiveMaterial.uniforms.depthMapSize.value.set(
@@ -1376,6 +1381,7 @@ export class SceneEngine {
   private previewKind(): PreviewKind {
     if (this.materialPreviewMode === 'blendSum') return 'blendSum';
     if (this.materialPreviewMode === 'surfaceUv') return 'surfaceUv';
+    if (this.materialPreviewMode === 'illuminance') return 'illuminance';
     return 'normal';
   }
 
