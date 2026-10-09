@@ -106,7 +106,8 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const previewOptions: { id: typeof materialPreviewMode; label: string; hint?: string }[] = [
     { id: 'projectionPreview', label: 'Projection' },
     { id: 'projectionUv', label: 'Projector UV' },
-    { id: 'falloff', label: 'Brightness falloff' },
+    { id: 'illuminance', label: 'Brightness (nits / lux)', hint: 'previz' },
+    { id: 'falloff', label: 'Relative falloff' },
     { id: 'blendSum', label: 'Blend sum', hint: 'seams' },
     { id: 'surfaceUv', label: 'Surface UV' },
     { id: 'original', label: 'Original material' },

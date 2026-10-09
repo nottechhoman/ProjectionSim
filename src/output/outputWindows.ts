@@ -296,7 +296,7 @@ class OutputWindowManager {
     doc.open();
     doc.write('<!doctype html><html><head><meta charset="utf-8"><title>Output</title></head><body></body></html>');
     doc.close();
-    doc.title = `NAPT Output — ${title}`;
+    doc.title = `Projection Simulator Output — ${title}`;
     const style = doc.createElement('style');
     style.textContent = `
       html,body{margin:0;height:100%;background:#000;overflow:hidden;cursor:none}

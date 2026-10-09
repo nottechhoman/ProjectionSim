@@ -1,4 +1,6 @@
 import type { CalculationResults, DisplayUnit, ProjectorConfig } from '../types';
+import { DEFAULT_PROJECTOR_LUMENS, findCatalogLens, findCatalogProjector } from '../optics/projectorCatalog';
+import { luxToNits } from '../optics/illuminance';
 import { percentOfReceiver } from '../coverage/coverageAnalysis';
 import { formatLength } from '../utils/units';
 
@@ -6,8 +8,38 @@ export interface ReportContext {
   projectName: string;
   displayUnit: DisplayUnit;
   projectors: ProjectorConfig[];
+  /** v5: screen gain used for nits. */
+  screenGain?: number;
   calculationResults: CalculationResults;
   exportedAt?: string;
+}
+
+function projectorRows(ctx: ReportContext): string[][] {
+  return ctx.projectors.map((p) => {
+    const model = findCatalogProjector(p.catalog?.modelId);
+    const lens = findCatalogLens(model, p.catalog?.lensId);
+    return [
+      p.name,
+      model ? `${model.brand} ${model.model}` : 'Custom',
+      lens?.name ?? '',
+      String(p.lumens ?? DEFAULT_PROJECTOR_LUMENS),
+      `${p.optics.throwRatio.toFixed(2)}:1`,
+      `${p.optics.resolution.width}×${p.optics.resolution.height}`,
+    ];
+  });
+}
+
+function brightnessRows(ctx: ReportContext): [string, string][] {
+  const stats = ctx.calculationResults.coverageAnalysis?.illuminance;
+  if (!stats) return [];
+  const gain = ctx.screenGain ?? 1;
+  const f = (lux: number) => `${Math.round(luxToNits(lux, gain))} nits (${Math.round(lux)} lux)`;
+  return [
+    ['Screen gain', String(gain)],
+    ['Min', f(stats.minLux)],
+    ['Average', f(stats.avgLux)],
+    ['Max', f(stats.maxLux)],
+  ];
 }
 
 function projectorName(projectors: ProjectorConfig[], id: string): string {
@@ -23,7 +55,7 @@ function escapeCsv(value: string | number | null | undefined): string {
 export function buildCalculationCsv(ctx: ReportContext): string {
   const { nominal, footprint, overlap, coverageAnalysis } = ctx.calculationResults;
   const rows: string[][] = [
-    ['Not a Projection Tool — Calculation Report'],
+    ['Projection Simulator — Calculation Report'],
     ['Project', ctx.projectName],
     ['Exported', ctx.exportedAt ?? new Date().toISOString()],
     ['Display unit', ctx.displayUnit],
@@ -46,6 +78,11 @@ export function buildCalculationCsv(ctx: ReportContext): string {
       ['Projection', 'mm per pixel (H)', nominal.mmPerPixelH.toFixed(4)],
     );
   }
+
+  for (const r of projectorRows(ctx)) {
+    rows.push(['Projector', r[0], `${r[1]} ${r[2]} · ${r[3]} lm · ${r[4]} · ${r[5]}`.replace(/\s+/g, ' ')]);
+  }
+  for (const [k, v] of brightnessRows(ctx)) rows.push(['Brightness (before blending)', k, v]);
 
   if (footprint) {
     rows.push(
@@ -208,7 +245,7 @@ export function buildCalculationHtml(ctx: ReportContext): string {
   const row = (label: string, value: string) =>
     `<tr><th>${escapeHtml(label)}</th><td>${escapeHtml(value)}</td></tr>`;
 
-  let body = `<h1>Not a Projection Tool — Report</h1>
+  let body = `<h1>Projection Simulator — Report</h1>
 <p><strong>Project:</strong> ${escapeHtml(ctx.projectName)}<br/>
 <strong>Exported:</strong> ${escapeHtml(exportedAt)}<br/>
 <strong>Display unit:</strong> ${escapeHtml(ctx.displayUnit)}<br/>
@@ -224,6 +261,21 @@ ${row('Width', formatLength(nominal.width, ctx.displayUnit))}
 ${row('Height', formatLength(nominal.height, ctx.displayUnit))}
 ${row('Area', `${nominal.area.toFixed(2)} m²`)}
 ${row('Density', `${nominal.pixelsPerMeterH.toFixed(1)} px/m · ${nominal.mmPerPixelH.toFixed(3)} mm/px`)}
+</table>`;
+  }
+
+  if (ctx.projectors.length > 0) {
+    body += '<h2>Projectors</h2><table><thead><tr><th>Name</th><th>Model</th><th>Lens</th><th>Lumens</th><th>Throw</th><th>Resolution</th></tr></thead><tbody>';
+    for (const r of projectorRows(ctx)) {
+      body += `<tr>${r.map((c) => `<td>${escapeHtml(c)}</td>`).join('')}</tr>`;
+    }
+    body += '</tbody></table>';
+  }
+
+  const bright = brightnessRows(ctx);
+  if (bright.length > 0) {
+    body += `<h2>Brightness on target (before blending)</h2><table>
+${bright.map(([k, v]) => row(k, v)).join('\n')}
 </table>`;
   }
 
@@ -324,7 +376,7 @@ ${row('Occlusion loss', `${coverageAnalysis.occlusionLossArea.toFixed(2)} m² ($
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <title>${escapeHtml(ctx.projectName)} — NAPT Report</title>
+  <title>${escapeHtml(ctx.projectName)} — Projection Simulator Report</title>
   <style>
     body { font-family: system-ui, sans-serif; margin: 32px; color: #222; }
     h1, h2, h3 { margin-top: 1.5em; }

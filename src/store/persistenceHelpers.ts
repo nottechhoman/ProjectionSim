@@ -12,8 +12,10 @@ import type {
   AnalysisQuality,
   CalculationTargetSide,
   BlendSettings,
+  PrevizSettings,
 } from '../types';
 import { normalizeBlendSettings } from '../blending/advancedBlend';
+import { normalizePrevizSettings } from '../optics/illuminance';
 import { DEFAULT_PROJECTORS, DEFAULT_SCENE_OBJECTS, defaultShow } from './defaultScene';
 import {
   clampPanelWidth,
@@ -45,6 +47,7 @@ export interface PersistedStateSlice {
   analysisQuality: AnalysisQuality;
   calculationTargetSide: CalculationTargetSide;
   blendSettings: BlendSettings;
+  previzSettings: PrevizSettings;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
@@ -84,6 +87,7 @@ export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
     analysisQuality: slice.analysisQuality,
     calculationTargetSide: slice.calculationTargetSide,
     blendSettings: slice.blendSettings,
+    previzSettings: slice.previzSettings,
     selectedObjectId: slice.selectedObjectId,
     selectedProjectorId: slice.selectedProjectorId,
     displayUnit: slice.displayUnit,
@@ -129,6 +133,7 @@ export function snapshotToSlice(snapshot: ProjectSnapshot): PersistedStateSlice 
         ? snapshot.calculationTargetSide
         : 'front',
     blendSettings: normalizeBlendSettings(snapshot.blendSettings),
+    previzSettings: normalizePrevizSettings(snapshot.previzSettings),
     selectedObjectId: snapshot.selectedObjectId,
     selectedProjectorId,
     displayUnit: snapshot.displayUnit,
@@ -177,6 +182,7 @@ export function defaultPersistedSlice(): PersistedStateSlice {
     analysisQuality: 'draft',
     calculationTargetSide: 'front',
     blendSettings: normalizeBlendSettings(undefined),
+    previzSettings: normalizePrevizSettings(undefined),
     selectedObjectId: 'proj-1',
     selectedProjectorId: 'proj-1',
     displayUnit: 'm',

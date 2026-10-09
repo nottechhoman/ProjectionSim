@@ -32,6 +32,14 @@ uniform int falloffPreview;
 uniform vec3 projectorWorldPos[MAX_P];
 uniform float falloffRefDistance[MAX_P];
 
+// ---- v5: absolute brightness preview (CPU mirror: src/optics/illuminance.ts) ----
+uniform float projLumens[MAX_P];
+uniform vec3 projForward[MAX_P];
+uniform float projUnitArea[MAX_P];   // image area (m²) at 1 m
+uniform float illumScaleMax;
+uniform int illumUnit;               // 0 lux, 1 nits
+uniform float screenGain;
+
 // ---- v2: warp -------------------------------------------------------------
 uniform mat3 warpInv[MAX_P];
 
@@ -47,7 +55,7 @@ uniform int blackComp;
 uniform float maxOverlap;
 
 // ---- v2: previews / feed ---------------------------------------------------
-uniform int previewKind;        // 0 normal, 1 blend sum, 2 surface UV
+uniform int previewKind;        // 0 normal, 1 blend sum, 2 surface UV, 3 illuminance
 uniform int feedIndex;          // -1 scene view; >= 0 render that projector's feed
 uniform int feedKind;           // 0 colour feed, 1 blend mask only, 2 content feed (textured screens)
 // v3: 0 surfaces only (black where no surface), 1 full-frame raster background,
@@ -181,6 +189,34 @@ void accumulateFalloffAt(int idx, inout float bestIntensity) {
   float dist = length(vWorldPos - projectorWorldPos[idx]);
   float intensity = distanceFalloffIntensity(dist, falloffRefDistance[idx]) * brightness[idx];
   bestIntensity = max(bestIntensity, intensity);
+}
+
+float illuminanceFrom(int idx, vec3 n) {
+  vec3 ray = vWorldPos - projectorWorldPos[idx];
+  float r2 = dot(ray, ray);
+  if (r2 < 1e-8) return 0.0;
+  vec3 d = ray * inversesqrt(r2);
+  float cosA = dot(d, projForward[idx]);
+  if (cosA <= 1e-4) return 0.0;
+  float cosT = abs(dot(d, n));
+  return projLumens[idx] / projUnitArea[idx] / (cosA * cosA * cosA) * cosT / r2;
+}
+
+// Keep in sync with ILLUMINANCE_RAMP in src/optics/illuminanceRamp.ts.
+vec3 illuminanceRamp(float t) {
+  vec3 c0 = vec3(0.07, 0.04, 0.20);
+  vec3 c1 = vec3(0.16, 0.25, 0.80);
+  vec3 c2 = vec3(0.10, 0.70, 0.75);
+  vec3 c3 = vec3(0.35, 0.82, 0.25);
+  vec3 c4 = vec3(0.98, 0.82, 0.15);
+  vec3 c5 = vec3(0.92, 0.22, 0.12);
+  if (t > 1.0) return mix(c5, vec3(1.0, 0.85, 0.95), clamp((t - 1.0) * 2.0, 0.0, 1.0));
+  float x = clamp(t, 0.0, 1.0) * 5.0;
+  if (x < 1.0) return mix(c0, c1, x);
+  if (x < 2.0) return mix(c1, c2, x - 1.0);
+  if (x < 3.0) return mix(c2, c3, x - 2.0);
+  if (x < 4.0) return mix(c3, c4, x - 3.0);
+  return mix(c4, c5, x - 4.0);
 }
 
 // Physical raster UV → content image UV through the inverse corner-pin.
@@ -349,10 +385,13 @@ void main() {
   // Pass 3: composite light on the surface.
   vec3 sumColor = vec3(0.0);
   float lightSum = 0.0;
+  float luxSum = 0.0;
+  vec3 surfN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
   for (int i = 0; i < MAX_P; i++) {
     if (!hit[i]) continue;
     float L = blended ? toLight(weights[i]) : 1.0;
     lightSum += L;
+    if (previewKind == 3) luxSum += L * illuminanceFrom(i, surfN);
     vec3 color;
     if (forceUvPreview == 1) {
       color = vec3(qs[i], 0.2);
@@ -364,6 +403,19 @@ void main() {
 
   if (previewKind == 1) {
     fragColor = vec4(blendSumColor(lightSum), 1.0);
+    return;
+  }
+
+  if (previewKind == 3) {
+    float value = illumUnit == 1 ? luxSum * screenGain / PI : luxSum;
+    float t = value / max(illumScaleMax, 1e-3);
+    vec3 c = illuminanceRamp(t);
+    // Iso lines every 10 % of the scale.
+    float steps = t * 10.0;
+    float fw = max(fwidth(steps), 1e-4);
+    float line = 1.0 - clamp(abs(fract(steps + 0.5) - 0.5) / fw, 0.0, 1.0);
+    c = mix(c, c * 0.45, line * 0.7);
+    fragColor = vec4(c, 1.0);
     return;
   }
 

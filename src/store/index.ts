@@ -85,10 +85,11 @@ import {
   buildCalculationHtml,
   downloadTextFile,
 } from '../persistence/reportExport';
-import type { BlendSettings, ProjectorWarp } from '../types';
+import type { BlendSettings, PrevizSettings, ProjectorWarp } from '../types';
 import { DEFAULT_PROJECTOR_WARP } from '../types';
 import { computeBlendAnalysis, type BlendAnalysisResult } from '../blending/blendAnalysis';
 import { normalizeBlendSettings } from '../blending/advancedBlend';
+import { normalizePrevizSettings } from '../optics/illuminance';
 import {
   getCalculationTargetInfo,
   getCalculationTargetObject,
@@ -107,6 +108,7 @@ interface AppState extends PersistedStateSlice {
   setUvEditorPanelVisible: (visible: boolean) => void;
   toggleUvEditorPanel: () => void;
   setBlendSettings: (patch: Partial<BlendSettings>) => void;
+  setPrevizSettings: (patch: Partial<PrevizSettings>) => void;
   updateProjectorWarp: (id: string, warp: Partial<ProjectorWarp>, recordHistory?: boolean) => void;
   resetProjectorWarp: (id: string) => void;
   selectedLayerId: string | null;
@@ -300,6 +302,7 @@ function buildReportContext(state: AppState) {
     displayUnit: state.displayUnit,
     projectors: state.projectors,
     calculationResults: state.calculationResults,
+    screenGain: state.previzSettings.screenGain,
   };
 }
 
@@ -316,6 +319,7 @@ function pickPersistedFields(state: AppState): PersistedStateSlice {
     analysisQuality: state.analysisQuality,
     calculationTargetSide: state.calculationTargetSide,
     blendSettings: state.blendSettings,
+    previzSettings: state.previzSettings,
     selectedObjectId: state.selectedObjectId,
     selectedProjectorId: state.selectedProjectorId,
     displayUnit: state.displayUnit,
@@ -394,6 +398,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   analysisQuality: initial.analysisQuality,
   calculationTargetSide: initial.calculationTargetSide,
   blendSettings: initial.blendSettings,
+  previzSettings: initial.previzSettings,
+  setPrevizSettings: (patch) =>
+    set((s) => ({ previzSettings: normalizePrevizSettings({ ...s.previzSettings, ...patch }) })),
   blendAnalysis: null,
   uvEditorPanelVisible: false,
   studioTab: 'blend',

@@ -27,6 +27,7 @@ export interface ProjectSnapshotV3 {
   calculationTargetSide?: import('../types').CalculationTargetSide;
   /** v2 Advanced: global edge-blend settings (ignored by v1). */
   blendSettings?: import('../types').BlendSettings;
+  previzSettings?: import('../types').PrevizSettings;
   selectedObjectId: string | null;
   selectedProjectorId: string;
   displayUnit: DisplayUnit;
