@@ -39,6 +39,9 @@ uniform float projUnitArea[MAX_P];   // image area (m²) at 1 m
 uniform float illumScaleMax;
 uniform int illumUnit;               // 0 lux, 1 nits
 uniform float screenGain;
+// ---- v6: pixel density preview (CPU mirror: pixelDensityAt in src/optics/illuminance.ts) ----
+uniform float projPxAt1m[MAX_P];     // throw ratio × horizontal resolution
+uniform float densityScaleMax;      // px/m at the top of the scale
 
 // ---- v2: warp -------------------------------------------------------------
 uniform mat3 warpInv[MAX_P];
@@ -55,7 +58,7 @@ uniform int blackComp;
 uniform float maxOverlap;
 
 // ---- v2: previews / feed ---------------------------------------------------
-uniform int previewKind;        // 0 normal, 1 blend sum, 2 surface UV, 3 illuminance
+uniform int previewKind;        // 0 normal, 1 blend sum, 2 surface UV, 3 illuminance, 4 pixel density
 uniform int feedIndex;          // -1 scene view; >= 0 render that projector's feed
 uniform int feedKind;           // 0 colour feed, 1 blend mask only, 2 content feed (textured screens)
 // v3: 0 surfaces only (black where no surface), 1 full-frame raster background,
@@ -202,6 +205,17 @@ float illuminanceFrom(int idx, vec3 n) {
   return projLumens[idx] / projUnitArea[idx] / (cosA * cosA * cosA) * cosT / r2;
 }
 
+float pixelDensityFrom(int idx, vec3 n) {
+  vec3 ray = vWorldPos - projectorWorldPos[idx];
+  float r = length(ray);
+  if (r < 1e-4) return 0.0;
+  vec3 d = ray / r;
+  float cosA = dot(d, projForward[idx]);
+  if (cosA <= 1e-4) return 0.0;
+  float cosT = abs(dot(d, n));
+  return projPxAt1m[idx] * sqrt(cosT / (cosA * cosA * cosA)) / r;
+}
+
 // Keep in sync with ILLUMINANCE_RAMP in src/optics/illuminanceRamp.ts.
 vec3 illuminanceRamp(float t) {
   vec3 c0 = vec3(0.07, 0.04, 0.20);
@@ -223,7 +237,7 @@ vec3 illuminanceRamp(float t) {
 // Colour for a scene fragment no projector lights. In the brightness preview that is
 // "no light" (near black), not the surface's own colour, which may be white.
 vec3 unlitColor() {
-  return previewKind == 3 ? vec3(0.03, 0.03, 0.045) : surfaceBaseColor;
+  return previewKind == 3 || previewKind == 4 ? vec3(0.03, 0.03, 0.045) : surfaceBaseColor;
 }
 
 // Physical raster UV → content image UV through the inverse corner-pin.
@@ -393,12 +407,14 @@ void main() {
   vec3 sumColor = vec3(0.0);
   float lightSum = 0.0;
   float luxSum = 0.0;
+  float pxBest = 0.0;
   vec3 surfN = normalize(cross(dFdx(vWorldPos), dFdy(vWorldPos)));
   for (int i = 0; i < MAX_P; i++) {
     if (!hit[i]) continue;
     float L = blended ? toLight(weights[i]) : 1.0;
     lightSum += L;
     if (previewKind == 3) luxSum += L * illuminanceFrom(i, surfN);
+    if (previewKind == 4) pxBest = max(pxBest, pixelDensityFrom(i, surfN));
     vec3 color;
     if (forceUvPreview == 1) {
       color = vec3(qs[i], 0.2);
@@ -413,9 +429,9 @@ void main() {
     return;
   }
 
-  if (previewKind == 3) {
+  if (previewKind == 3 || previewKind == 4) {
     float value = illumUnit == 1 ? luxSum * screenGain / PI : luxSum;
-    float t = value / max(illumScaleMax, 1e-3);
+    float t = previewKind == 4 ? pxBest / max(densityScaleMax, 1e-3) : value / max(illumScaleMax, 1e-3);
     vec3 c = illuminanceRamp(t);
     // Iso lines every 10 % of the scale.
     float steps = t * 10.0;

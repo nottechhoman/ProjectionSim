@@ -7,7 +7,7 @@ import { BLEND_CURVE_INT } from '../blending/advancedBlend';
 import { warpInverseMatrix } from '../warp/homography';
 import { DEFAULT_BLEND_GAMMA, MAX_BLEND_GAMMA, MIN_BLEND_GAMMA } from '../types';
 import { falloffReferenceDistance } from '../optics/falloff';
-import { DEFAULT_PREVIZ_SETTINGS, projectorLumens, unitImageArea } from '../optics/illuminance';
+import { DEFAULT_PREVIZ_SETTINGS, pixelsPerMetreAt1m, projectorLumens, unitImageArea } from '../optics/illuminance';
 import { getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 
@@ -68,6 +68,8 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       illumScaleMax: { value: DEFAULT_PREVIZ_SETTINGS.scaleMax },
       illumUnit: { value: 1 },
       screenGain: { value: 1 },
+      projPxAt1m: { value: new Float32Array(MAX) },
+      densityScaleMax: { value: DEFAULT_PREVIZ_SETTINGS.densityScaleMax },
       // v2 warp
       warpInv: { value: Array.from({ length: MAX }, () => new THREE.Matrix3()) },
       // v2 blending
@@ -122,6 +124,7 @@ export function updateMultiProjectiveMaterial(
   const projLumens = material.uniforms.projLumens.value as Float32Array;
   const projUnitArea = material.uniforms.projUnitArea.value as Float32Array;
   const projForward = material.uniforms.projForward.value as THREE.Vector3[];
+  const projPxAt1m = material.uniforms.projPxAt1m.value as Float32Array;
 
   for (let i = 0; i < MAX; i++) {
     if (i >= count) {
@@ -139,6 +142,7 @@ export function updateMultiProjectiveMaterial(
     projLumens[i] = projectorLumens(proj);
     projUnitArea[i] = unitImageArea(proj.optics.throwRatio, proj.optics.aspectRatio);
     projForward[i].set(0, 0, -1).transformDirection(worldMatrix);
+    projPxAt1m[i] = pixelsPerMetreAt1m(proj);
     brightness[i] = proj.brightness;
     blendEdges[i].set(
       proj.blendEdges.left,
@@ -163,8 +167,14 @@ export function updateMultiProjectiveMaterial(
   material.uniforms.falloffPreview.value = falloffPreview ? 1 : 0;
 }
 
-export type PreviewKind = 'normal' | 'blendSum' | 'surfaceUv' | 'illuminance';
-const PREVIEW_KIND_INT: Record<PreviewKind, number> = { normal: 0, blendSum: 1, surfaceUv: 2, illuminance: 3 };
+export type PreviewKind = 'normal' | 'blendSum' | 'surfaceUv' | 'illuminance' | 'pixelDensity';
+const PREVIEW_KIND_INT: Record<PreviewKind, number> = {
+  normal: 0,
+  blendSum: 1,
+  surfaceUv: 2,
+  illuminance: 3,
+  pixelDensity: 4,
+};
 
 /** v5: brightness heatmap scale / unit / gain. */
 export function applyPrevizUniforms(material: THREE.ShaderMaterial, settings: PrevizSettings): void {
@@ -172,6 +182,7 @@ export function applyPrevizUniforms(material: THREE.ShaderMaterial, settings: Pr
   u.illumScaleMax.value = settings.scaleMax;
   u.illumUnit.value = settings.unit === 'nits' ? 1 : 0;
   u.screenGain.value = settings.screenGain;
+  u.densityScaleMax.value = settings.densityScaleMax;
 }
 
 /** v2: global advanced-blend and preview uniforms. */

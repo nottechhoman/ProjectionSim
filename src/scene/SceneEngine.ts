@@ -1260,7 +1260,8 @@ export class SceneEngine {
     this.renderContent();
 
     const receivers =
-      this.materialPreviewMode === 'illuminance' && this.previzSettings.spillEverywhere
+      (this.materialPreviewMode === 'illuminance' || this.materialPreviewMode === 'pixelDensity') &&
+      this.previzSettings.spillEverywhere
         ? this.getLitSurfaceRoots()
         : this.getReceiverRoots();
     let projectorsToRender = this.activeProjectors;
@@ -1429,6 +1430,7 @@ export class SceneEngine {
     if (this.materialPreviewMode === 'blendSum') return 'blendSum';
     if (this.materialPreviewMode === 'surfaceUv') return 'surfaceUv';
     if (this.materialPreviewMode === 'illuminance') return 'illuminance';
+    if (this.materialPreviewMode === 'pixelDensity') return 'pixelDensity';
     return 'normal';
   }
 

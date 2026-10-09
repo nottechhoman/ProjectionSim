@@ -107,6 +107,7 @@ export function Toolbar({ compact = false }: ToolbarProps) {
     { id: 'projectionPreview', label: 'Projection' },
     { id: 'projectionUv', label: 'Projector UV' },
     { id: 'illuminance', label: 'Brightness (nits / lux)', hint: 'previz' },
+    { id: 'pixelDensity', label: 'Pixel density (px / m)', hint: 'previz' },
     { id: 'falloff', label: 'Relative falloff' },
     { id: 'blendSum', label: 'Blend sum', hint: 'seams' },
     { id: 'surfaceUv', label: 'Surface UV' },

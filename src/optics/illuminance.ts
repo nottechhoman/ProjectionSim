@@ -49,6 +49,37 @@ export function illuminanceAt(
   return (intensity * cosT) / r2;
 }
 
+/**
+ * Projected pixel density (pixels per metre along the surface) at `point`.
+ *
+ * One pixel covers (1 / (T · resW))² m² at 1 m on axis. Off axis by α its solid
+ * angle shrinks by cos³α, and a surface tilted by θ to the ray stretches it by
+ * 1 / cosθ, so the pixel's area on the surface is cos³α · r² / (T² · resW² · cosθ).
+ * Density is one over the square root of that. On axis and square-on this is the
+ * familiar resW / image width. Mirrored in the viewport shader (previewKind 4).
+ */
+export function pixelDensityAt(
+  pixelsPerUnitAt1m: number,
+  origin: THREE.Vector3,
+  forward: THREE.Vector3,
+  point: THREE.Vector3,
+  normal: THREE.Vector3,
+): number {
+  const ray = new THREE.Vector3().subVectors(point, origin);
+  const r = ray.length();
+  if (r < 1e-4) return 0;
+  ray.divideScalar(r);
+  const cosA = ray.dot(forward);
+  if (cosA <= 1e-4) return 0;
+  const cosT = Math.abs(ray.dot(normal));
+  return (pixelsPerUnitAt1m * Math.sqrt(cosT / (cosA * cosA * cosA))) / r;
+}
+
+/** Pixels across 1 m of image at 1 m throw distance: throw ratio × horizontal resolution. */
+export function pixelsPerMetreAt1m(projector: ProjectorConfig): number {
+  return projector.optics.throwRatio * projector.optics.resolution.width;
+}
+
 /** Luminance (cd/m², "nits") of a Lambertian screen with `gain` under `lux`. */
 export function luxToNits(lux: number, gain: number): number {
   return (lux * gain) / Math.PI;
@@ -61,6 +92,8 @@ export function nitsToFootLamberts(nits: number): number {
 
 export interface ProjectorLightModel {
   lumens: number;
+  /** Throw ratio × horizontal resolution (pixels per metre of image at 1 m). */
+  pixelsAt1m: number;
   a1: number;
   origin: THREE.Vector3;
   forward: THREE.Vector3;
@@ -72,6 +105,7 @@ export function projectorLightModel(projector: ProjectorConfig): ProjectorLightM
   const forward = new THREE.Vector3(0, 0, -1).transformDirection(world).normalize();
   return {
     lumens: projectorLumens(projector),
+    pixelsAt1m: pixelsPerMetreAt1m(projector),
     a1: unitImageArea(projector.optics.throwRatio, projector.optics.aspectRatio),
     origin,
     forward,
@@ -83,6 +117,7 @@ export const DEFAULT_PREVIZ_SETTINGS: PrevizSettings = {
   scaleMax: 500,
   screenGain: 1,
   spillEverywhere: true,
+  densityScaleMax: 1000,
 };
 
 export function normalizePrevizSettings(raw: Partial<PrevizSettings> | undefined): PrevizSettings {
@@ -97,5 +132,9 @@ export function normalizePrevizSettings(raw: Partial<PrevizSettings> | undefined
       : DEFAULT_PREVIZ_SETTINGS.screenGain;
   const spillEverywhere =
     typeof raw?.spillEverywhere === 'boolean' ? raw.spillEverywhere : DEFAULT_PREVIZ_SETTINGS.spillEverywhere;
-  return { unit, scaleMax, screenGain, spillEverywhere };
+  const densityScaleMax =
+    typeof raw?.densityScaleMax === 'number' && Number.isFinite(raw.densityScaleMax) && raw.densityScaleMax > 0
+      ? raw.densityScaleMax
+      : DEFAULT_PREVIZ_SETTINGS.densityScaleMax;
+  return { unit, scaleMax, screenGain, spillEverywhere, densityScaleMax };
 }
