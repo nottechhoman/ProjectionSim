@@ -1,31 +1,47 @@
 /**
- * v5 previz: a small catalogue of real projector bodies and lenses.
+ * Projector bodies and lenses for previz.
  *
- * Values are typical published figures (ANSI lumens, native resolution, zoom
- * range, lens-shift range). They are approximate — always check the
- * manufacturer's datasheet before ordering or hanging anything.
+ * Panasonic, Epson and Optoma come from the researched table
+ * (tools/catalog/projector-lenses.csv → src/optics/data/catalogData.json, rebuilt with
+ * `node tools/catalog/build-catalog.mjs`). Each lens row was checked against the maker's
+ * spec sheets; `verified` says how that went. Throw ratios are per projector + lens,
+ * because the same lens throws differently on different chip sizes.
  *
- * Lens shift is a fraction of the image (0.5 = half the image height / width),
- * the same unit as `ProjectorOptics.lensShiftH/V`.
+ * Barco, Christie, Sony and the generic bodies are typical published figures only.
+ *
+ * Lens shift is a fraction of the image (0.5 = half the image height / width), the same
+ * unit as `ProjectorOptics.lensShiftH/V`. `null` means the sheet gives no usable range.
  */
+import catalogData from './data/catalogData.json';
+
+export type CatalogVerification = 'yes' | 'conflict' | 'no';
 
 export interface CatalogLens {
   id: string;
   name: string;
   throwMin: number;
   throwMax: number;
-  /** [down, up] vertical shift as a fraction of image height. */
-  shiftV: [number, number];
-  /** [left, right] horizontal shift as a fraction of image width. */
-  shiftH: [number, number];
+  /** [down, up] vertical shift as a fraction of image height; null when unknown. */
+  shiftV: [number, number] | null;
+  /** [left, right] horizontal shift as a fraction of image width; null when unknown. */
+  shiftH: [number, number] | null;
+  /** Researched rows only: how the row checked out against the maker's sheets. */
+  verified?: CatalogVerification | null;
+  source?: string | null;
 }
 
 export interface CatalogProjector {
   id: string;
   brand: string;
   model: string;
-  lumens: number;
+  /** Rated brightness; null when the maker publishes no figure we could find. */
+  lumens: number | null;
+  /** ANSI, ISO 21118, or not stated by the maker. Approximate entries leave it out. */
+  lumensStandard?: 'ANSI' | 'ISO' | 'unstated' | null;
   resolution: { width: number; height: number };
+  discontinued?: boolean;
+  /** True for the hand-entered typical figures (not from the researched table). */
+  approximate?: boolean;
   lenses: CatalogLens[];
 }
 
@@ -41,26 +57,6 @@ const BARCO_TLD: CatalogLens[] = [
   { id: 'tld-2.0', name: 'TLD+ 2.0–2.8', throwMin: 2.0, throwMax: 2.8, shiftV: sym(1.0), shiftH: sym(0.4) },
   { id: 'tld-2.8', name: 'TLD+ 2.8–4.5', throwMin: 2.8, throwMax: 4.5, shiftV: sym(1.0), shiftH: sym(0.4) },
   { id: 'tld-4.5', name: 'TLD+ 4.5–7.5', throwMin: 4.5, throwMax: 7.5, shiftV: sym(1.0), shiftH: sym(0.4) },
-];
-
-/** Epson ELPL lens family (EB-L1000 / L1500 series). */
-const EPSON_ELPL: CatalogLens[] = [
-  { id: 'elplx02', name: 'ELPLX02 0.35 UST', throwMin: 0.35, throwMax: 0.35, shiftV: sym(0), shiftH: sym(0) },
-  { id: 'elplu03s', name: 'ELPLU03S 0.65–0.78', throwMin: 0.65, throwMax: 0.78, shiftV: sym(0.5), shiftH: sym(0.18) },
-  { id: 'elplw08', name: 'ELPLW08 1.04–1.40', throwMin: 1.04, throwMax: 1.4, shiftV: sym(0.67), shiftH: sym(0.3) },
-  { id: 'elplm15', name: 'ELPLM15 1.44–2.32 (std)', throwMin: 1.44, throwMax: 2.32, shiftV: sym(0.67), shiftH: sym(0.3) },
-  { id: 'elplm10', name: 'ELPLM10 2.22–3.61', throwMin: 2.22, throwMax: 3.61, shiftV: sym(0.67), shiftH: sym(0.3) },
-  { id: 'elpll08', name: 'ELPLL08 3.89–7.48', throwMin: 3.89, throwMax: 7.48, shiftV: sym(0.67), shiftH: sym(0.3) },
-];
-
-/** Panasonic ET-D75LE lens family (RZ / RQ 1-chip and 3-chip large venue). */
-const PANASONIC_D75: CatalogLens[] = [
-  { id: 'et-d75le90', name: 'ET-D75LE90 0.36 UST', throwMin: 0.36, throwMax: 0.36, shiftV: sym(0), shiftH: sym(0) },
-  { id: 'et-d75le95', name: 'ET-D75LE95 0.8–1.0', throwMin: 0.8, throwMax: 1.0, shiftV: sym(0.3), shiftH: sym(0.15) },
-  { id: 'et-d75le6', name: 'ET-D75LE6 1.3–1.7', throwMin: 1.3, throwMax: 1.7, shiftV: sym(0.6), shiftH: sym(0.3) },
-  { id: 'et-d75le10', name: 'ET-D75LE10 1.7–2.4 (std)', throwMin: 1.7, throwMax: 2.4, shiftV: sym(0.6), shiftH: sym(0.3) },
-  { id: 'et-d75le20', name: 'ET-D75LE20 2.4–4.7', throwMin: 2.4, throwMax: 4.7, shiftV: sym(0.6), shiftH: sym(0.3) },
-  { id: 'et-d75le30', name: 'ET-D75LE30 4.6–7.4', throwMin: 4.6, throwMax: 7.4, shiftV: sym(0.6), shiftH: sym(0.3) },
 ];
 
 /** Christie M / D series lens family (approximate). */
@@ -83,35 +79,50 @@ const WUXGA = { width: 1920, height: 1200 };
 const UHD = { width: 3840, height: 2160 };
 const HD = { width: 1920, height: 1080 };
 
-export const PROJECTOR_CATALOG: CatalogProjector[] = [
+const APPROXIMATE: CatalogProjector[] = [
   { id: 'barco-udx-w22', brand: 'Barco', model: 'UDX-W22', lumens: 21000, resolution: WUXGA, lenses: BARCO_TLD },
   { id: 'barco-udx-4k32', brand: 'Barco', model: 'UDX-4K32', lumens: 31000, resolution: UHD, lenses: BARCO_TLD },
   { id: 'barco-g62-w11', brand: 'Barco', model: 'G62-W11', lumens: 11000, resolution: WUXGA, lenses: GENERIC_LENSES },
-  { id: 'epson-eb-l1755u', brand: 'Epson', model: 'EB-L1755U', lumens: 15000, resolution: WUXGA, lenses: EPSON_ELPL },
-  { id: 'epson-eb-l1505u', brand: 'Epson', model: 'EB-L1505U', lumens: 12000, resolution: WUXGA, lenses: EPSON_ELPL },
-  { id: 'epson-eb-pu2220b', brand: 'Epson', model: 'EB-PU2220B', lumens: 20000, resolution: WUXGA, lenses: EPSON_ELPL },
-  { id: 'pana-pt-rz990', brand: 'Panasonic', model: 'PT-RZ990', lumens: 10000, resolution: WUXGA, lenses: PANASONIC_D75 },
-  { id: 'pana-pt-rz21k', brand: 'Panasonic', model: 'PT-RZ21K', lumens: 20000, resolution: WUXGA, lenses: PANASONIC_D75 },
-  { id: 'pana-pt-rq35k', brand: 'Panasonic', model: 'PT-RQ35K', lumens: 30500, resolution: UHD, lenses: PANASONIC_D75 },
   { id: 'christie-d20wu-hs', brand: 'Christie', model: 'D20WU-HS', lumens: 20000, resolution: WUXGA, lenses: CHRISTIE },
   { id: 'christie-m4k25', brand: 'Christie', model: 'M 4K25 RGB', lumens: 25300, resolution: UHD, lenses: CHRISTIE },
   { id: 'sony-vpl-fhz90l', brand: 'Sony', model: 'VPL-FHZ90L', lumens: 9000, resolution: WUXGA, lenses: GENERIC_LENSES },
   { id: 'generic-5k-hd', brand: 'Generic', model: '5,000 lm 1080p', lumens: 5000, resolution: HD, lenses: GENERIC_LENSES },
   { id: 'generic-10k-wuxga', brand: 'Generic', model: '10,000 lm WUXGA', lumens: 10000, resolution: WUXGA, lenses: GENERIC_LENSES },
   { id: 'generic-20k-4k', brand: 'Generic', model: '20,000 lm 4K', lumens: 20000, resolution: UHD, lenses: GENERIC_LENSES },
-];
+].map((p) => ({ ...p, approximate: true }));
+
+const RESEARCHED = (catalogData as { projectors: CatalogProjector[] }).projectors;
+
+/** Date the researched table was last checked against the makers' sheets. */
+export const CATALOG_CHECKED_ON: string | null = (catalogData as { checkedOn: string | null }).checkedOn;
+
+export const PROJECTOR_CATALOG: CatalogProjector[] = [...RESEARCHED, ...APPROXIMATE];
+
+/** Model ids saved by v5 projects, before the researched table replaced those entries. */
+const LEGACY_MODEL_IDS: Record<string, string> = {
+  'pana-pt-rz990': 'panasonic-pt-rz990',
+  'pana-pt-rz21k': 'panasonic-pt-rz21k',
+  'pana-pt-rq35k': 'panasonic-pt-rq35k2',
+};
+const LEGACY_LENS_IDS: Record<string, string> = {
+  elplx02: 'elplx02s',
+};
 
 export const DEFAULT_PROJECTOR_LUMENS = 10000;
 
 export function findCatalogProjector(id: string | undefined): CatalogProjector | undefined {
-  return id ? PROJECTOR_CATALOG.find((p) => p.id === id) : undefined;
+  if (!id) return undefined;
+  const key = LEGACY_MODEL_IDS[id] ?? id;
+  return PROJECTOR_CATALOG.find((p) => p.id === key);
 }
 
 export function findCatalogLens(
   projector: CatalogProjector | undefined,
   lensId: string | undefined,
 ): CatalogLens | undefined {
-  return projector && lensId ? projector.lenses.find((l) => l.id === lensId) : undefined;
+  if (!projector || !lensId) return undefined;
+  const key = LEGACY_LENS_IDS[lensId] ?? lensId;
+  return projector.lenses.find((l) => l.id === key);
 }
 
 /** Lens that best fits a throw ratio: one whose zoom range contains it, else the nearest. */
@@ -143,12 +154,12 @@ export interface LensShiftCheck {
 export function checkLensShift(lens: CatalogLens, shiftH: number, shiftV: number): LensShiftCheck {
   const issues: string[] = [];
   const eps = 1e-6;
-  if (shiftV < lens.shiftV[0] - eps || shiftV > lens.shiftV[1] + eps) {
+  if (lens.shiftV && (shiftV < lens.shiftV[0] - eps || shiftV > lens.shiftV[1] + eps)) {
     issues.push(
       `Shift V ${pct(shiftV)} is outside this lens (${pct(lens.shiftV[0])} to ${pct(lens.shiftV[1])})`,
     );
   }
-  if (shiftH < lens.shiftH[0] - eps || shiftH > lens.shiftH[1] + eps) {
+  if (lens.shiftH && (shiftH < lens.shiftH[0] - eps || shiftH > lens.shiftH[1] + eps)) {
     issues.push(
       `Shift H ${pct(shiftH)} is outside this lens (${pct(lens.shiftH[0])} to ${pct(lens.shiftH[1])})`,
     );

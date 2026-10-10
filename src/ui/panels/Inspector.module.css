@@ -190,3 +190,28 @@
   cursor: pointer;
   padding: 0;
 }
+
+/* v6: stacked tool buttons (auto placement). */
+.buttonStack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 2px 0 8px;
+}
+
+.toolBtn {
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 6px 8px;
+  min-height: 30px;
+  cursor: pointer;
+}
+
+.toolBtn:hover {
+  border-color: var(--accent);
+}

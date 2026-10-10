@@ -3,6 +3,7 @@ import { getCalculationTargetObject } from '../../store/reliabilitySettings';
 import type { ProjectorConfig } from '../../types';
 import {
   bestLensForThrow,
+  CATALOG_CHECKED_ON,
   checkLensShift,
   clampThrow,
   DEFAULT_PROJECTOR_LUMENS,
@@ -13,6 +14,7 @@ import {
   type CatalogLens,
   type CatalogProjector,
 } from '../../optics/projectorCatalog';
+import { placeToFill, throwForCurrentDistance } from '../../optics/autoPlace';
 import { formatLength } from '../../utils/units';
 import { NumInput } from '../components/NumInput';
 import styles from './Inspector.module.css';
@@ -23,6 +25,7 @@ const BRANDS = Array.from(new Set(PROJECTOR_CATALOG.map((p) => p.brand)));
 export function ProjectorModelSection({ projector }: { projector: ProjectorConfig }) {
   const updateProjector = useAppStore((s) => s.updateProjector);
   const updateProjectorOptics = useAppStore((s) => s.updateProjectorOptics);
+  const pushSceneHistoryCheckpoint = useAppStore((s) => s.pushSceneHistoryCheckpoint);
   const displayUnit = useAppStore((s) => s.displayUnit);
   const target = useAppStore((s) => getCalculationTargetObject(s.sceneObjects, s.calculationTargetId));
 
@@ -33,7 +36,7 @@ export function ProjectorModelSection({ projector }: { projector: ProjectorConfi
   const applyLens = (m: CatalogProjector, l: CatalogLens, setBody: boolean) => {
     updateProjector(projector.id, {
       catalog: { modelId: m.id, lensId: l.id },
-      ...(setBody ? { lumens: m.lumens } : {}),
+      ...(setBody && m.lumens != null ? { lumens: m.lumens } : {}),
     });
     updateProjectorOptics(projector.id, {
       ...(setBody
@@ -61,6 +64,44 @@ export function ProjectorModelSection({ projector }: { projector: ProjectorConfi
     if (model && l) applyLens(model, l, false);
   };
 
+  const place = (keepHeight: boolean) => {
+    if (!target) return;
+    const placed = placeToFill(projector, target, { lens, keepHeight });
+    if (!placed) return;
+    pushSceneHistoryCheckpoint();
+    updateProjector(projector.id, {
+      lookAtEnabled: false,
+      transform: { position: placed.position, quaternion: placed.quaternion },
+    });
+    updateProjectorOptics(projector.id, {
+      throwRatio: placed.throwRatio,
+      lensShiftH: placed.lensShiftH,
+      lensShiftV: placed.lensShiftV,
+    });
+    useAppStore.setState({
+      projectMessage:
+        `Placed ${projector.name} ${formatLength(placed.distance, displayUnit, 2)} from ${target.name} ` +
+        `(throw ${placed.throwRatio.toFixed(2)}:1, shift V ${Math.round(placed.lensShiftV * 100)}%)` +
+        (placed.shiftLimited ? '. The lens cannot shift that far, so the height changed.' : ''),
+    });
+  };
+
+  const pickLensForDistance = () => {
+    if (!model || !target) return;
+    const t = throwForCurrentDistance(projector, target);
+    if (t == null) return;
+    pushSceneHistoryCheckpoint();
+    const l = bestLensForThrow(model, t);
+    updateProjector(projector.id, { catalog: { modelId: model.id, lensId: l.id } });
+    updateProjectorOptics(projector.id, {
+      throwRatio: clampThrow(l, t),
+      throwRatioMin: l.throwMin,
+      throwRatioMax: l.throwMax,
+    });
+  };
+
+  const neededThrow = target ? throwForCurrentDistance(projector, target) : null;
+
   const shift = lens ? checkLensShift(lens, projector.optics.lensShiftH, projector.optics.lensShiftV) : null;
   const throwOut =
     lens && (projector.optics.throwRatio < lens.throwMin - 1e-6 || projector.optics.throwRatio > lens.throwMax + 1e-6);
@@ -85,7 +126,10 @@ export function ProjectorModelSection({ projector }: { projector: ProjectorConfi
             <optgroup key={brand} label={brand}>
               {PROJECTOR_CATALOG.filter((p) => p.brand === brand).map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.model} · {Math.round(p.lumens / 100) / 10}k lm
+                  {p.model}
+                  {p.lumens != null ? ` · ${Math.round(p.lumens / 100) / 10}k lm` : ''}
+                  {p.lumensStandard === 'ISO' ? ' ISO' : ''}
+                  {p.discontinued ? ' (disc.)' : ''}
                 </option>
               ))}
             </optgroup>
@@ -149,9 +193,76 @@ export function ProjectorModelSection({ projector }: { projector: ProjectorConfi
           {shift.issues.join('. ')}.
         </p>
       )}
-      {model && (
-        <p className={styles.hint}>Specs are typical published figures; check the datasheet before ordering.</p>
+      {target && (
+        <div className={styles.buttonStack}>
+          <button
+            type="button"
+            className={styles.toolBtn}
+            data-testid="auto-place"
+            title={`Move and aim this projector so its image covers ${target.name}`}
+            onClick={() => place(false)}
+          >
+            Place to fill {target.name} (square-on)
+          </button>
+          <button
+            type="button"
+            className={styles.toolBtn}
+            data-testid="auto-place-keep-height"
+            title="Keep the current hanging height; use vertical lens shift to reach the screen"
+            onClick={() => place(true)}
+          >
+            Place to fill, keep this height (lens shift)
+          </button>
+          {model && neededThrow != null && (
+            <button
+              type="button"
+              className={styles.toolBtn}
+              data-testid="pick-lens-for-distance"
+              title={`From here the image needs a ${neededThrow.toFixed(2)}:1 throw`}
+              onClick={pickLensForDistance}
+            >
+              Pick lens for this distance ({neededThrow.toFixed(2)}:1)
+            </button>
+          )}
+        </div>
       )}
+      {model && <CatalogNote model={model} lens={lens} />}
     </div>
+  );
+}
+
+function CatalogNote({ model, lens }: { model: CatalogProjector; lens: CatalogLens | undefined }) {
+  if (model.approximate) {
+    return <p className={styles.hint}>Typical published figures; check the datasheet before ordering.</p>;
+  }
+  const verified =
+    lens?.verified === 'yes'
+      ? 'checked against the maker\'s spec sheet'
+      : lens?.verified === 'conflict'
+        ? 'maker\'s sources disagree; check the datasheet'
+        : 'not confirmed by the maker; check the datasheet';
+  return (
+    <p className={styles.hint} data-testid="catalog-note">
+      {model.lumens == null
+        ? 'No rated brightness published; lumens left as entered. '
+        : model.lumensStandard === 'ISO'
+          ? 'Brightness is the ISO 21118 rating (no ANSI figure). '
+          : model.lumensStandard === 'unstated'
+            ? 'Brightness standard not stated by the maker. '
+            : ''}
+      {lens ? `Lens throw ${verified}` : ''}
+      {lens && (!lens.shiftV || !lens.shiftH) ? '; shift range not published, so not checked' : ''}
+      {lens?.source ? (
+        <>
+          {' '}
+          (
+          <a href={lens.source} target="_blank" rel="noreferrer">
+            source
+          </a>
+          )
+        </>
+      ) : null}
+      .{CATALOG_CHECKED_ON ? ` Table checked ${CATALOG_CHECKED_ON}.` : ''}
+    </p>
   );
 }

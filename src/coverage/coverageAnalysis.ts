@@ -20,7 +20,7 @@ import {
   listBlockerDescriptors,
   type BlockerDescriptor,
 } from './occlusion';
-import { illuminanceAt, projectorLightModel, projectorLumens, type ProjectorLightModel } from '../optics/illuminance';
+import { illuminanceAt, pixelDensityAt, projectorLightModel, projectorLumens, type ProjectorLightModel } from '../optics/illuminance';
 
 export const ANALYSIS_QUALITY_PRESETS: Record<
   AnalysisQuality,
@@ -55,6 +55,7 @@ interface SideAggregate {
   occlusionLossArea: number;
   perProjector: Map<string, { geometric: number; visible: number; blocked: number; flux: number }>;
   lux: { min: number; max: number; weighted: number; area: number };
+  density: { min: number; max: number; weighted: number; area: number };
 }
 
 function isEligibleProjector(projector: ProjectorConfig): boolean {
@@ -216,6 +217,7 @@ function aggregateSamples(
   let visibleOverlapArea = 0;
   let occlusionLossArea = 0;
   const lux = { min: Infinity, max: 0, weighted: 0, area: 0 };
+  const density = { min: Infinity, max: 0, weighted: 0, area: 0 };
   const lights = new Map<string, ProjectorLightModel>();
   for (const proj of eligible) lights.set(proj.id, projectorLightModel(proj));
 
@@ -225,6 +227,7 @@ function aggregateSamples(
     const geometricHits: string[] = [];
     const visibleHits: string[] = [];
     let sampleLux = 0;
+    let samplePx = 0;
 
     for (const proj of eligible) {
       const worldMatrix = buildWorldMatrixFromTransform(proj.transform);
@@ -243,6 +246,7 @@ function aggregateSamples(
         const e = illuminanceAt(L.lumens, L.a1, L.origin, L.forward, sample.position, sample.faceNormal);
         sampleLux += e;
         metrics.flux += e * sample.area;
+        samplePx = Math.max(samplePx, pixelDensityAt(L.pixelsAt1m, L.origin, L.forward, sample.position, sample.faceNormal));
       } else {
         metrics.blocked += sample.area;
       }
@@ -255,6 +259,10 @@ function aggregateSamples(
       lux.max = Math.max(lux.max, sampleLux);
       lux.weighted += sampleLux * sample.area;
       lux.area += sample.area;
+      density.min = Math.min(density.min, samplePx);
+      density.max = Math.max(density.max, samplePx);
+      density.weighted += samplePx * sample.area;
+      density.area += sample.area;
     }
     if (visibleHits.length >= 2) visibleOverlapArea += sample.area;
     if (geometricHits.length > 0 && visibleHits.length === 0) occlusionLossArea += sample.area;
@@ -269,6 +277,7 @@ function aggregateSamples(
     occlusionLossArea,
     perProjector,
     lux,
+    density,
   };
 }
 
@@ -312,6 +321,12 @@ function mergeAggregates(a: SideAggregate, b: SideAggregate): SideAggregate {
       max: Math.max(a.lux.max, b.lux.max),
       weighted: a.lux.weighted + b.lux.weighted,
       area: a.lux.area + b.lux.area,
+    },
+    density: {
+      min: Math.min(a.density.min, b.density.min),
+      max: Math.max(a.density.max, b.density.max),
+      weighted: a.density.weighted + b.density.weighted,
+      area: a.density.area + b.density.area,
     },
   };
 }
@@ -425,6 +440,14 @@ export function computeSampledCoverageAnalysis(
             avgLux: combined.lux.weighted / combined.lux.area,
             maxLux: combined.lux.max,
             litArea: combined.lux.area,
+          }
+        : null,
+    pixelDensity:
+      combined.density.area > 0
+        ? {
+            minPxPerM: combined.density.min,
+            avgPxPerM: combined.density.weighted / combined.density.area,
+            maxPxPerM: combined.density.max,
           }
         : null,
     assumptions: BASE_ASSUMPTIONS,

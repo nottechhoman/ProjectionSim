@@ -79,7 +79,7 @@ export function BrightnessResults() {
           })}
           <p className={styles.hint}>
             Spill is light that misses the target or is blocked before it: it lands on walls, floor or objects
-            behind and around it. The brightness heatmap shows where it lands (Show spill on every surface).
+            behind and around it. The brightness heatmap shows where it lands (Show on every surface).
           </p>
         </>
       )}

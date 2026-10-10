@@ -54,12 +54,14 @@ describe('illuminance', () => {
       scaleMax: 500,
       screenGain: 1,
       spillEverywhere: true,
+      densityScaleMax: 1000,
     });
     expect(normalizePrevizSettings({ unit: 'lux', scaleMax: -1, screenGain: 99 })).toEqual({
       unit: 'lux',
       scaleMax: 500,
       screenGain: 10,
       spillEverywhere: true,
+      densityScaleMax: 1000,
     });
   });
 });
@@ -69,12 +71,13 @@ describe('projector catalogue', () => {
     const ids = new Set(PROJECTOR_CATALOG.map((p) => p.id));
     expect(ids.size).toBe(PROJECTOR_CATALOG.length);
     for (const p of PROJECTOR_CATALOG) {
-      expect(p.lumens).toBeGreaterThan(0);
+      if (p.lumens != null) expect(p.lumens).toBeGreaterThan(0);
       expect(p.lenses.length).toBeGreaterThan(0);
       for (const l of p.lenses) {
         expect(l.throwMin).toBeGreaterThan(0);
         expect(l.throwMax).toBeGreaterThanOrEqual(l.throwMin);
-        expect(l.shiftV[0]).toBeLessThanOrEqual(l.shiftV[1]);
+        if (l.shiftV) expect(l.shiftV[0]).toBeLessThanOrEqual(l.shiftV[1]);
+        if (l.shiftH) expect(l.shiftH[0]).toBeLessThanOrEqual(l.shiftH[1]);
       }
     }
   });

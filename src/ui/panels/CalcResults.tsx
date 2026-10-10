@@ -3,6 +3,7 @@ import { listCalculationTargets } from '../../store/reliabilitySettings';
 import { percentOfReceiver } from '../../coverage/coverageAnalysis';
 import { formatLength } from '../../utils/units';
 import { BrightnessResults } from './BrightnessResults';
+import { PixelDensityResults } from './PixelDensityResults';
 import styles from './Inspector.module.css';
 
 export function CalcResults() {
@@ -244,6 +245,7 @@ export function CalcResults() {
           )}
 
           <BrightnessResults />
+          <PixelDensityResults />
 
           {overlap && projectors.filter((p) => p.enabled).length > 1 && (
             <div className={styles.section}>

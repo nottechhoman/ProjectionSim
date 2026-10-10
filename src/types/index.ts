@@ -16,7 +16,9 @@ export type MaterialPreviewMode =
   /** Per-surface texture UV (the screen texture layout) as colour. */
   | 'surfaceUv'
   /** v5: absolute brightness (lux or nits) from projector lumens. */
-  | 'illuminance';
+  | 'illuminance'
+  /** v6: projected pixels per metre on each surface (sharpness). */
+  | 'pixelDensity';
 
 export type MediaFitMode = 'contain' | 'cover' | 'stretch';
 
@@ -231,6 +233,15 @@ export interface PrevizSettings {
   screenGain: number;
   /** Paint the heatmap on every surface (walls, floor, set pieces), not only screens, to show spill. */
   spillEverywhere: boolean;
+  /** v6: pixels per metre shown at the top of the pixel-density heatmap scale. */
+  densityScaleMax: number;
+}
+
+/** v6: projected pixel density on the calculation target (best projector per point). */
+export interface PixelDensityStats {
+  minPxPerM: number;
+  avgPxPerM: number;
+  maxPxPerM: number;
 }
 
 export interface IlluminanceStats {
@@ -316,6 +327,8 @@ export interface SampledCoverageAnalysis {
   eligibleProjectorIds: string[];
   /** v5: brightness on the target from projector lumens. */
   illuminance?: IlluminanceStats | null;
+  /** v6: pixel density on the target. */
+  pixelDensity?: PixelDensityStats | null;
   assumptions: string[];
   limitations: string[];
 }
