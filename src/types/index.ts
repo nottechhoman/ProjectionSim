@@ -442,7 +442,21 @@ export type MediaRef =
   | { kind: 'pattern'; pattern: TestPattern; color: string }
   | { kind: 'solid'; color: string };
 
-export type LayerBlendMode = 'normal' | 'add' | 'multiply';
+/**
+ * How a layer composites over the layers below it on a screen. normal/add/multiply
+ * use GPU blending; the rest read the screen texture below (Photoshop-style maths
+ * on sRGB-encoded values).
+ */
+export type LayerBlendMode =
+  | 'normal'
+  | 'add'
+  | 'screen'
+  | 'multiply'
+  | 'overlay'
+  | 'softLight'
+  | 'lighten'
+  | 'darken'
+  | 'difference';
 export type LayerPlayMode = 'loop' | 'once' | 'holdLast' | 'pingPong';
 
 /** Layer placement inside its mapping canvas, normalized 0–1, top-left origin. */

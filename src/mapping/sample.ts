@@ -254,8 +254,17 @@ export function hexToRgb(hex: string): Rgb {
   return [c.r, c.g, c.b];
 }
 
-/** Mirror of patternColor() in the shaders. */
+/**
+ * Mirror of patternColor() in the shaders. Pattern levels are signal (display)
+ * values, e.g. Gray 50 % is code 128, so they are returned decoded to linear like
+ * images; the tint is a decoded hex colour already.
+ */
 export function patternColor(pattern: TestPattern, uv: Vec2, tint: Rgb): Rgb {
+  if (pattern === 'projectorId') return [...tint];
+  return patternSignal(pattern, uv).map(srgbToLinear) as Rgb;
+}
+
+function patternSignal(pattern: Exclude<TestPattern, 'projectorId'>, uv: Vec2): Rgb {
   switch (pattern) {
     case 'checkerboard': {
       const c = Math.floor(uv.x * 16) + Math.floor(uv.y * 16);
@@ -267,8 +276,6 @@ export function patternColor(pattern: TestPattern, uv: Vec2, tint: Rgb): Rgb {
       return [uv.x, uv.y, 0.5];
     case 'white':
       return [1, 1, 1];
-    case 'projectorId':
-      return [...tint];
     case 'black':
       return [0, 0, 0];
     case 'gray':
@@ -276,11 +283,62 @@ export function patternColor(pattern: TestPattern, uv: Vec2, tint: Rgb): Rgb {
   }
 }
 
-/** Apply one layer colour with opacity and blend mode over dst. */
+export const LAYER_BLEND_INT: Record<Layer['blendMode'], number> = {
+  normal: 0,
+  add: 1,
+  multiply: 2,
+  screen: 3,
+  overlay: 4,
+  softLight: 5,
+  lighten: 6,
+  darken: 7,
+  difference: 8,
+};
+
+export function linearToSrgb(c: number): number {
+  const x = Math.max(0, c);
+  return x <= 0.0031308 ? x * 12.92 : 1.055 * Math.pow(x, 1 / 2.4) - 0.055;
+}
+
+export function srgbToLinear(c: number): number {
+  const x = Math.max(0, c);
+  return x <= 0.04045 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4);
+}
+
+/** Mirror of blendChannel() in bake.frag.glsl: d (below) and s (layer) are sRGB-encoded 0–1. */
+export function blendChannel(d: number, s: number, mode: Layer['blendMode']): number {
+  switch (mode) {
+    case 'screen':
+      return 1 - (1 - d) * (1 - s);
+    case 'overlay':
+      return d <= 0.5 ? 2 * d * s : 1 - 2 * (1 - d) * (1 - s);
+    case 'softLight': {
+      if (s <= 0.5) return d - (1 - 2 * s) * d * (1 - d);
+      const g = d <= 0.25 ? ((16 * d - 12) * d + 4) * d : Math.sqrt(d);
+      return d + (2 * s - 1) * (g - d);
+    }
+    case 'lighten':
+      return Math.max(d, s);
+    case 'darken':
+      return Math.min(d, s);
+    case 'difference':
+      return Math.abs(d - s);
+    default:
+      return s;
+  }
+}
+
+/** Apply one layer colour (linear) with opacity and blend mode over dst (linear). */
 export function blendOver(dst: Rgb, src: Rgb, alpha: number, mode: Layer['blendMode']): Rgb {
   if (mode === 'add') return dst.map((d, i) => d + src[i] * alpha) as Rgb;
   if (mode === 'multiply') return dst.map((d, i) => d * (1 - alpha + src[i] * alpha)) as Rgb;
-  return dst.map((d, i) => d * (1 - alpha) + src[i] * alpha) as Rgb;
+  if (mode === 'normal') return dst.map((d, i) => d * (1 - alpha) + src[i] * alpha) as Rgb;
+  // Read-below modes: the target is 8-bit, so dst is clamped to 0–1 like the GPU sees it.
+  return dst.map((d, i) => {
+    const below = Math.min(1, Math.max(0, d));
+    const mixed = srgbToLinear(blendChannel(linearToSrgb(below), linearToSrgb(Math.min(1, src[i])), mode));
+    return below * (1 - alpha) + mixed * alpha;
+  }) as Rgb;
 }
 
 export interface LiveLayerLike {

@@ -12,10 +12,12 @@ export function buildProjectorCamera(
   cam.matrix.copy(worldMatrix);
   cam.matrix.decompose(cam.position, cam.quaternion, cam.scale);
   cam.updateMatrixWorld(true);
+  // Lens shift in image widths / heights: +H moves the image right, +V moves it up
+  // (as on projector spec sheets). setViewOffset's x grows right, its y grows down.
   cam.setViewOffset(
     optics.resolution.width,
     optics.resolution.height,
-    -optics.lensShiftH * optics.resolution.width,
+    optics.lensShiftH * optics.resolution.width,
     -optics.lensShiftV * optics.resolution.height,
     optics.resolution.width,
     optics.resolution.height,

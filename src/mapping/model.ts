@@ -45,7 +45,18 @@ const PATTERNS: TestPattern[] = ['checkerboard', 'uvGrid', 'colorBars', 'white',
 const FITS: MediaFitMode[] = ['contain', 'cover', 'stretch'];
 const DIRECT_FITS: DirectFit[] = ['crop', 'fit', 'stretch', 'pixel'];
 const FILTERS: MappingFiltering[] = ['nearest', 'bilinear', 'msaa2x'];
-const BLENDS: LayerBlendMode[] = ['normal', 'add', 'multiply'];
+export const LAYER_BLEND_MODES: LayerBlendMode[] = [
+  'normal',
+  'add',
+  'screen',
+  'multiply',
+  'overlay',
+  'softLight',
+  'lighten',
+  'darken',
+  'difference',
+];
+const BLENDS = LAYER_BLEND_MODES;
 const PLAY_MODES: LayerPlayMode[] = ['loop', 'once', 'holdLast', 'pingPong'];
 const PROJECTIONS: SurfaceUvProjection[] = ['meshUv', 'planar', 'cylindrical', 'spherical'];
 const WRAPS: UvWrapMode[] = ['clamp', 'repeat', 'mirror'];

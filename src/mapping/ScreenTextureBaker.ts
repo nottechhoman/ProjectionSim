@@ -10,6 +10,7 @@ import { mappingResolution, screenAspect } from './model';
 import {
   DIRECT_FIT_INT,
   hexToRgb,
+  LAYER_BLEND_INT,
   LAYER_FIT_INT,
   MAPPING_KIND_INT,
   mappingMatrix,
@@ -52,10 +53,18 @@ export function screenTextureSize(
   return { w: Math.max(1, Math.round(w * scale)), h: Math.max(1, Math.round(h * scale)) };
 }
 
-const BLEND_INT: Record<LayerBlendMode, number> = { normal: 0, add: 1, multiply: 2 };
 const FILTER_INT: Record<MappingFiltering, number> = { nearest: 0, bilinear: 1, msaa2x: 2 };
 
+/** Modes the shader computes from a copy of the texture below (no GPU blend equation fits). */
+export function readsBelow(mode: LayerBlendMode): boolean {
+  return LAYER_BLEND_INT[mode] >= 3;
+}
+
 function setBlend(material: THREE.ShaderMaterial, mode: LayerBlendMode): void {
+  if (readsBelow(mode)) {
+    material.blending = THREE.NoBlending;
+    return;
+  }
   material.blending = THREE.CustomBlending;
   material.blendEquation = THREE.AddEquation;
   material.blendSrcAlpha = THREE.ZeroFactor;
@@ -85,9 +94,23 @@ export class ScreenTextureBaker {
   private readonly rootInv = new THREE.Matrix4();
   readonly material: THREE.ShaderMaterial;
   private mediaFor?: (layer: Layer) => { texture: THREE.Texture; aspect: number } | null;
+  /** Copy of a screen texture before a read-below layer (shared, resized as needed). */
+  private below: THREE.WebGLRenderTarget | null = null;
+  private readonly copyMaterial = new THREE.ShaderMaterial({
+    glslVersion: THREE.GLSL3,
+    vertexShader: 'out vec2 vUv;\nvoid main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }',
+    fragmentShader:
+      'uniform sampler2D src;\nin vec2 vUv;\nout vec4 fragColor;\nvoid main() { fragColor = texture(src, vUv); }',
+    uniforms: { src: { value: null } },
+    blending: THREE.NoBlending,
+    depthTest: false,
+    depthWrite: false,
+  });
+  private readonly copyQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.copyMaterial);
 
   constructor() {
     this.fallback.needsUpdate = true;
+    this.copyQuad.frustumCulled = false;
     this.material = new THREE.ShaderMaterial({
       glslVersion: THREE.GLSL3,
       vertexShader: bakeVert,
@@ -124,6 +147,7 @@ export class ScreenTextureBaker {
         layerFit: { value: 0 },
         layerOpacity: { value: 1 },
         blendMode: { value: 0 },
+        dstMap: { value: this.fallback },
         filterMode: { value: 1 },
         maskMap: { value: this.fallback },
         hasMask: { value: 0 },
@@ -180,6 +204,10 @@ export class ScreenTextureBaker {
           if (!mapping || entry.opacity <= 0 || !mapping.screenIds.includes(obj.id)) continue;
           if (!mappingVisibleTo(mapping, forProjectorId)) continue;
           if (!this.applyLayer(entry, mapping, projectors, matrices, obj.id)) continue;
+          if (readsBelow(entry.layer.blendMode)) {
+            u.dstMap.value = this.copyBelow(renderer, target);
+            renderer.setRenderTarget(target);
+          }
           for (const mesh of surface.meshes) this.drawMesh(renderer, mesh);
         }
       }
@@ -193,6 +221,10 @@ export class ScreenTextureBaker {
   dispose(): void {
     for (const target of this.targets.values()) target.dispose();
     this.targets.clear();
+    this.below?.dispose();
+    this.below = null;
+    this.copyQuad.geometry.dispose();
+    this.copyMaterial.dispose();
     this.material.dispose();
     this.fallback.dispose();
   }
@@ -212,6 +244,25 @@ export class ScreenTextureBaker {
       mesh.frustumCulled = savedCull;
       mesh.visible = savedVisible;
     }
+  }
+
+  /** Snapshot the target so a read-below layer can sample what it covers. */
+  private copyBelow(renderer: THREE.WebGLRenderer, target: THREE.WebGLRenderTarget): THREE.Texture {
+    const { width, height } = target;
+    if (!this.below || this.below.width !== width || this.below.height !== height) {
+      this.below?.dispose();
+      this.below = new THREE.WebGLRenderTarget(width, height, {
+        minFilter: THREE.NearestFilter,
+        magFilter: THREE.NearestFilter,
+        format: THREE.RGBAFormat,
+        depthBuffer: false,
+      });
+      this.below.texture.colorSpace = THREE.SRGBColorSpace;
+    }
+    this.copyMaterial.uniforms.src.value = target.texture;
+    renderer.setRenderTarget(this.below);
+    renderer.render(this.copyQuad, this.camera);
+    return this.below.texture;
   }
 
   private ensureTarget(id: string, w: number, h: number): THREE.WebGLRenderTarget {
@@ -273,7 +324,7 @@ export class ScreenTextureBaker {
     (u.layerRect.value as THREE.Vector4).set(rect.x, rect.y, rect.width, rect.height);
     u.layerRot.value = THREE.MathUtils.degToRad(rect.rotationDeg);
     u.layerOpacity.value = entry.opacity;
-    u.blendMode.value = BLEND_INT[layer.blendMode];
+    u.blendMode.value = LAYER_BLEND_INT[layer.blendMode];
     setBlend(this.material, layer.blendMode);
 
     const res = mappingResolution(mapping, projectors);

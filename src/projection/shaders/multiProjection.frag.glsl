@@ -261,6 +261,16 @@ bool projectorHit(int idx, out vec2 q) {
   return warpToContent(idx, p, q);
 }
 
+// Content and light are linear (sRGB textures decode on sampling). Encode for the
+// screen and for projector feeds; neither the canvas nor the 8-bit feed targets do it.
+// Heatmaps, previews and the unlit surface colour are already display colours.
+vec3 linearToSrgb(vec3 c) {
+  c = max(c, vec3(0.0));
+  vec3 lo = c * 12.92;
+  vec3 hi = 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055;
+  return mix(lo, hi, step(vec3(0.0031308), c));
+}
+
 float toLight(float w) {
   float x = clamp(w, 0.0, 1.0);
   return blendGammaCorrect == 1 ? x : pow(x, displayGamma);
@@ -307,7 +317,7 @@ void main() {
     }
     vec3 bg = sampleFeedAt(feedIndex, q) * brightness[feedIndex];
     float spill = feedView == 1 ? feedSpill : 1.0;
-    fragColor = vec4(clamp(bg, 0.0, 1.0) * bgSignal * spill, 1.0);
+    fragColor = vec4(linearToSrgb(clamp(bg, 0.0, 1.0)) * bgSignal * spill, 1.0);
     return;
   }
 
@@ -393,7 +403,7 @@ void main() {
       return;
     }
     vec3 c = sampleFeedAt(feedIndex, qs[feedIndex]) * brightness[feedIndex];
-    vec3 outC = clamp(c, 0.0, 1.0) * signal;
+    vec3 outC = linearToSrgb(clamp(c, 0.0, 1.0)) * signal;
     if (feedView == 1) {
       vec2 edgeDist = min(vSurfaceUv, 1.0 - vSurfaceUv) / max(fwidth(vSurfaceUv), vec2(1e-6));
       float edge = 1.0 - clamp(min(edgeDist.x, edgeDist.y) - 1.0, 0.0, 1.0);
@@ -451,5 +461,5 @@ void main() {
     return;
   }
 
-  fragColor = vec4(sumColor, 1.0);
+  fragColor = vec4(forceUvPreview == 1 ? sumColor : linearToSrgb(sumColor), 1.0);
 }

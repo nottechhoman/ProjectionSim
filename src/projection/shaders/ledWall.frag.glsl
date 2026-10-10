@@ -40,7 +40,9 @@ void main() {
   if (useMediaTexture == 1) {
     vec2 mediaUv = applyFit(uv);
     if (mediaUv.x >= 0.0 && mediaUv.x <= 1.0 && mediaUv.y >= 0.0 && mediaUv.y <= 1.0) {
-      color = texture2D(mediaMap, mediaUv).rgb;
+      // The screen texture decodes to linear; encode for display (panelColor already is).
+      vec3 c = max(texture2D(mediaMap, mediaUv).rgb, vec3(0.0));
+      color = mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
     }
   }
 

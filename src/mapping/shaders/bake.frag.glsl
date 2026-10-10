@@ -32,7 +32,10 @@ uniform vec4 layerRect;       // x, y, w, h normalized, top-left origin
 uniform float layerRot;       // radians
 uniform int layerFit;         // 0 contain, 1 cover, 2 stretch
 uniform float layerOpacity;
-uniform int blendMode;        // 0 normal, 1 add, 2 multiply
+// 0 normal, 1 add, 2 multiply (GPU blending); 3+ read the texture below (dstMap):
+// 3 screen, 4 overlay, 5 soft light, 6 lighten, 7 darken, 8 difference.
+uniform int blendMode;
+uniform sampler2D dstMap;
 
 // v4 M4: mapping filtering (0 nearest, 1 bilinear, 2 two-sample supersampling)
 // and mask (luminance of an image over the mapping canvas multiplies the layer).
@@ -179,6 +182,18 @@ float checker(vec2 uv) {
   return mod(c.x + c.y, 2.0);
 }
 
+vec3 toSrgb(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(vec3(0.0031308), c));
+}
+
+vec3 toLinear(vec3 c) {
+  c = clamp(c, 0.0, 1.0);
+  return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(vec3(0.04045), c));
+}
+
+// Pattern levels are signal values (Gray 50 % = code 128): decoded to linear in
+// shadeAt like images. The tint (4) is a decoded colour already.
 vec3 patternColor(int p, vec2 uv, vec3 tint) {
   if (p == 0) return mix(vec3(0.1), vec3(0.9), checker(uv));
   if (p == 1) return vec3(uv, 0.0);
@@ -209,11 +224,29 @@ vec4 shadeAt(vec3 P, vec2 T) {
     } else {
       col = texture(mediaMap, m).rgb;
     }
-  } else if (mediaKind == 2) col = patternColor(patternType, m, layerColor);
+  } else if (mediaKind == 2) {
+    col = patternColor(patternType, m, layerColor);
+    if (patternType != 4) col = toLinear(col);
+  }
   else if (mediaKind == 3) col = layerColor;
   else return vec4(0.0);
   float mask = hasMask == 1 ? clamp(dot(texture(maskMap, c).rgb, LUMA), 0.0, 1.0) : 1.0;
   return vec4(col, mask);
+}
+
+// Mirror of blendChannel() in src/mapping/sample.ts. d = below, s = layer (sRGB-encoded).
+vec3 blendChannel(vec3 d, vec3 s) {
+  if (blendMode == 3) return 1.0 - (1.0 - d) * (1.0 - s);
+  if (blendMode == 4) return mix(2.0 * d * s, 1.0 - 2.0 * (1.0 - d) * (1.0 - s), step(0.5 + 1e-6, d));
+  if (blendMode == 5) {
+    vec3 g = mix(((16.0 * d - 12.0) * d + 4.0) * d, sqrt(d), step(0.25 + 1e-6, d));
+    vec3 dark = d - (1.0 - 2.0 * s) * d * (1.0 - d);
+    vec3 light = d + (2.0 * s - 1.0) * (g - d);
+    return mix(dark, light, step(0.5 + 1e-6, s));
+  }
+  if (blendMode == 6) return max(d, s);
+  if (blendMode == 7) return min(d, s);
+  return abs(d - s);
 }
 
 void main() {
@@ -236,6 +269,11 @@ void main() {
   }
   float a = clamp(layerOpacity, 0.0, 1.0) * s.a;
   // Blend factors are set per mode on the material (see ScreenTextureBaker).
-  if (blendMode == 2) fragColor = vec4(mix(vec3(1.0), s.rgb, a), 1.0);
+  if (blendMode >= 3) {
+    // dstMap is a copy of this target before the layer; the bake raster is the texture.
+    vec3 below = texture(dstMap, gl_FragCoord.xy / screenTexSize).rgb;
+    vec3 mixed = toLinear(blendChannel(toSrgb(below), toSrgb(s.rgb)));
+    fragColor = vec4(mix(below, mixed, a), 1.0);
+  } else if (blendMode == 2) fragColor = vec4(mix(vec3(1.0), s.rgb, a), 1.0);
   else fragColor = vec4(s.rgb, a);
 }

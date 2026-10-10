@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAppStore } from '../../store';
+import { LAYER_BLEND_MODES } from '../../mapping/model';
 import type { Layer, LayerBlendMode, LayerPlayMode, MediaFitMode, MediaRef, TestPattern } from '../../types';
 import { NumInput } from '../components/NumInput';
 import { MappingSelect } from './LayersPanel';
@@ -15,6 +16,18 @@ const PATTERNS: { value: TestPattern; label: string }[] = [
   { value: 'black', label: 'Black (black-level check)' },
   { value: 'gray', label: 'Gray 50%' },
 ];
+
+const BLEND_LABELS: Record<LayerBlendMode, string> = {
+  normal: 'Normal',
+  add: 'Add',
+  screen: 'Screen',
+  multiply: 'Multiply',
+  overlay: 'Overlay',
+  softLight: 'Soft light',
+  lighten: 'Lighten',
+  darken: 'Darken',
+  difference: 'Difference',
+};
 
 const round = (v: number, d = 3) => Math.round(v * 10 ** d) / 10 ** d;
 
@@ -117,9 +130,9 @@ export function LayerInspector({ layer }: { layer: Layer }) {
         <div className={styles.row}>
           <label htmlFor="layer-blend">Blend</label>
           <select id="layer-blend" value={layer.blendMode} onChange={(e) => set({ blendMode: e.target.value as LayerBlendMode })}>
-            <option value="normal">Normal</option>
-            <option value="add">Add</option>
-            <option value="multiply">Multiply</option>
+            {LAYER_BLEND_MODES.map((m) => (
+              <option key={m} value={m}>{BLEND_LABELS[m]}</option>
+            ))}
           </select>
         </div>
       </div>
