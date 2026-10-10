@@ -24,8 +24,10 @@ export function computeProjectorLookAtQuaternion(
   const q = new THREE.Quaternion().setFromRotationMatrix(m);
 
   if (Math.abs(rollDeg) > 1e-6) {
+    // +Z, so the roll read back by rollFromProjectorQuaternion (YXZ euler z) is the
+    // roll that was applied; -Z flipped its sign on every look-at re-aim.
     const rollQ = new THREE.Quaternion().setFromAxisAngle(
-      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0, 0, 1),
       THREE.MathUtils.degToRad(rollDeg),
     );
     q.multiply(rollQ);

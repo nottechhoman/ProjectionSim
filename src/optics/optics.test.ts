@@ -49,6 +49,15 @@ describe('Acceptance Test 2: Lens shift', () => {
     const hitAfter = intersectPlaneZ0(centerAfter);
     expect(hitAfter!.y - hitBefore!.y).toBeCloseTo(1.125, 3);
   });
+
+  it('moves image center +2m in world X with +0.5 horizontal shift (same sense as V)', () => {
+    const optics = { ...baseOptics, lensShiftH: 0.5 };
+    const world = new THREE.Matrix4().makeTranslation(0, 0, 6);
+    const hitBefore = intersectPlaneZ0(unprojectRasterRay(baseOptics, 0.5, 0.5, world));
+    const hitAfter = intersectPlaneZ0(unprojectRasterRay(optics, 0.5, 0.5, world));
+    expect(hitAfter!.x - hitBefore!.x).toBeCloseTo(2, 3);
+    expect(hitAfter!.y - hitBefore!.y).toBeCloseTo(0, 6);
+  });
 });
 
 function intersectPlaneZ0(ray: { origin: THREE.Vector3; direction: THREE.Vector3 }) {

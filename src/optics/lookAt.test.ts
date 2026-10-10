@@ -44,6 +44,15 @@ describe('computeProjectorLookAtQuaternion', () => {
     expect(fwd.angleTo(expected)).toBeLessThan(0.02);
     expect(rollFromProjectorQuaternion(withRoll)).not.toBeCloseTo(rollFromProjectorQuaternion(noRoll), 0);
   });
+
+  it('reads back the roll it applied, so re-aiming keeps it', () => {
+    const pos = { x: 3, y: 4, z: 6 };
+    const target = { x: 0, y: 1.5, z: 0 };
+    const q = computeProjectorLookAtQuaternion(pos, target, 10);
+    expect(rollFromProjectorQuaternion(q)).toBeCloseTo(10, 4);
+    const again = computeProjectorLookAtQuaternion(pos, target, rollFromProjectorQuaternion(q));
+    again.forEach((v, i) => expect(v).toBeCloseTo(q[i], 6));
+  });
 });
 
 describe('applyLookAtToProjector', () => {
