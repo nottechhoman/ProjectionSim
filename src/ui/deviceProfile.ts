@@ -10,10 +10,25 @@ export const PHONE_MAX_WIDTH = 767;
 /** iPad-class widths through iPad Pro landscape */
 export const TABLET_MAX_WIDTH = 1100;
 
+/**
+ * v8: a phone on its side is wider than PHONE_MAX_WIDTH (iPhone 13: 844 × 390) but still
+ * short; with a touch screen, a height at or under this counts as a phone too.
+ */
+export const PHONE_MAX_SHORT_SIDE = 500;
+
+function hasCoarsePointer(): boolean {
+  return typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+    ? window.matchMedia('(pointer: coarse)').matches
+    : false;
+}
+
 export function getDeviceProfile(
   width = typeof window !== 'undefined' ? window.innerWidth : 1280,
+  height = typeof window !== 'undefined' ? window.innerHeight : 800,
+  touch = hasCoarsePointer(),
 ): DeviceProfile {
   if (width <= PHONE_MAX_WIDTH) return 'phone';
+  if (touch && height <= PHONE_MAX_SHORT_SIDE && width <= TABLET_MAX_WIDTH) return 'phone';
   if (width <= TABLET_MAX_WIDTH) return 'tablet';
   return 'desktop';
 }

@@ -74,6 +74,8 @@ const CORNER_UV = [
 
 type AppState = ReturnType<typeof useAppStore.getState>;
 
+const EDITOR_FOV = 50;
+
 export interface SceneEngineCallbacks {
   onFrameTime?: (ms: number) => void;
   onWebglStatus?: (available: boolean) => void;
@@ -355,6 +357,10 @@ export class SceneEngine {
   private animationId: number | null = null;
   private disposed = false;
   private currentViewPreset: ViewPreset = 'persp';
+  /** v8: projector the 3D view is looking through, and the scene-fit request last handled. */
+  private currentViewFromId: string | null = null;
+  private lastProjectors: ProjectorConfig[] = [];
+  private handledFrameAllRequest = 0;
   private callbacks: SceneEngineCallbacks = {};
   private readonly viewTarget = new THREE.Vector3(0, 1.5, 0);
   private readonly pointer = new THREE.Vector2();
@@ -417,7 +423,7 @@ export class SceneEngine {
     const axes = new THREE.AxesHelper(2);
     this.helpersGroup.add(grid, axes, this.measureGroup);
 
-    this.editorCamera = new THREE.PerspectiveCamera(50, 1, 0.1, 500);
+    this.editorCamera = new THREE.PerspectiveCamera(EDITOR_FOV, 1, 0.1, 500);
     this.editorCamera.position.set(8, 6, 12);
     this.editorCamera.lookAt(0, 1.5, 0);
 
@@ -542,7 +548,65 @@ export class SceneEngine {
 
   private onResize = (): void => {
     this.resize();
+    if (this.currentViewFromId) this.lookThroughProjector();
   };
+
+  /**
+   * v8: put the orbit camera at the current projector's lens, aimed at the middle of its
+   * image (lens shift included), with a field of view that shows the whole image on this
+   * screen's shape. Orbiting from there still works; any preset or Fit leaves the view.
+   */
+  private lookThroughProjector(): void {
+    const projector = this.lastProjectors.find((p) => p.id === this.currentViewFromId);
+    if (!this.editorCamera || !this.controls || !projector) return;
+    const cam = buildProjectorCamera(projector.optics, getProjectorWorldMatrix(projector));
+    const { throwRatio, aspectRatio, lensShiftH, lensShiftV } = projector.optics;
+    const tanHalfW = 1 / (2 * throwRatio);
+    const tanHalfH = tanHalfW / aspectRatio;
+    // Direction to the image centre in the projector's own frame (−Z forward).
+    const centre = new THREE.Vector3(lensShiftH * 2 * tanHalfW, lensShiftV * 2 * tanHalfH, -1).applyQuaternion(cam.quaternion);
+    const up = new THREE.Vector3(0, 1, 0).applyQuaternion(cam.quaternion);
+    const viewAspect = this.editorCamera.aspect || 1;
+    const margin = 1.12;
+    const tanHalfFov = Math.max(tanHalfH, tanHalfW / viewAspect) * margin;
+    this.focusTween = null;
+    this.editorCamera.fov = THREE.MathUtils.clamp((2 * Math.atan(tanHalfFov) * 180) / Math.PI, 5, 120);
+    this.editorCamera.updateProjectionMatrix();
+    this.editorCamera.position.copy(cam.position);
+    this.editorCamera.up.copy(up);
+    const distance = Math.max(1, projector.optics.nearLimit * 4);
+    const target = cam.position.clone().addScaledVector(centre.normalize(), distance);
+    this.editorCamera.lookAt(target);
+    this.controls.target.copy(target);
+    this.controls.update();
+  }
+
+  /** v8: frame every screen, object and projector (orbit direction kept). */
+  frameAll(): boolean {
+    if (!this.editorCamera || !this.controls) return false;
+    const box = new THREE.Box3();
+    for (const [id, obj] of this.objectMeshes) {
+      const kind = this.sceneObjects.find((o) => o.id === id)?.type;
+      if (kind !== 'floor' && obj.visible) box.expandByObject(obj);
+    }
+    for (const visual of this.projectorVisuals.values()) box.expandByObject(visual.body);
+    if (box.isEmpty()) return false;
+    const sphere = box.getBoundingSphere(new THREE.Sphere());
+    const radius = Math.max(0.5, sphere.radius);
+    const vFov = THREE.MathUtils.degToRad(this.editorCamera.fov);
+    const hFov = 2 * Math.atan(Math.tan(vFov / 2) * (this.editorCamera.aspect || 1));
+    const distance = (radius / Math.sin(Math.min(vFov, hFov) / 2)) * 1.05;
+    const dir = this.editorCamera.position.clone().sub(this.controls.target).normalize();
+    if (dir.lengthSq() === 0) dir.set(0, 0.3, 1).normalize();
+    this.focusTween = {
+      from: this.editorCamera.position.clone(),
+      to: sphere.center.clone().addScaledVector(dir, distance),
+      fromTarget: this.controls.target.clone(),
+      toTarget: sphere.center.clone(),
+      start: performance.now(),
+    };
+    return true;
+  }
 
   private resize(): void {
     if (!this.renderer || !this.editorCamera) return;
@@ -583,8 +647,26 @@ export class SceneEngine {
     if (!this.webglAvailable || this.disposed) return;
     this.syncRevision += 1;
 
-    if (state.viewPreset !== this.currentViewPreset) {
+    this.lastProjectors = state.projectors;
+    if (state.viewFromProjectorId !== this.currentViewFromId) {
+      this.currentViewFromId = state.viewFromProjectorId;
+      if (state.viewFromProjectorId) {
+        this.lookThroughProjector();
+      } else if (this.editorCamera) {
+        // Back to the orbit camera: restore its lens and re-apply the chosen preset.
+        this.editorCamera.fov = EDITOR_FOV;
+        this.editorCamera.updateProjectionMatrix();
+        this.currentViewPreset = state.viewPreset === 'persp' ? 'top' : 'persp';
+      }
+    }
+
+    if (state.viewPreset !== this.currentViewPreset && !this.currentViewFromId) {
       this.setViewPreset(state.viewPreset);
+    }
+    if (state.frameAllRequest !== this.handledFrameAllRequest) {
+      this.handledFrameAllRequest = state.frameAllRequest;
+      this.sceneObjects = state.sceneObjects;
+      this.frameAll();
     }
 
     if (state.transformMode !== this.currentTransformMode) {

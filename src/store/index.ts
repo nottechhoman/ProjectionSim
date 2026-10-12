@@ -191,6 +191,12 @@ interface AppState extends PersistedStateSlice {
   /** v6: simplified viewer layout on phones (the full editor is one tap away). */
   phoneView: boolean;
   setPhoneView: (on: boolean) => void;
+  /** v8: look through this projector's lens in the 3D view (not saved with the project). */
+  viewFromProjectorId: string | null;
+  setViewFromProjector: (id: string | null) => void;
+  /** v8: bumped to ask the 3D view to fit the whole scene. */
+  frameAllRequest: number;
+  frameAll: () => void;
   // v4 show control (sections, cues, play mode)
   playMode: PlayMode;
   setPlayMode: (mode: PlayMode) => void;
@@ -592,7 +598,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ sceneObjects: s.sceneObjects.map((o) => (o.id === id ? { ...o, uvAtlas: on } : o)) }));
   },
   setDisplayUnit: (u) => set({ displayUnit: u }),
-  setViewPreset: (preset) => set({ viewPreset: preset }),
+  setViewPreset: (preset) => set({ viewPreset: preset, viewFromProjectorId: null }),
   setMaterialPreviewMode: (mode) => set({ materialPreviewMode: mode }),
   addMapping: (kind, screenIds) => {
     const state = get();
@@ -811,6 +817,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
     set({ phoneView: on });
   },
+  viewFromProjectorId: null,
+  setViewFromProjector: (id) => set({ viewFromProjectorId: id }),
+  frameAllRequest: 0,
+  frameAll: () => set((s) => ({ frameAllRequest: s.frameAllRequest + 1, viewFromProjectorId: null })),
   playMode: 'play',
   setPlayMode: (mode) => set({ playMode: mode }),
   cuesPanelVisible: false,

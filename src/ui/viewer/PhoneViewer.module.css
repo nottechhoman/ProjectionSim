@@ -120,6 +120,9 @@
 .chip,
 .chipOn {
   flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-height: 38px;
   padding: 0 14px;
   font: inherit;
@@ -132,6 +135,10 @@
   color: var(--text);
   background: var(--surface-2);
   border: 1px solid var(--line);
+}
+
+.chipOn .dot {
+  box-shadow: 0 0 0 2px #06121a;
 }
 
 .chipOn {
@@ -255,4 +262,171 @@
   border-radius: 12px;
   cursor: pointer;
   flex-shrink: 0;
+}
+
+/* v8: header icon buttons (open file, share) */
+.iconBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  color: var(--text);
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+/* v8: Fit / full screen buttons floating over the 3D view */
+.stageTools {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 5;
+}
+
+.floatBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  font-size: 18px;
+  color: var(--text);
+  background: rgb(20 22 26 / 72%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  cursor: pointer;
+}
+
+.floatTopRight {
+  position: absolute;
+  top: calc(env(safe-area-inset-top, 0px) + 10px);
+  right: calc(env(safe-area-inset-right, 0px) + 10px);
+  z-index: 5;
+}
+
+.lensBadge {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  max-width: calc(100% - 80px);
+  padding: 4px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #06121a;
+  background: var(--accent);
+  border-radius: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  z-index: 5;
+  pointer-events: none;
+}
+
+/* v8: full screen — only the 3D view stays */
+.immersive .header,
+.immersive .sheet,
+.immersive .transport {
+  display: none;
+}
+
+/*
+ * v8: phone on its side — the 3D view takes the left of the screen and the controls
+ * become a column on the right, instead of covering most of the (short) height.
+ */
+@media (orientation: landscape) and (max-height: 540px) {
+  .viewer {
+    display: grid;
+    grid-template-columns: 1fr minmax(240px, 36%);
+    grid-template-rows: auto 1fr auto;
+  }
+
+  .stage {
+    grid-column: 1;
+    grid-row: 1 / -1;
+    padding-left: env(safe-area-inset-left, 0px);
+  }
+
+  .header,
+  .sheet,
+  .transport {
+    grid-column: 2;
+    padding-right: calc(env(safe-area-inset-right, 0px) + 10px);
+    border-left: 1px solid var(--line);
+  }
+
+  .header {
+    padding-top: 8px;
+    gap: 6px;
+  }
+
+  .logo {
+    display: none;
+  }
+
+  .sheet {
+    min-height: 0;
+    margin-top: 0;
+    border-radius: 0;
+    border-top: none;
+    padding-top: 6px;
+    overflow-y: auto;
+  }
+
+  .sheetOpen {
+    max-height: none;
+  }
+
+  .chips {
+    flex-wrap: wrap;
+    overflow-x: visible;
+  }
+
+  /* Numbers replace the chips in the column instead of landing below them, out of sight. */
+  .sheetOpen .chips {
+    display: none;
+  }
+
+  .details {
+    overflow: visible;
+  }
+
+  .transport {
+    gap: 6px;
+  }
+
+  .play,
+  .playOn {
+    width: 44px;
+    height: 44px;
+  }
+
+  .stop {
+    width: 36px;
+  }
+
+  .timecode {
+    font-size: 14px;
+  }
+
+  .go {
+    min-width: 56px;
+    height: 44px;
+  }
+
+  .transport {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 8px);
+  }
+
+  .immersive {
+    grid-template-columns: 1fr;
+  }
 }

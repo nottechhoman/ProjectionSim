@@ -3,6 +3,7 @@ import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
 import { startBridge, type RunningBridge } from './tools/osc-bridge/bridge.mjs';
+import { serviceWorkerSource } from './tools/pwa/serviceWorker.mjs';
 
 /**
  * Dev only: run the OSC → WebSocket bridge together with the dev server so OSC
@@ -45,10 +46,39 @@ function oscBridgePlugin(): Plugin {
   };
 }
 
+/**
+ * v8: write sw.js next to the build so the installed web app works offline. It precaches
+ * every file of this build plus the icons and manifest from public/ (see tools/pwa).
+ */
+function serviceWorkerPlugin(): Plugin {
+  const fromPublic = [
+    'manifest.webmanifest',
+    'favicon.svg',
+    'logo.svg',
+    'icons/icon-192.png',
+    'icons/icon-512.png',
+    'icons/icon-maskable-512.png',
+    'icons/apple-touch-icon.png',
+  ];
+  return {
+    name: 'projectionsim-service-worker',
+    apply: 'build',
+    generateBundle(_options, bundle) {
+      const built = Object.keys(bundle).filter((f) => !f.endsWith('.map') && f !== 'index.html');
+      const files = [...built, ...fromPublic].sort();
+      // The version changes whenever any built file name (content hash) changes.
+      let h = 0;
+      for (const ch of files.join('|')) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
+      const version = (h >>> 0).toString(36);
+      this.emitFile({ type: 'asset', fileName: 'sw.js', source: serviceWorkerSource(version, files) });
+    },
+  };
+}
+
 export default defineConfig(({ mode }) => ({
   // GitHub Pages project site: https://<user>.github.io/ProjectionSim/
   base: mode === 'pages' ? '/ProjectionSim/' : '/',
-  plugins: [react(), oscBridgePlugin()],
+  plugins: [react(), oscBridgePlugin(), serviceWorkerPlugin()],
   test: {
     globals: true,
     environment: 'node',
