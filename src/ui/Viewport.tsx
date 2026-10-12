@@ -163,6 +163,8 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     selectedObjectId: state.selectedObjectId,
     selectedProjectorId: state.selectedProjectorId,
     viewPreset: state.viewPreset,
+    viewFromProjectorId: state.viewFromProjectorId,
+    frameAllRequest: state.frameAllRequest,
     transformMode: state.transformMode,
     materialPreviewMode: state.materialPreviewMode,
     projectionCompositeMode: state.projectionCompositeMode,

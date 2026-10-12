@@ -69,6 +69,7 @@ export function MediaDock() {
           {formatTimecode(t, show.fps)}
         </span>
         {profile !== 'phone' ? <span className={styles.trackTime}>/ {formatTimecode(track.durationSec, show.fps)}</span> : null}
+{profile !== 'phone' ? (
         <select
           className={styles.targetSelect}
           value={rate}
@@ -80,6 +81,7 @@ export function MediaDock() {
             <option key={r} value={r}>{r}×</option>
           ))}
         </select>
+        ) : null}
         {profile !== 'phone' ? (
           <select
             className={styles.targetSelect}
