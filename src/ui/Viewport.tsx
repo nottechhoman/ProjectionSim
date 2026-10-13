@@ -1,13 +1,37 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { SceneEngine } from '../scene/SceneEngine';
 import { useAppStore } from '../store';
 import { transport } from '../playback/clock';
 import { addCueAtPlayhead, go, jumpCue, stepFrame, stop, toggleLoopSection, togglePlay } from '../playback/controls';
 import { mediaTextureCache } from '../media';
+import type { PaneView } from '../types';
+import { extraPaneCount, layoutGrid, paneViewLabel, resolvePaneView } from './multiview/layouts';
+import styles from './multiview/Multiview.module.css';
 
 export function Viewport({ viewOnly = false }: { viewOnly?: boolean } = {}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const engineRef = useRef<SceneEngine | null>(null);
+  const [engine, setEngine] = useState<SceneEngine | null>(null);
+  const layout = useAppStore((s) => (viewOnly ? 'single' : s.viewLayout));
+  const extraViews = useAppStore((s) => s.extraViews);
+  const projectors = useAppStore((s) => s.projectors);
+  const setExtraView = useAppStore((s) => s.setExtraView);
+  const paneCanvases = useRef<(HTMLCanvasElement | null)[]>([null, null, null]);
+  const paneCount = extraPaneCount(layout);
+  const projectorIds = projectors.map((p) => p.id);
+  const views = extraViews.map((v) => resolvePaneView(v, projectorIds)) as PaneView[];
+  const viewsKey = views.slice(0, paneCount).join('|');
+
+  useEffect(() => {
+    if (!engine) return;
+    const specs = [];
+    for (let i = 0; i < paneCount; i++) {
+      const canvas = paneCanvases.current[i];
+      if (canvas) specs.push({ canvas, view: views[i] });
+    }
+    engine.setExtraPanes(specs);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, paneCount, viewsKey]);
 
   useEffect(() => {
     engineRef.current?.setViewOnly(viewOnly);
@@ -19,6 +43,7 @@ export function Viewport({ viewOnly = false }: { viewOnly?: boolean } = {}) {
 
     const engine = new SceneEngine(canvas);
     engineRef.current = engine;
+    setEngine(engine);
     engine.setViewOnly(viewOnly);
 
     engine.setCallbacks({
@@ -150,10 +175,57 @@ export function Viewport({ viewOnly = false }: { viewOnly?: boolean } = {}) {
       unsub();
       engine.dispose();
       engineRef.current = null;
+      setEngine(null);
     };
   }, []);
 
-  return <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />;
+  const grid = layoutGrid(layout);
+  const projectorName = (id: string) => projectors.find((p) => p.id === id)?.name ?? null;
+  const options: PaneView[] = [
+    'persp',
+    'top',
+    'front',
+    'side',
+    ...projectorIds.map((id) => `projector:${id}` as PaneView),
+    ...projectorIds.map((id) => `output:${id}` as PaneView),
+  ];
+
+  return (
+    <div
+      className={styles.grid}
+      style={{ gridTemplateColumns: grid.columns, gridTemplateRows: grid.rows }}
+      data-testid="viewport-grid"
+      data-layout={layout}
+    >
+      <div className={styles.pane} style={{ gridArea: grid.areas[0] }}>
+        <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+        {paneCount > 0 ? <span className={`${styles.label} ${styles.mainLabel}`}>Main view · edit here</span> : null}
+      </div>
+      {Array.from({ length: paneCount }, (_, i) => (
+        <div key={i} className={styles.pane} style={{ gridArea: grid.areas[i + 1] }} data-testid={`view-pane-${i + 1}`}>
+          <canvas
+            ref={(el) => {
+              paneCanvases.current[i] = el;
+            }}
+            className={styles.paneCanvas}
+            title="Drag to orbit / pan, scroll to zoom, double-click to re-frame, click to select"
+          />
+          <select
+            className={styles.label}
+            value={views[i]}
+            onChange={(e) => setExtraView(i, e.target.value as PaneView)}
+            aria-label={`View ${i + 2}`}
+          >
+            {options.map((v) => (
+              <option key={v} value={v}>
+                {paneViewLabel(v, projectorName)}
+              </option>
+            ))}
+          </select>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {

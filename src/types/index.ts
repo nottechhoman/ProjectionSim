@@ -540,3 +540,16 @@ export interface Show {
   tracks: Track[];
   activeTrackId: string;
 }
+
+// ---------------------------------------------------------------------------
+// v9: multiview and workspace modes
+// ---------------------------------------------------------------------------
+
+/** How the 3D viewport is split. The first pane is always the main (editing) view. */
+export type ViewLayout = 'single' | 'split' | 'quad' | 'onePlusThree';
+
+/** What an extra pane shows: an orbit view, a projector's lens, or a projector's output feed. */
+export type PaneView = 'persp' | 'top' | 'front' | 'side' | `projector:${string}` | `output:${string}`;
+
+/** disguise-style workspaces: each one arranges panels and views for one job. */
+export type WorkspaceMode = 'stage' | 'mapping' | 'previz' | 'show' | 'output';
