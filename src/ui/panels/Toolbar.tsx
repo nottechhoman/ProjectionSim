@@ -8,6 +8,8 @@ import styles from './Toolbar.module.css';
 import { serializeProject } from '../../persistence';
 import { useDeviceProfile } from '../useDeviceProfile';
 import { buildViewLink } from '../viewer/shareLink';
+import { SET_PIECES, STAGE_PRESETS } from '../../stage/presets';
+import { VIEW_LAYOUTS, WORKSPACE_MODES } from '../multiview/layouts';
 
 const LOGO_URL = `${import.meta.env.BASE_URL}logo.svg`;
 
@@ -60,6 +62,13 @@ export function Toolbar({ compact = false }: ToolbarProps) {
   const exportCalculationHtml = useAppStore((s) => s.exportCalculationHtml);
   const setPhoneView = useAppStore((s) => s.setPhoneView);
   const deviceProfile = useDeviceProfile();
+  const viewLayout = useAppStore((s) => s.viewLayout);
+  const setViewLayout = useAppStore((s) => s.setViewLayout);
+  const workspaceMode = useAppStore((s) => s.workspaceMode);
+  const setWorkspaceMode = useAppStore((s) => s.setWorkspaceMode);
+  const applyStagePreset = useAppStore((s) => s.applyStagePreset);
+  const addSetPiece = useAppStore((s) => s.addSetPiece);
+  const currentMode = WORKSPACE_MODES.find((m) => m.id === workspaceMode)?.label ?? 'Mode';
 
   const copyPhoneLink = async () => {
     const snapshot = useAppStore.getState().getSnapshot();
@@ -172,15 +181,50 @@ export function Toolbar({ compact = false }: ToolbarProps) {
           )}
         </Menu>
 
-        <Menu label={currentView} title="Camera view">
+        <Menu label="Stage" testId="stage-menu" title="Built-in stage presets and set pieces">
           {(close) => (
-            <MenuSection title="View">
-              {VIEW_PRESETS.map(({ id, label }) => (
-                <MenuItem key={id} selected={viewPreset === id} onSelect={() => { setViewPreset(id); close(); }}>
-                  {label === 'Persp' ? 'Perspective' : label}
-                </MenuItem>
-              ))}
-            </MenuSection>
+            <>
+              <MenuSection title="Stage presets (replace scene)">
+                {STAGE_PRESETS.map((p) => (
+                  <MenuItem
+                    key={p.id}
+                    title={p.description}
+                    onSelect={() => {
+                      close();
+                      if (window.confirm(`Load "${p.name}"? This replaces the current scene (Undo brings it back).\n\n${p.description}`)) {
+                        applyStagePreset(p.id);
+                      }
+                    }}
+                  >
+                    {p.name}
+                  </MenuItem>
+                ))}
+              </MenuSection>
+              <MenuSection title="Set pieces (add)">
+                {SET_PIECES.map((p) => (
+                  <MenuItem key={p.id} onSelect={() => { addSetPiece(p.id); close(); }}>
+                    {p.name}
+                  </MenuItem>
+                ))}
+              </MenuSection>
+            </>
+          )}
+        </Menu>
+
+        <Menu label={viewLayout === 'single' ? currentView : `${currentView} · ${VIEW_LAYOUTS.find((l) => l.id === viewLayout)?.label}`} testId="view-menu" title="Camera view and multiview layout">
+          {(close) => (
+            <>
+              <MenuSection title="Main view">
+                {VIEW_PRESETS.map(({ id, label }) => (
+                  <MenuItem key={id} selected={viewPreset === id} onSelect={() => { setViewPreset(id); close(); }}>
+                    {label === 'Persp' ? 'Perspective' : label}
+                  </MenuItem>
+                ))}
+              </MenuSection>
+              <MenuSection title="Multiview layout">
+                <MenuSegments options={VIEW_LAYOUTS} value={viewLayout} onChange={setViewLayout} />
+              </MenuSection>
+            </>
           )}
         </Menu>
 
@@ -207,6 +251,35 @@ export function Toolbar({ compact = false }: ToolbarProps) {
           </button>
         </div>
       </div>
+
+      {compact ? (
+        <Menu label={currentMode} testId="mode-menu" title="Workspace mode">
+          {(close) => (
+            <MenuSection title="Mode">
+              {WORKSPACE_MODES.map((m) => (
+                <MenuItem key={m.id} title={m.title} selected={workspaceMode === m.id} onSelect={() => { setWorkspaceMode(m.id); close(); }}>
+                  {m.label}
+                </MenuItem>
+              ))}
+            </MenuSection>
+          )}
+        </Menu>
+      ) : (
+        <div className={styles.segmented} role="group" aria-label="Workspace mode" data-testid="mode-switch">
+          {WORKSPACE_MODES.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={workspaceMode === m.id ? styles.on : undefined}
+              onClick={() => setWorkspaceMode(m.id)}
+              title={m.title}
+              aria-pressed={workspaceMode === m.id}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      )}
 
       <div className={styles.spacer} />
 

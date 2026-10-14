@@ -56,6 +56,7 @@ import { createFloor } from './objects/createFloor';
 import { createBox } from './objects/createBox';
 import { createCurvedScreen } from './objects/createCurvedScreen';
 import { FrustumHelper } from './helpers/FrustumHelper';
+import { MultiviewPanes, type PaneSpec } from './MultiviewPanes';
 import { mediaTextureCache, modelCache } from '../media';
 import { cloneModelGroup } from './ModelLoader';
 import { computeProjectorLookAtQuaternion, rollFromProjectorQuaternion } from '../optics/lookAt';
@@ -380,6 +381,13 @@ export class SceneEngine {
   private readonly occlusionDepthSingle = new Map<OcclusionDepthKey, THREE.Texture | null>();
   private readonly occlusionDepthMulti = new Map<OcclusionDepthKey, THREE.Texture[] | null>();
   private currentDepthResolution = depthPassResolution();
+  /** v9: extra multiview panes (top / front / side / through projector / output). */
+  private readonly panes = new MultiviewPanes({
+    sceneBox: () => this.stageBounds(),
+    projectors: () => this.lastProjectors,
+    feedCanvas: (id) => this.feedPass.getCanvas(id),
+    pick: (ndc, camera) => this.pickAt(ndc, camera),
+  });
 
   constructor(canvas: HTMLCanvasElement) {
     this.canvas = canvas;
@@ -581,16 +589,27 @@ export class SceneEngine {
     this.controls.update();
   }
 
-  /** v8: frame every screen, object and projector (orbit direction kept). */
-  frameAll(): boolean {
-    if (!this.editorCamera || !this.controls) return false;
+  /** Screens, objects and projector bodies (floor left out). */
+  private stageBounds(): THREE.Box3 {
     const box = new THREE.Box3();
     for (const [id, obj] of this.objectMeshes) {
       const kind = this.sceneObjects.find((o) => o.id === id)?.type;
       if (kind !== 'floor' && obj.visible) box.expandByObject(obj);
     }
     for (const visual of this.projectorVisuals.values()) box.expandByObject(visual.body);
-    if (box.isEmpty()) return false;
+    if (box.isEmpty()) box.setFromCenterAndSize(new THREE.Vector3(0, 1.5, 0), new THREE.Vector3(8, 3, 8));
+    return box;
+  }
+
+  /** v9: show these extra panes next to the main view (empty = single view). */
+  setExtraPanes(specs: PaneSpec[]): void {
+    this.panes.setPanes(specs);
+  }
+
+  /** v8: frame every screen, object and projector (orbit direction kept). */
+  frameAll(): boolean {
+    if (!this.editorCamera || !this.controls) return false;
+    const box = this.stageBounds();
     const sphere = box.getBoundingSphere(new THREE.Sphere());
     const radius = Math.max(0.5, sphere.radius);
     const vFov = THREE.MathUtils.degToRad(this.editorCamera.fov);
@@ -663,11 +682,6 @@ export class SceneEngine {
     if (state.viewPreset !== this.currentViewPreset && !this.currentViewFromId) {
       this.setViewPreset(state.viewPreset);
     }
-    if (state.frameAllRequest !== this.handledFrameAllRequest) {
-      this.handledFrameAllRequest = state.frameAllRequest;
-      this.sceneObjects = state.sceneObjects;
-      this.frameAll();
-    }
 
     if (state.transformMode !== this.currentTransformMode) {
       this.currentTransformMode = state.transformMode;
@@ -692,6 +706,12 @@ export class SceneEngine {
       state.sceneObjects,
       this.gizmoDragging,
     );
+    // After objects and projectors are synced, so a new scene (stage preset) frames itself.
+    if (state.frameAllRequest !== this.handledFrameAllRequest) {
+      this.handledFrameAllRequest = state.frameAllRequest;
+      this.frameAll();
+      this.panes.resetAll();
+    }
     if (state.measureMode) {
       this.transformControls?.detach();
     } else {
@@ -928,8 +948,13 @@ export class SceneEngine {
     const rect = this.canvas.getBoundingClientRect();
     this.pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
     this.pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    this.pickAt(this.pointer, this.editorCamera);
+  };
 
-    this.raycaster.setFromCamera(this.pointer, this.editorCamera);
+  /** Select (or add a measure point) at a view position, for the main view and multiview panes. */
+  private pickAt(ndc: THREE.Vector2, camera: THREE.Camera): void {
+    if (this.viewOnly) return;
+    this.raycaster.setFromCamera(ndc, camera);
 
     if (this.measureMode) {
       const point = this.pickWorldPoint();
@@ -963,7 +988,7 @@ export class SceneEngine {
       }
     }
     if (id) this.callbacks.onSelect?.(id);
-  };
+  }
 
   private syncSceneObjects(sceneObjects: SceneObject[], skipTransforms = false): void {
     const nextIds = new Set(sceneObjects.map((obj) => obj.id));
@@ -1412,6 +1437,9 @@ export class SceneEngine {
       }
     }
 
+    if (this.panes.count > 0 && this.transformControls) {
+      this.panes.render(this.renderer, this.editorScene, this.canvas, [this.transformControls.getHelper()]);
+    }
     this.renderer.render(this.editorScene, this.editorCamera);
 
     for (const [mesh, material] of savedMaterials) {
@@ -1561,7 +1589,7 @@ export class SceneEngine {
 
   private renderRasterPreviews(): void {
     if (!this.renderer) return;
-    if (!this.rasterPreviewPanelVisible) {
+    if (!this.rasterPreviewPanelVisible && !this.panes.needsFeeds) {
       if (this.rasterPreviewWasVisible) this.feedPass.releaseTargets();
       this.rasterPreviewWasVisible = false;
       return;
@@ -1848,6 +1876,7 @@ export class SceneEngine {
     this.disposed = true;
 
     window.removeEventListener('resize', this.onResize);
+    this.panes.dispose();
     this.canvas.removeEventListener('pointerdown', this.onPointerDown);
     this.fly?.dispose();
     this.fly = null;

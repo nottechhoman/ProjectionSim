@@ -34,7 +34,12 @@ import type {
   ViewPreset,
   AnalysisQuality,
   CalculationTargetSide,
+  PaneView,
+  ViewLayout,
+  WorkspaceMode,
 } from '../types';
+import { buildSetPiece, buildStagePreset, type SetPieceId, type StagePresetId, STAGE_PRESETS } from '../stage/presets';
+import { readMultiviewPrefs, writeMultiviewPrefs, workspaceLayout } from '../ui/multiview/layouts';
 import { applyLookAtToProjector } from '../optics/lookAt';
 import { validateOptics } from '../optics/validate';
 import { computeNominalProjection } from '../optics/nominal';
@@ -251,6 +256,18 @@ interface AppState extends PersistedStateSlice {
   addBox: () => void;
   addCurvedScreen: () => void;
   addLedWall: () => void;
+  /** v9: replace the scene with a built-in stage template. */
+  applyStagePreset: (id: StagePresetId) => void;
+  /** v9: add one ready-made set piece (screen, deck, proscenium…). */
+  addSetPiece: (id: SetPieceId) => void;
+  /** v9: viewport split and what each extra pane shows (UI preference, not saved in the project). */
+  viewLayout: ViewLayout;
+  extraViews: [PaneView, PaneView, PaneView];
+  setViewLayout: (layout: ViewLayout) => void;
+  setExtraView: (index: number, view: PaneView) => void;
+  /** v9: current workspace mode. */
+  workspaceMode: WorkspaceMode;
+  setWorkspaceMode: (mode: WorkspaceMode) => void;
   updateSceneObjectLedWall: (
     id: string,
     patch: {
@@ -1298,6 +1315,80 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
     addDirectMappingFor(id, get, set);
     get().recomputeCalculations();
+  },
+  applyStagePreset: (id) => {
+    const preset = STAGE_PRESETS.find((p) => p.id === id);
+    if (!preset) return;
+    pushSceneHistory(get, set);
+    const scene = buildStagePreset(id);
+    const multi = scene.projectors.length > 1;
+    set((s) => ({
+      projectName: preset.name,
+      sceneObjects: scene.sceneObjects,
+      projectors: scene.projectors,
+      show: scene.show,
+      calculationTargetId: scene.calculationTargetId,
+      selectedObjectId: null,
+      selectedProjectorId: scene.projectors[0]?.id ?? s.selectedProjectorId,
+      selectedLayerId: activeTrack(scene.show).layers[0]?.id ?? null,
+      selectedMappingId: scene.show.mappings[0]?.id ?? null,
+      viewFromProjectorId: null,
+      projectionCompositeMode: multi ? 'blended' : 'solo',
+      blendSettings: multi ? { ...s.blendSettings, mode: 'auto' } : s.blendSettings,
+      extraViews: s.extraViews.map((v) =>
+        v.startsWith('projector:') || v.startsWith('output:')
+          ? (`${v.split(':')[0]}:${scene.projectors[0]?.id ?? ''}` as PaneView)
+          : v,
+      ) as [PaneView, PaneView, PaneView],
+      frameAllRequest: s.frameAllRequest + 1,
+      projectMessage: `Loaded stage preset "${preset.name}" — Undo (Ctrl+Z) brings your scene back`,
+    }));
+    get().recomputeCalculations();
+  },
+  addSetPiece: (id) => {
+    pushSceneHistory(get, set);
+    const pieces = buildSetPiece(id);
+    set((s) => ({
+      sceneObjects: [...s.sceneObjects, ...pieces],
+      selectedObjectId: pieces[0]?.id ?? s.selectedObjectId,
+    }));
+    for (const piece of pieces) addDirectMappingFor(piece.id, get, set);
+    // New screens should also be painted by every projector's locked Perspective mapping.
+    const screenIds = pieces.filter((p) => p.receivesProjection).map((p) => p.id);
+    if (screenIds.length > 0) {
+      set((s) => ({
+        show: {
+          ...s.show,
+          mappings: s.show.mappings.map((m) =>
+            m.kind === 'perspective' && m.perspective?.lockToProjectorId ? { ...m, screenIds: [...m.screenIds, ...screenIds] } : m,
+          ),
+        },
+      }));
+    }
+    set({ projectMessage: `Added ${pieces.map((p) => p.name).join(', ')}` });
+    get().recomputeCalculations();
+  },
+  viewLayout: readMultiviewPrefs().layout,
+  extraViews: readMultiviewPrefs().views,
+  setViewLayout: (layout) => {
+    set({ viewLayout: layout });
+    writeMultiviewPrefs(get().viewLayout, get().extraViews);
+  },
+  setExtraView: (index, view) => {
+    set((s) => {
+      const next = [...s.extraViews] as [PaneView, PaneView, PaneView];
+      next[index] = view;
+      return { extraViews: next };
+    });
+    writeMultiviewPrefs(get().viewLayout, get().extraViews);
+  },
+  workspaceMode: 'stage',
+  setWorkspaceMode: (mode) => {
+    const s = get();
+    const firstProjector = (s.projectors.find((p) => p.id === s.selectedProjectorId) ?? s.projectors[0])?.id ?? '';
+    const { layout, views, panels } = workspaceLayout(mode, s.projectors.map((p) => p.id), firstProjector, s.extraViews);
+    set({ workspaceMode: mode, viewLayout: layout, extraViews: views, ...panels });
+    writeMultiviewPrefs(layout, views);
   },
   updateSceneObjectLedWall: (id, patch) => {
     pushSceneHistory(get, set);
