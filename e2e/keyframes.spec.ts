@@ -8,6 +8,10 @@ const keysOf = (page: import('@playwright/test').Page) =>
   });
 
 test('keyframes: add in the Inspector, auto-key, drag a diamond, delete with the Delete key', async ({ page }) => {
+  // Every key edit re-bakes the screen textures and projector feeds. Cheap on a real GPU,
+  // but about 1 s per edit with software WebGL (headless CI / cloud containers), and this
+  // test makes ~20 edits (the drag alone is 7), so it needs more than the default 30 s.
+  test.setTimeout(90_000);
   await page.setViewportSize({ width: 1400, height: 900 });
   await page.goto('/');
   await page.getByText('Checkerboard', { exact: true }).first().click();
