@@ -1,5 +1,6 @@
 import type { ControlAction } from './commands';
 import type { MidiEvent } from './midiParse';
+import { clampRateHz, DEFAULT_TIME_RATE_HZ } from './oscFeedback';
 
 /** A MIDI trigger: a note-on or a controller going high (value ≥ 64). channel 0 = any. */
 export type MidiTrigger = { kind: 'note'; channel: number; note: number } | { kind: 'cc'; channel: number; controller: number };
@@ -25,6 +26,17 @@ export interface ControlSettings {
   mtcOffsetSec: number;
   oscEnabled: boolean;
   oscUrl: string;
+  /** v10: send transport feedback as OSC (through the same bridge). Off by default. */
+  oscSendEnabled: boolean;
+  oscSendTargets: OscSendTarget[];
+  /** /show/time and /show/timecode rate while playing. */
+  oscSendRateHz: number;
+}
+
+export interface OscSendTarget {
+  id: string;
+  host: string;
+  port: number;
 }
 
 /**
@@ -52,6 +64,9 @@ export const DEFAULT_CONTROL_SETTINGS: ControlSettings = {
   mtcOffsetSec: 0,
   oscEnabled: oscOnByDefault(),
   oscUrl: 'ws://127.0.0.1:9100',
+  oscSendEnabled: false,
+  oscSendTargets: [],
+  oscSendRateHz: DEFAULT_TIME_RATE_HZ,
 };
 
 // v2: OSC now connects by default (v1 saved it off).
@@ -104,7 +119,29 @@ export function normalizeControlSettings(raw: unknown): ControlSettings {
     mtcOffsetSec: num(d.mtcOffsetSec, 0),
     oscEnabled: typeof d.oscEnabled === 'boolean' ? d.oscEnabled : DEFAULT_CONTROL_SETTINGS.oscEnabled,
     oscUrl: typeof d.oscUrl === 'string' && d.oscUrl ? d.oscUrl : DEFAULT_CONTROL_SETTINGS.oscUrl,
+    oscSendEnabled: d.oscSendEnabled === true,
+    oscSendTargets: Array.isArray(d.oscSendTargets)
+      ? d.oscSendTargets.flatMap((t, i): OscSendTarget[] => {
+          if (!t || typeof t !== 'object') return [];
+          const x = t as Record<string, unknown>;
+          const host = typeof x.host === 'string' ? x.host.trim() : '';
+          const port = Math.round(num(x.port, 0));
+          if (!isValidOscHost(host) || port < 1 || port > 65535) return [];
+          return [{ id: typeof x.id === 'string' ? x.id : `target-${i}`, host, port }];
+        })
+      : [],
+    oscSendRateHz: clampRateHz(num(d.oscSendRateHz, DEFAULT_TIME_RATE_HZ)),
   };
+}
+
+/** Host names / IPv4 / bracket-less IPv6 the bridge accepts as a send target. */
+export function isValidOscHost(host: string): boolean {
+  return /^[A-Za-z0-9.\-]+$/.test(host) || /^[0-9A-Fa-f:]+$/.test(host);
+}
+
+/** "host:port" as the bridge expects it (IPv6 in brackets). */
+export function oscTargetString(t: Pick<OscSendTarget, 'host' | 'port'>): string {
+  return t.host.includes(':') ? `[${t.host}]:${t.port}` : `${t.host}:${t.port}`;
 }
 
 /** The trigger an incoming event would create in learn mode (note-on / CC high). */

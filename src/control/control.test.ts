@@ -3,7 +3,7 @@ import { createTrack } from '../mapping/model';
 import { chaseDecision, chaseTimedOut } from './chase';
 import { findCue, parseBridgeMessage, parseControlMessage } from './commands';
 import { MtcDecoder, parseMidiMessage } from './midiParse';
-import { describeTrigger, normalizeControlSettings, triggerFromEvent, triggerMatches } from './settings';
+import { describeTrigger, normalizeControlSettings, oscTargetString, triggerFromEvent, triggerMatches } from './settings';
 
 const ascii = (s: string) => [...s].map((c) => c.charCodeAt(0));
 
@@ -109,5 +109,32 @@ describe('MTC chase', () => {
     expect(chaseTimedOut(null, 0)).toBe(true);
     expect(chaseTimedOut(1000, 1100)).toBe(false);
     expect(chaseTimedOut(1000, 1400)).toBe(true);
+  });
+});
+
+describe('v10: OSC send settings', () => {
+  it('defaults to off with no targets at 10 Hz', () => {
+    const s = normalizeControlSettings({});
+    expect(s.oscSendEnabled).toBe(false);
+    expect(s.oscSendTargets).toEqual([]);
+    expect(s.oscSendRateHz).toBe(10);
+  });
+
+  it('keeps valid targets, drops bad ones, clamps the rate', () => {
+    const s = normalizeControlSettings({
+      oscSendEnabled: true,
+      oscSendRateHz: 500,
+      oscSendTargets: [
+        { id: 'a', host: '127.0.0.1', port: 53000 },
+        { id: 'b', host: 'qlab.local', port: 53001 },
+        { id: 'c', host: 'bad host', port: 1 },
+        { id: 'd', host: '10.0.0.2', port: 70000 },
+        'nope',
+      ],
+    });
+    expect(s.oscSendEnabled).toBe(true);
+    expect(s.oscSendRateHz).toBe(60);
+    expect(s.oscSendTargets.map(oscTargetString)).toEqual(['127.0.0.1:53000', 'qlab.local:53001']);
+    expect(oscTargetString({ host: '::1', port: 9 })).toBe('[::1]:9');
   });
 });

@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useAppStore } from '../../store';
 import { useControl } from '../../control/service';
 import { CONTROL_ACTION_LABEL, type ControlAction } from '../../control/commands';
-import { describeTrigger } from '../../control/settings';
+import { describeTrigger, isValidOscHost, oscTargetString } from '../../control/settings';
+import { clampRateHz, MAX_TIME_RATE_HZ } from '../../control/oscFeedback';
 import { isCompactLayout } from '../deviceProfile';
 import { useDeviceProfile } from '../useDeviceProfile';
 import styles from './LayersPanel.module.css';
@@ -17,10 +18,20 @@ export function ControlPanel() {
   const setVisible = useAppStore((s) => s.setControlPanelVisible);
   const control = useControl();
   const [cueNumber, setCueNumber] = useState('1');
+  const [newHost, setNewHost] = useState('127.0.0.1');
+  const [newPort, setNewPort] = useState('53000');
   if (!visible) return null;
   const s = control.settings;
   const st = control.status;
   const learning = st.learning;
+  const newPortNum = Math.round(Number(newPort));
+  const newTargetValid = isValidOscHost(newHost.trim()) && newPortNum >= 1 && newPortNum <= 65535;
+  const addTarget = () => {
+    if (!newTargetValid) return;
+    const host = newHost.trim();
+    if (s.oscSendTargets.some((t) => t.host === host && t.port === newPortNum)) return;
+    control.update({ oscSendTargets: [...s.oscSendTargets, { id: `target-${Date.now().toString(36)}`, host, port: newPortNum }] });
+  };
 
   return (
     <div className={compact ? styles.compactShell : `${styles.shell} ${styles.shellRight}`} data-testid="control-panel">
@@ -173,6 +184,93 @@ export function ControlPanel() {
             <p className={styles.hint}>
               /show/go, /show/play, /show/pause, /show/toggle, /show/stop, /show/next, /show/prev, /show/cue N, /show/locate seconds. Test with{' '}
               <code>node tools/osc-bridge/send.mjs /show/go</code>.
+            </p>
+          </div>
+
+          <div className={styles.section} data-testid="osc-send-section">
+            <div className={styles.sectionTitle}>Send OSC (feedback)</div>
+            <label className={styles.checkRow}>
+              <input type="checkbox" checked={s.oscSendEnabled} onChange={(e) => control.update({ oscSendEnabled: e.target.checked })} data-testid="osc-send-enabled" />
+              Send OSC
+            </label>
+            <p className={styles.standby} data-testid="osc-send-status">
+              {!s.oscSendEnabled ? (
+                <>Off — nothing is sent.</>
+              ) : st.osc === 'connected' ? (
+                s.oscSendTargets.length > 0 ? (
+                  <>
+                    <b style={{ color: '#3ddc84' }}>● Sending</b> to {s.oscSendTargets.map(oscTargetString).join(', ')} through the bridge
+                  </>
+                ) : (
+                  <>
+                    <b style={{ color: '#e0c070' }}>● No targets</b> — add one below (or start the bridge with <code>--send host:port</code>).
+                  </>
+                )
+              ) : st.osc === 'connecting' ? (
+                <>◌ Connecting to the bridge…</>
+              ) : (
+                <>
+                  <b style={{ color: '#e06060' }}>● Not sending: can’t reach the OSC bridge</b> at {s.oscUrl}. Browsers can’t send OSC themselves — on this computer run{' '}
+                  <code>npm run osc-bridge</code> (with <code>npm run dev</code> it starts automatically). Retrying…
+                </>
+              )}
+            </p>
+            {s.oscSendTargets.map((t) => (
+              <div key={t.id} className={styles.cueRow} data-testid="osc-send-target">
+                <span style={{ flex: 1, fontSize: 12 }}>{oscTargetString(t)}</span>
+                <button
+                  type="button"
+                  className={styles.iconBtn}
+                  onClick={() => control.update({ oscSendTargets: s.oscSendTargets.filter((x) => x.id !== t.id) })}
+                  title="Remove target"
+                  aria-label={`Remove target ${oscTargetString(t)}`}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+            <div className={styles.cueRow}>
+              <input value={newHost} onChange={(e) => setNewHost(e.target.value)} aria-label="OSC target host" placeholder="host" style={{ flex: 2, minWidth: 0 }} />
+              <input
+                value={newPort}
+                onChange={(e) => setNewPort(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && addTarget()}
+                aria-label="OSC target port"
+                inputMode="numeric"
+                style={{ flex: 1, minWidth: 0, maxWidth: 70 }}
+              />
+              <button type="button" className={styles.addBtn} onClick={addTarget} disabled={!newTargetValid} data-testid="osc-send-add">
+                Add
+              </button>
+            </div>
+            <div className={styles.row}>
+              <label>Time rate Hz</label>
+              <input
+                type="number"
+                min={1}
+                max={MAX_TIME_RATE_HZ}
+                value={s.oscSendRateHz}
+                onChange={(e) => control.update({ oscSendRateHz: clampRateHz(Number(e.target.value)) })}
+                aria-label="OSC time rate"
+                data-testid="osc-send-rate"
+              />
+            </div>
+            <p className={styles.hint} data-testid="osc-send-time">
+              /show/time, /show/timecode while playing:{' '}
+              {st.oscLastTime ? `${st.oscLastTime.timecode} (${st.oscLastTime.seconds.toFixed(2)} s)` : 'none yet'}
+            </p>
+            <div className={styles.hint}>Last sent:</div>
+            <ol className={styles.hint} data-testid="osc-send-log" style={{ margin: '2px 0 0', paddingLeft: 18, maxHeight: 160, overflowY: 'auto' }}>
+              {st.oscSendLog.length === 0 ? <li style={{ listStyle: 'none', marginLeft: -18 }}>nothing yet</li> : null}
+              {st.oscSendLog.map((e, i) => (
+                <li key={`${e.at}-${i}`} style={e.error ? { color: '#e06060' } : undefined}>
+                  {e.error ? `Bridge: ${e.error}` : `${e.address} ${e.args.map((a) => JSON.stringify(a)).join(' ')}`}{' '}
+                  <span style={{ opacity: 0.6 }}>{new Date(e.at).toLocaleTimeString()}</span>
+                </li>
+              ))}
+            </ol>
+            <p className={styles.hint}>
+              Sent on change: /show/state, /show/cue, /show/section, /show/track, /show/go/ack. Works with every trigger (buttons, keys, MIDI, MTC, OSC).
             </p>
           </div>
         </div>

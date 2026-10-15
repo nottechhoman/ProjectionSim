@@ -72,7 +72,8 @@ export function parseControlMessage(text: string): ControlCommand | null {
 export type BridgeMessage =
   | { kind: 'hello'; udpPort: number | null }
   | { kind: 'osc'; address: string; args: unknown[]; from: string | null; command: ControlCommand | null }
-  | { kind: 'command'; command: ControlCommand };
+  | { kind: 'command'; command: ControlCommand }
+  | { kind: 'sendError'; message: string };
 
 /**
  * Messages from the OSC bridge: a hello (with the UDP port OSC goes to), every
@@ -87,6 +88,7 @@ export function parseBridgeMessage(text: string): BridgeMessage | null {
   }
   if (!data || typeof data !== 'object') return null;
   const d = data as Record<string, unknown>;
+  if (d.type === 'send-error') return { kind: 'sendError', message: typeof d.message === 'string' ? d.message : 'send failed' };
   if (d.type === 'hello') return { kind: 'hello', udpPort: typeof d.udpPort === 'number' ? d.udpPort : null };
   if (d.type === 'osc' && typeof d.address === 'string') {
     const command = d.command && typeof d.command === 'object' ? parseControlMessage(JSON.stringify(d.command)) : null;
