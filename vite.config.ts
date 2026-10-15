@@ -2,12 +2,14 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import type { Plugin } from 'vite';
-import { startBridge, type RunningBridge } from './tools/osc-bridge/bridge.mjs';
+import { DEFAULT_ALLOWED_ORIGINS, startBridge, type RunningBridge } from './tools/osc-bridge/bridge.mjs';
+import { bridgeOptions } from './tools/osc-bridge/options.mjs';
 import { serviceWorkerSource } from './tools/pwa/serviceWorker.mjs';
 
 /**
  * Dev only: run the OSC → WebSocket bridge together with the dev server so OSC
  * works with a plain `npm run dev`. Ports: OSC_UDP_PORT (9000), OSC_WS_PORT (9100);
+ * OSC_SEND_TARGETS / OSC_ALLOW_ORIGINS as for the standalone bridge (tools/osc-bridge/options.mjs);
  * OSC_BRIDGE=0 turns it off. If a port is taken (e.g. the standalone bridge is
  * already running) the dev server carries on and the app uses that bridge.
  */
@@ -25,11 +27,12 @@ function oscBridgePlugin(): Plugin {
       if (env.OSC_BRIDGE === '0' || env.VITEST) return;
       const logger = server.config.logger;
       if (!bridgeSlot.__projectionLabOscBridge) {
-        const udpPort = Number(env.OSC_UDP_PORT ?? 9000);
-        const wsPort = Number(env.OSC_WS_PORT ?? 9100);
+        const opts = bridgeOptions([], env);
         bridgeSlot.__projectionLabOscBridge = startBridge({
-          udpPort,
-          wsPort,
+          udpPort: opts.udpPort,
+          wsPort: opts.wsPort,
+          sendTargets: opts.sendTargets,
+          allowOrigins: [...DEFAULT_ALLOWED_ORIGINS, ...opts.extraOrigins],
           log: (line) => logger.info(`[osc] ${line}`, { timestamp: true }),
         }).then(
           (bridge) => {

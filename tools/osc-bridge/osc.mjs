@@ -51,21 +51,72 @@ export function decodeOsc(buf) {
   return [{ address, args }];
 }
 
-/** Encode a message (tests / sending); supports int, float and string arguments. */
-export function encodeOsc(address, args = []) {
+/**
+ * Encode a message. types (optional) gives one OSC type tag per argument
+ * ('i' int32, 'f' float32, 's' string, 'T' / 'F' booleans); without it numbers that
+ * are whole become 'i', others 'f', booleans 'T' / 'F'.
+ */
+export function encodeOsc(address, args = [], types) {
   const pad = (b) => Buffer.concat([b, Buffer.alloc(4 - (b.length % 4))]);
   const str = (s) => pad(Buffer.from(s, 'utf8'));
-  const parts = [str(address), str(',' + args.map((a) => (typeof a === 'string' ? 's' : Number.isInteger(a) ? 'i' : 'f')).join(''))];
-  for (const a of args) {
-    if (typeof a === 'string') parts.push(str(a));
-    else {
+  const tags = args.map((a, i) => {
+    const t = types?.[i];
+    if (t) return t;
+    if (typeof a === 'string') return 's';
+    if (typeof a === 'boolean') return a ? 'T' : 'F';
+    return Number.isInteger(a) ? 'i' : 'f';
+  });
+  const parts = [str(address), str(',' + tags.join(''))];
+  args.forEach((a, i) => {
+    const t = tags[i];
+    if (t === 's') parts.push(str(String(a)));
+    else if (t === 'i') {
       const b = Buffer.alloc(4);
-      if (Number.isInteger(a)) b.writeInt32BE(a);
-      else b.writeFloatBE(a);
+      b.writeInt32BE(Math.trunc(Number(a)) | 0);
+      parts.push(b);
+    } else if (t === 'f') {
+      const b = Buffer.alloc(4);
+      b.writeFloatBE(Number(a));
       parts.push(b);
     }
-  }
+    // 'T' / 'F' carry no data
+  });
   return Buffer.concat(parts);
+}
+
+const SEND_TYPES = new Set(['i', 'f', 's', 'T', 'F']);
+
+/**
+ * Validate a { type: 'send', address, args, types?, targets? } message from the app.
+ * Returns { address, args, types, targets } or an error string.
+ */
+export function parseSendRequest(data) {
+  if (!data || typeof data !== 'object' || data.type !== 'send') return 'not a send request';
+  const { address, args = [], types, targets = [] } = data;
+  if (typeof address !== 'string' || !address.startsWith('/') || address.length > 256) return 'bad address';
+  if (!Array.isArray(args) || args.length > 16) return 'bad args';
+  if (!args.every((a) => typeof a === 'string' || typeof a === 'boolean' || (typeof a === 'number' && Number.isFinite(a)))) return 'bad args';
+  if (types !== undefined && (typeof types !== 'string' || types.length !== args.length || ![...types].every((t) => SEND_TYPES.has(t)))) {
+    return 'bad types';
+  }
+  if (!Array.isArray(targets) || targets.length > 16) return 'bad targets';
+  const parsed = [];
+  for (const t of targets) {
+    const target = parseTarget(t);
+    if (!target) return `bad target ${JSON.stringify(t)}`;
+    parsed.push(target);
+  }
+  return { address, args, types, targets: parsed };
+}
+
+/** "host:port" → { host, port }, or null. */
+export function parseTarget(text) {
+  if (typeof text !== 'string') return null;
+  const m = /^\s*([A-Za-z0-9.\-]+|\[[0-9A-Fa-f:]+\]):(\d{1,5})\s*$/.exec(text);
+  if (!m) return null;
+  const port = Number(m[2]);
+  if (port < 1 || port > 65535) return null;
+  return { host: m[1].replace(/^\[|\]$/g, ''), port };
 }
 
 /** OSC address → JSON command the app understands, or null. */
