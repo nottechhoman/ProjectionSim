@@ -28,11 +28,21 @@ export function stop(): void {
   transport.seek(0);
 }
 
+/** Called after every GO, whatever triggered it (button, key, MIDI, MSC, OSC). */
+type GoListener = () => void;
+const goListeners = new Set<GoListener>();
+
+export function onGo(fn: GoListener): () => void {
+  goListeners.add(fn);
+  return () => goListeners.delete(fn);
+}
+
 /** GO: play from the cue we stand on, else jump to the next cue and play. */
 export function go(): void {
   const target = goTarget(track(), transport.time(), transport.playing, frameSec());
   if (target.seek !== null) transport.seek(target.seek);
   if (!transport.playing) transport.play();
+  for (const fn of goListeners) fn();
 }
 
 /** Step whole frames (pauses first). */
