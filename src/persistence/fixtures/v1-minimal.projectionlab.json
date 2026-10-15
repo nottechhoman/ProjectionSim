@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "savedAt": "2026-09-08T10:00:00.000Z",
+  "name": "v1 minimal",
+  "sceneObjects": [
+    {
+      "id": "screen-1",
+      "name": "Screen",
+      "type": "screen",
+      "transform": { "position": { "x": 0, "y": 1.5, "z": 0 }, "quaternion": [0, 0, 0, 1] },
+      "visibleInEditor": true,
+      "receivesProjection": true,
+      "blocksProjection": false,
+      "dimensions": { "width": 4, "height": 2.25 }
+    }
+  ],
+  "projectors": [
+    {
+      "id": "proj-1",
+      "name": "Projector 1",
+      "enabled": true,
+      "color": "#4fc3f7",
+      "transform": { "position": { "x": 0, "y": 1.5, "z": 5 }, "quaternion": [0, 0, 0, 1] },
+      "optics": {
+        "throwRatio": 1.5,
+        "resolution": { "width": 1920, "height": 1080 },
+        "aspectRatio": 1.7777777777777777,
+        "lensShiftH": 0,
+        "lensShiftV": 0,
+        "nearLimit": 0.1,
+        "farLimit": 100
+      },
+      "brightness": 1,
+      "testPattern": "uvGrid",
+      "mediaSource": "pattern",
+      "mediaAssetId": null
+    }
+  ],
+  "selectedObjectId": null,
+  "selectedProjectorId": "proj-1",
+  "displayUnit": "m",
+  "viewPreset": "persp",
+  "transformMode": "translate",
+  "leftPanelVisible": true,
+  "rightPanelVisible": true,
+  "bottomPanelVisible": true
+}

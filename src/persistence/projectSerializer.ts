@@ -1,11 +1,13 @@
-import { validateOptics } from '../optics/validate';
-import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, ProjectionSides, SceneObject } from '../types';
+import type { MaterialPreviewMode, MediaAssetRecord, ProjectionCompositeMode, ProjectorConfig, SceneObject } from '../types';
 import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA } from '../types';
 import { normalizeBlendSettings } from '../blending/advancedBlend';
 import { normalizePrevizSettings } from '../optics/illuminance';
-import { migrateLegacyContent } from '../mapping/migrate';
 import { normalizeShow, pruneMappingRefs } from '../mapping/model';
 import { DEFAULT_PROJECTOR_WARP, type ProjectorWarp } from '../types';
+import { ProjectValidationError } from './errors';
+import { migrateProject } from './migrations';
+
+export { ProjectValidationError };
 
 function normalizeWarp(raw: unknown): ProjectorWarp {
   const d = DEFAULT_PROJECTOR_WARP;
@@ -30,61 +32,12 @@ import {
 } from '../ui/panelLayout';
 import {
   PROJECT_FILE_VERSION,
-  PROJECT_FILE_VERSION_LEGACY,
-  PROJECT_FILE_VERSION_V2,
   type ProjectSnapshot,
   type ProjectSnapshotV3,
 } from './projectSchema';
 
-export class ProjectValidationError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'ProjectValidationError';
-  }
-}
-
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
-function validateTransform(raw: unknown): void {
-  if (!isObject(raw)) throw new ProjectValidationError('Invalid transform');
-  const pos = raw.position;
-  if (!isObject(pos)) throw new ProjectValidationError('Invalid transform.position');
-  for (const axis of ['x', 'y', 'z'] as const) {
-    if (typeof pos[axis] !== 'number' || !Number.isFinite(pos[axis])) {
-      throw new ProjectValidationError(`Invalid transform.position.${axis}`);
-    }
-  }
-  const q = raw.quaternion;
-  if (!Array.isArray(q) || q.length !== 4 || q.some((n) => typeof n !== 'number' || !Number.isFinite(n))) {
-    throw new ProjectValidationError('Invalid transform.quaternion');
-  }
-}
-
-const OBJECT_TYPES = ['screen', 'floor', 'wall', 'box', 'curvedScreen', 'model', 'ledWall'] as const;
-
-function validateSceneObject(raw: unknown): Record<string, unknown> {
-  if (!isObject(raw)) throw new ProjectValidationError('Invalid scene object');
-  if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
-    throw new ProjectValidationError('Scene object missing id or name');
-  }
-  if (!OBJECT_TYPES.includes(String(raw.type) as (typeof OBJECT_TYPES)[number])) {
-    throw new ProjectValidationError(`Unknown scene object type: ${String(raw.type)}`);
-  }
-  validateTransform(raw.transform);
-  if (!isObject(raw.dimensions)) throw new ProjectValidationError('Invalid dimensions');
-  const { width, height } = raw.dimensions;
-  if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) {
-    throw new ProjectValidationError('Invalid scene object dimensions');
-  }
-  const projectionSides: ProjectionSides | undefined =
-    raw.projectionSides === 'back' || raw.projectionSides === 'both'
-      ? raw.projectionSides
-      : raw.projectionSides === 'front'
-        ? 'front'
-        : undefined;
-  return { ...raw, projectionSides };
 }
 
 function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
@@ -97,19 +50,6 @@ function normalizeProjector(raw: ProjectorConfig): ProjectorConfig {
     lookAtTarget: raw.lookAtTarget ?? { x: 0, y: 1.5, z: 0 },
     warp: normalizeWarp(raw.warp),
   };
-}
-
-function validateProjector(raw: unknown): Record<string, unknown> {
-  if (!isObject(raw)) throw new ProjectValidationError('Invalid projector');
-  if (typeof raw.id !== 'string' || typeof raw.name !== 'string') {
-    throw new ProjectValidationError('Projector missing id or name');
-  }
-  validateTransform(raw.transform);
-  if (!isObject(raw.optics)) throw new ProjectValidationError('Invalid projector optics');
-  const optics = raw.optics as unknown as ProjectorConfig['optics'];
-  const v = validateOptics(optics);
-  if (!v.valid) throw new ProjectValidationError(v.error ?? 'Invalid projector optics');
-  return raw;
 }
 
 function validateMediaAssets(raw: unknown): MediaAssetRecord[] {
@@ -129,47 +69,21 @@ export function serializeProject(snapshot: ProjectSnapshot): string {
 }
 
 export function parseProjectJson(text: string): ProjectSnapshot {
-  let data: unknown;
+  let parsed: unknown;
   try {
-    data = JSON.parse(text);
+    parsed = JSON.parse(text);
   } catch {
     throw new ProjectValidationError('File is not valid JSON');
   }
 
-  if (!isObject(data)) throw new ProjectValidationError('Project root must be an object');
-  const version = data.version;
-  if (version !== PROJECT_FILE_VERSION && version !== PROJECT_FILE_VERSION_V2 && version !== PROJECT_FILE_VERSION_LEGACY) {
-    throw new ProjectValidationError(
-      `Unsupported project version: ${String(version)} (expected ${PROJECT_FILE_VERSION_LEGACY}–${PROJECT_FILE_VERSION})`,
-    );
-  }
-
-  if (!Array.isArray(data.sceneObjects) || data.sceneObjects.length === 0) {
-    throw new ProjectValidationError('Project must include at least one scene object');
-  }
-  if (!Array.isArray(data.projectors) || data.projectors.length === 0) {
-    throw new ProjectValidationError('Project must include at least one projector');
-  }
-
-  const rawObjects = data.sceneObjects.map(validateSceneObject);
-  const rawProjectors = data.projectors.map(validateProjector);
-  const mediaAssets = version === PROJECT_FILE_VERSION_LEGACY ? [] : validateMediaAssets(data.mediaAssets);
-
-  // v1 / v2: content lived on projectors / the shared canvas — move it onto layers.
-  const content =
-    version === PROJECT_FILE_VERSION
-      ? {
-          show: normalizeShow(data.show),
-          sceneObjects: rawObjects as unknown as SceneObject[],
-          projectors: rawProjectors as unknown as ProjectorConfig[],
-        }
-      : migrateLegacyContent({
-          sceneObjects: rawObjects,
-          projectors: rawProjectors,
-          mappingMode: data.mappingMode,
-          contentCanvas: data.contentCanvas,
-          sharedContentSourceProjectorId: data.sharedContentSourceProjectorId,
-        });
+  // Validate and upgrade to the current schema (one step per version).
+  const data = migrateProject(parsed);
+  const content = {
+    show: normalizeShow(data.show),
+    sceneObjects: data.sceneObjects as unknown as SceneObject[],
+    projectors: data.projectors as unknown as ProjectorConfig[],
+  };
+  const mediaAssets = validateMediaAssets(data.mediaAssets);
   const sceneObjects = content.sceneObjects;
   const projectors = content.projectors.map(normalizeProjector);
   const show = { ...content.show, mappings: pruneMappingRefs(content.show.mappings, sceneObjects, projectors) };
