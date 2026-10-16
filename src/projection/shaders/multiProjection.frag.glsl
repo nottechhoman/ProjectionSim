@@ -47,8 +47,12 @@ uniform float densityScaleMax;      // px/m at the top of the scale
 uniform mat3 warpInv[MAX_P];
 // v10 grid warp: per-projector map of (source UV − raster UV) in RG, coverage in A
 // (src/projection/GridWarpMaps.ts). gridMode 1 = use the map instead of warpInv.
+// Compiled in only while some projector uses a grid warp (GRID_WARP define), so
+// scenes without one run exactly the previous shader.
+#ifdef GRID_WARP
 uniform sampler2D gridMaps[MAX_P];
 uniform int gridMode[MAX_P];
+#endif
 
 // ---- v2: advanced blending -------------------------------------------------
 uniform int blendMode;          // 0 manual feathers, 1 auto (geometry-aware)
@@ -244,6 +248,7 @@ vec3 unlitColor() {
   return previewKind == 3 || previewKind == 4 ? vec3(0.03, 0.03, 0.045) : surfaceBaseColor;
 }
 
+#ifdef GRID_WARP
 vec4 gridTexel(int idx, ivec2 t) {
   if (idx == 0) return texelFetch(gridMaps[0], t, 0);
   if (idx == 1) return texelFetch(gridMaps[1], t, 0);
@@ -281,10 +286,12 @@ bool gridToContent(int idx, vec2 p, out vec2 q) {
   q = p + off;
   return q.x >= 0.0 && q.x <= 1.0 && q.y >= 0.0 && q.y <= 1.0;
 }
+#endif
 
 // Physical raster UV → content image UV through the inverse corner-pin or grid warp.
 // The brightness / pixel-density heatmaps ignore the grid warp (2D output only).
 bool warpToContent(int idx, vec2 p, out vec2 q) {
+#ifdef GRID_WARP
   if (gridMode[idx] == 1) {
     if (feedIndex < 0 && (previewKind == 3 || previewKind == 4)) {
       q = p;
@@ -292,6 +299,7 @@ bool warpToContent(int idx, vec2 p, out vec2 q) {
     }
     return gridToContent(idx, p, q);
   }
+#endif
   vec3 h = warpInv[idx] * vec3(p, 1.0);
   if (abs(h.z) < 1e-6) return false;
   q = h.xy / h.z;

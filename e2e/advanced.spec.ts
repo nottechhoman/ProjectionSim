@@ -24,9 +24,10 @@ test('studio: auto edge blend, blend-mask export, mappings and warp', async ({ p
 
   // Warp
   await page.getByTestId('studio-tab-warp').click();
+  await page.getByTestId('warp-mode-cornerPin').click();
   await expect(page.getByTestId('warp-editor')).toBeVisible();
   await page.getByTestId('warp-fit').click();
-  await expect(page.getByTestId('warp-enabled')).toBeChecked();
+  await expect(page.getByTestId('warp-mode-cornerPin')).toHaveAttribute('aria-checked', 'true');
 });
 
 test('outputs: open a projector output window', async ({ page, context }) => {

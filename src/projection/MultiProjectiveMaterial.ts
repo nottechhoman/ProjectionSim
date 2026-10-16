@@ -173,6 +173,13 @@ export function updateMultiProjectiveMaterial(
   material.uniforms.depthMaps.value = depthMaps;
   material.uniforms.feedMaps.value = feedMaps;
   material.uniforms.gridMaps.value = gridMaps;
+  // Recompile only when grid warp starts or stops being used.
+  const useGrid = gridMode.some((m) => m === 1);
+  if (useGrid !== 'GRID_WARP' in material.defines) {
+    if (useGrid) material.defines.GRID_WARP = 1;
+    else delete material.defines.GRID_WARP;
+    material.needsUpdate = true;
+  }
 
   material.uniforms.falloffPreview.value = falloffPreview ? 1 : 0;
 }
