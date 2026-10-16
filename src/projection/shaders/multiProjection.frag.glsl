@@ -45,6 +45,10 @@ uniform float densityScaleMax;      // px/m at the top of the scale
 
 // ---- v2: warp -------------------------------------------------------------
 uniform mat3 warpInv[MAX_P];
+// v10 grid warp: per-projector map of (source UV − raster UV) in RG, coverage in A
+// (src/projection/GridWarpMaps.ts). gridMode 1 = use the map instead of warpInv.
+uniform sampler2D gridMaps[MAX_P];
+uniform int gridMode[MAX_P];
 
 // ---- v2: advanced blending -------------------------------------------------
 uniform int blendMode;          // 0 manual feathers, 1 auto (geometry-aware)
@@ -240,8 +244,54 @@ vec3 unlitColor() {
   return previewKind == 3 || previewKind == 4 ? vec3(0.03, 0.03, 0.045) : surfaceBaseColor;
 }
 
-// Physical raster UV → content image UV through the inverse corner-pin.
+vec4 gridTexel(int idx, ivec2 t) {
+  if (idx == 0) return texelFetch(gridMaps[0], t, 0);
+  if (idx == 1) return texelFetch(gridMaps[1], t, 0);
+  if (idx == 2) return texelFetch(gridMaps[2], t, 0);
+  return texelFetch(gridMaps[3], t, 0);
+}
+
+ivec2 gridSize(int idx) {
+  if (idx == 0) return textureSize(gridMaps[0], 0);
+  if (idx == 1) return textureSize(gridMaps[1], 0);
+  if (idx == 2) return textureSize(gridMaps[2], 0);
+  return textureSize(gridMaps[3], 0);
+}
+
+// Grid warp inverse: manual bilinear on the float offset map (float textures are
+// not filterable everywhere), linear extrapolation in the outer half texel.
+bool gridToContent(int idx, vec2 p, out vec2 q) {
+  ivec2 size = gridSize(idx);
+  vec2 f = p * vec2(size) - 0.5;
+  ivec2 i0 = clamp(ivec2(floor(f)), ivec2(0), size - 2);
+  vec2 t = f - vec2(i0);
+  vec4 a = gridTexel(idx, i0);
+  vec4 b = gridTexel(idx, i0 + ivec2(1, 0));
+  vec4 c = gridTexel(idx, i0 + ivec2(0, 1));
+  vec4 d = gridTexel(idx, i0 + ivec2(1, 1));
+  vec2 off;
+  if (min(min(a.a, b.a), min(c.a, d.a)) > 0.5) {
+    off = mix(mix(a.xy, b.xy, t.x), mix(c.xy, d.xy, t.x), t.y);
+  } else {
+    // Edge of the warped image: nearest texel decides coverage.
+    vec4 n = gridTexel(idx, clamp(ivec2(floor(p * vec2(size))), ivec2(0), size - 1));
+    if (n.a < 0.5) return false;
+    off = n.xy;
+  }
+  q = p + off;
+  return q.x >= 0.0 && q.x <= 1.0 && q.y >= 0.0 && q.y <= 1.0;
+}
+
+// Physical raster UV → content image UV through the inverse corner-pin or grid warp.
+// The brightness / pixel-density heatmaps ignore the grid warp (2D output only).
 bool warpToContent(int idx, vec2 p, out vec2 q) {
+  if (gridMode[idx] == 1) {
+    if (feedIndex < 0 && (previewKind == 3 || previewKind == 4)) {
+      q = p;
+      return true;
+    }
+    return gridToContent(idx, p, q);
+  }
   vec3 h = warpInv[idx] * vec3(p, 1.0);
   if (abs(h.z) < 1e-6) return false;
   q = h.xy / h.z;

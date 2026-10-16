@@ -3,24 +3,12 @@ import { DEFAULT_BLEND_EDGES, DEFAULT_BLEND_GAMMA } from '../types';
 import { normalizeBlendSettings } from '../blending/advancedBlend';
 import { normalizePrevizSettings } from '../optics/illuminance';
 import { normalizeShow, pruneMappingRefs } from '../mapping/model';
-import { DEFAULT_PROJECTOR_WARP, type ProjectorWarp } from '../types';
+import { normalizeWarp } from '../warp/warpFile';
 import { ProjectValidationError } from './errors';
 import { migrateProject } from './migrations';
 
 export { ProjectValidationError };
 
-function normalizeWarp(raw: unknown): ProjectorWarp {
-  const d = DEFAULT_PROJECTOR_WARP;
-  if (!isObject(raw) || !Array.isArray(raw.corners) || raw.corners.length !== 4) {
-    return structuredClone(d);
-  }
-  const corners = raw.corners.map((c: unknown, i: number) =>
-    isObject(c) && typeof c.x === 'number' && Number.isFinite(c.x) && typeof c.y === 'number' && Number.isFinite(c.y)
-      ? { x: c.x, y: c.y }
-      : { ...d.corners[i] },
-  ) as ProjectorWarp['corners'];
-  return { enabled: raw.enabled === true, corners };
-}
 import {
   clampPanelWidth,
   clampFloatPosition,

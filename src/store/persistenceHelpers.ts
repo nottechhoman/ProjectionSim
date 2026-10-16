@@ -1,4 +1,4 @@
-import type { ProjectSnapshot } from '../persistence/projectSchema';
+import { PROJECT_FILE_VERSION, type ProjectSnapshot } from '../persistence/projectSchema';
 import type {
   DisplayUnit,
   MaterialPreviewMode,
@@ -74,7 +74,7 @@ export function buildInitialPersistedState(): PersistedStateSlice {
 
 export function sliceToSnapshot(slice: PersistedStateSlice): ProjectSnapshot {
   return {
-    version: 3,
+    version: PROJECT_FILE_VERSION,
     savedAt: new Date().toISOString(),
     name: slice.projectName,
     sceneObjects: slice.sceneObjects,

@@ -78,7 +78,7 @@ export function RasterPreviewPanel() {
               return (
                 <div key={projector.id} className={styles.card}>
                   <div className={styles.cardLabel} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span style={{ flex: 1 }}>{projector.name} — {width}×{height}{projector.warp?.enabled ? ' · warped' : ''}</span>
+                    <span style={{ flex: 1 }}>{projector.name} — {width}×{height}{projector.warp && projector.warp.mode !== 'none' ? (projector.warp.mode === 'grid' ? ' · grid warp' : ' · corner pin') : ''}</span>
                     <button type="button" className={styles.collapseBtn} style={{ fontSize: 10 }} onClick={() => exportFeed(projector.id, projector.name, 'color')} title="Download full-resolution feed PNG">
                       Feed ⤓
                     </button>

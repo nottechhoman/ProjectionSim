@@ -4,6 +4,7 @@ import { getProjectorViewProjectionMatrix } from '../optics/projectionMatrix';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 import { validateOptics } from '../optics/validate';
 import { applyMat3, warpInverseMatrix, type Mat3 } from '../warp/homography';
+import { gridInverse, type GridInverse } from '../warp/gridWarp';
 import { autoBlendWeights, blendWeightWithGammaShim, lightWeight } from './advancedBlendCompose';
 
 /**
@@ -34,6 +35,8 @@ export interface BlendAnalysisResult {
 interface ProjectorSampler {
   vp: THREE.Matrix4;
   warpInv: Mat3;
+  /** v10: grid warp inverse (replaces warpInv when the projector is grid-warped). */
+  grid: GridInverse | null;
   projector: ProjectorConfig;
 }
 
@@ -77,7 +80,7 @@ export function rasterUvOf(point: THREE.Vector3, vp: THREE.Matrix4): Vec2 | null
 function contentUv(point: THREE.Vector3, s: ProjectorSampler): Vec2 | null {
   const p = rasterUvOf(point, s.vp);
   if (!p) return null;
-  const q = applyMat3(s.warpInv, p);
+  const q = s.grid ? s.grid.lookup(p) : applyMat3(s.warpInv, p);
   if (!q || q.x < 0 || q.x > 1 || q.y < 0 || q.y > 1) return null;
   return q;
 }
@@ -95,6 +98,7 @@ export function computeBlendAnalysis(
     projector,
     vp: getProjectorViewProjectionMatrix(projector.optics, getProjectorWorldMatrix(projector)),
     warpInv: warpInverseMatrix(projector.warp),
+    grid: projector.warp?.mode === 'grid' ? gridInverse(projector.warp.grid) : null,
   }));
 
   const points = samplePoints(receiver, resolution.u, resolution.v);

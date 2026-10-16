@@ -36,7 +36,7 @@ describe('projectSerializer', () => {
     expect(loaded.name).toBe('Test Scene');
     expect(loaded.projectors[0].optics.throwRatio).toBe(1.5);
     expect(loaded.sceneObjects).toHaveLength(2);
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(PROJECT_FILE_VERSION);
     expect(loaded.show.mappings.map((m) => m.kind)).toEqual(['direct', 'perspective']);
     expect(loaded.show.tracks[0].layers[0].media).toEqual({ kind: 'pattern', pattern: 'checkerboard', color: '#ffffff' });
   });
@@ -72,7 +72,7 @@ describe('projectSerializer', () => {
       },
     };
     const loaded = parseProjectJson(JSON.stringify(withCanvas));
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(PROJECT_FILE_VERSION);
     const [mapping] = loaded.show.mappings;
     expect(mapping.kind).toBe('direct');
     expect(mapping.resolution).toEqual({ w: 3840, h: 1080 });
@@ -121,7 +121,7 @@ describe('projectSerializer', () => {
       projectors: [{ ...DEFAULT_PROJECTORS[0], testPattern: 'colorBars', mediaSource: 'pattern' }],
     };
     const loaded = parseProjectJson(JSON.stringify(v1));
-    expect(loaded.version).toBe(3);
+    expect(loaded.version).toBe(PROJECT_FILE_VERSION);
     expect(loaded.mediaAssets).toEqual([]);
     const [mapping] = loaded.show.mappings;
     expect(mapping.kind).toBe('perspective');

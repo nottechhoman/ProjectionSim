@@ -24,6 +24,8 @@ import { transport } from '../playback/clock';
 import { transportStep, type PlayMode } from '../playback/showControl';
 import { MediaSync } from '../playback/mediaSync';
 import { ProjectorFeedPass, type FeedKind } from '../projection/ProjectorFeedPass';
+import { GridWarpMaps } from '../projection/GridWarpMaps';
+import { gridLinePolylines } from '../warp/gridWarp';
 import { outputWindows } from '../output/outputWindows';
 import { getProjectorWorldMatrix } from '../optics/projectorWorldMatrix';
 import { DepthPass } from '../visibility/DepthPass';
@@ -337,6 +339,8 @@ export class SceneEngine {
   private syncRevision = 0;
   private lastContentKey = '';
   private readonly feedPass = new ProjectorFeedPass();
+  /** v10: grid warp inverse maps, created with the renderer. */
+  private gridMaps: GridWarpMaps | null = null;
   private blendSettings: BlendSettings = DEFAULT_BLEND_SETTINGS;
   private previzSettings: PrevizSettings = DEFAULT_PREVIZ_SETTINGS;
   private lastFrameAt = 0;
@@ -353,6 +357,8 @@ export class SceneEngine {
   >();
   private maxOverlap = 1;
   private rasterPreviewPanelVisible = false;
+  /** v10: Studio → Warp tab is open (grid overlays, live previews for the editor). */
+  private warpEditorOpen = false;
   private rasterPreviewWasVisible = false;
   private sceneObjects: SceneObject[] = [];
   private animationId: number | null = null;
@@ -386,6 +392,7 @@ export class SceneEngine {
     sceneBox: () => this.stageBounds(),
     projectors: () => this.lastProjectors,
     feedCanvas: (id) => this.feedPass.getCanvas(id),
+    warpOverlay: (id) => this.warpOverlay(id),
     pick: (ndc, camera) => this.pickAt(ndc, camera),
   });
 
@@ -697,6 +704,7 @@ export class SceneEngine {
     this.showProjectionBeam = state.showProjectionBeam;
     this.calculationTargetId = state.calculationTargetId;
     this.rasterPreviewPanelVisible = state.rasterPreviewPanelVisible;
+    this.warpEditorOpen = state.uvEditorPanelVisible && state.studioTab === 'warp';
     this.blendSettings = state.blendSettings;
     this.previzSettings = state.previzSettings;
     this.maxOverlap = state.blendAnalysis?.maxOverlap ?? Math.min(2, state.projectors.filter((p) => p.enabled).length);
@@ -1226,6 +1234,7 @@ export class SceneEngine {
     skipTransforms = false,
   ): void {
     this.allProjectors = projectors;
+    this.gridMaps?.prune(projectors);
     this.selectedProjectorId = selectedProjectorId;
     const enabled = projectors.filter((p) => p.enabled);
     this.activeProjectors = enabled;
@@ -1407,6 +1416,7 @@ export class SceneEngine {
           this.materialPreviewMode === 'projectionUv',
           this.materialPreviewMode === 'falloff',
           this.feedTexturesFor(projectorsToRender.slice(0, 4)),
+          this.gridTexturesFor(projectorsToRender.slice(0, 4)),
         );
         applyAdvancedBlendUniforms(
           this.multiProjectiveMaterial,
@@ -1567,6 +1577,19 @@ export class SceneEngine {
     return this.activeProjectors.slice(0, 4);
   }
 
+  /** v10: warped grid lines (raster UV) for output overlays while the Warp tab is open. */
+  warpOverlay(projectorId: string): { x: number; y: number }[][] | null {
+    if (!this.warpEditorOpen) return null;
+    const warp = this.allProjectors.find((p) => p.id === projectorId)?.warp;
+    return warp?.mode === 'grid' ? gridLinePolylines(warp.grid) : null;
+  }
+
+  private gridTexturesFor(projectors: ProjectorConfig[]): (THREE.Texture | null)[] {
+    if (!this.renderer) return [];
+    this.gridMaps ??= new GridWarpMaps(this.renderer);
+    return this.gridMaps.texturesFor(projectors);
+  }
+
   private prepareFeedMaterial(
     material: THREE.ShaderMaterial,
     projectors: ProjectorConfig[],
@@ -1582,6 +1605,7 @@ export class SceneEngine {
       false,
       false,
       withFeeds ? this.feedTexturesFor(projectors) : [],
+      this.gridTexturesFor(projectors),
     );
     applyAdvancedBlendUniforms(material, this.blendSettings, this.maxOverlap, 'normal');
     material.uniforms.depthMapSize.value.set(this.currentDepthResolution, this.currentDepthResolution);
@@ -1589,7 +1613,7 @@ export class SceneEngine {
 
   private renderRasterPreviews(): void {
     if (!this.renderer) return;
-    if (!this.rasterPreviewPanelVisible && !this.panes.needsFeeds) {
+    if (!this.rasterPreviewPanelVisible && !this.panes.needsFeeds && !this.warpEditorOpen) {
       if (this.rasterPreviewWasVisible) this.feedPass.releaseTargets();
       this.rasterPreviewWasVisible = false;
       return;
@@ -1814,38 +1838,51 @@ export class SceneEngine {
 
   /** v2: raster-UV points (0–1, bottom-left) of the calculation target's four corners. */
   projectTargetCornersToRaster(projectorId: string): ({ x: number; y: number } | null)[] | null {
+    const pts = this.projectTargetGridToRaster(projectorId, 2, 2);
+    // Lattice order (row-major, bottom row first) → corner order BL, BR, TR, TL.
+    return pts ? [pts[0], pts[1], pts[3], pts[2]] : null;
+  }
+
+  /**
+   * v10: the calculation target sampled on a cols × rows lattice (row-major, row 0 at
+   * the bottom) and projected into this projector's raster UV. Columns run left→right
+   * as the projector sees them, so a fitted warp is never mirrored. null entries are
+   * behind the projector.
+   */
+  projectTargetGridToRaster(projectorId: string, cols: number, rows: number): ({ x: number; y: number } | null)[] | null {
     const projector = this.allProjectors.find((p) => p.id === projectorId);
     const target = getCalculationTargetObject(this.sceneObjects, this.calculationTargetId);
-    if (!projector || !target) return null;
+    if (!projector || !target || cols < 2 || rows < 2) return null;
     const world = objectWorldMatrix(target.transform);
-    const local: THREE.Vector3[] = [];
+    let at: (u: number, v: number) => THREE.Vector3;
     if (target.type === 'curvedScreen' && target.curved) {
       const { radius, arcAngleDeg, height } = target.curved;
       const half = THREE.MathUtils.degToRad(arcAngleDeg) / 2;
       // Cylinder geometry azimuth: x = r·sin(θ), z = r·cos(θ).
-      const pt = (theta: number, y: number) =>
-        new THREE.Vector3(radius * Math.sin(theta), y, radius * Math.cos(theta));
-      local.push(pt(-half, -height / 2), pt(half, -height / 2), pt(half, height / 2), pt(-half, height / 2));
+      at = (u, v) => {
+        const theta = -half + u * 2 * half;
+        return new THREE.Vector3(radius * Math.sin(theta), (v - 0.5) * height, radius * Math.cos(theta));
+      };
     } else {
-      const w = target.dimensions.width / 2;
-      const h = target.dimensions.height / 2;
-      local.push(
-        new THREE.Vector3(-w, -h, 0),
-        new THREE.Vector3(w, -h, 0),
-        new THREE.Vector3(w, h, 0),
-        new THREE.Vector3(-w, h, 0),
-      );
+      const { width, height } = target.dimensions;
+      at = (u, v) => new THREE.Vector3((u - 0.5) * width, (v - 0.5) * height, 0);
     }
     const vp = getProjectorViewProjectionMatrix(projector.optics, getProjectorWorldMatrix(projector));
-    const pts = local.map((p) => {
+    const project = (u: number, v: number) => {
+      const p = at(u, v);
       const clip = new THREE.Vector4(p.x, p.y, p.z, 1).applyMatrix4(world).applyMatrix4(vp);
       if (clip.w <= 1e-6) return null;
       return { x: clip.x / clip.w * 0.5 + 0.5, y: clip.y / clip.w * 0.5 + 0.5 };
-    });
-    // Order corners left→right as seen by the projector so the warp is not mirrored.
-    if (pts.every((p) => p !== null)) {
-      const [a, b] = [pts[0]!, pts[1]!];
-      if (a.x > b.x) return [pts[1], pts[0], pts[3], pts[2]];
+    };
+    const left = project(0, 0);
+    const right = project(1, 0);
+    const flip = !!left && !!right && left.x > right.x;
+    const pts: ({ x: number; y: number } | null)[] = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const u = c / (cols - 1);
+        pts.push(project(flip ? 1 - u : u, r / (rows - 1)));
+      }
     }
     return pts;
   }
@@ -1903,6 +1940,8 @@ export class SceneEngine {
     this.mediaSync.dispose();
     this.transportUnsub();
     this.feedPass.dispose();
+    this.gridMaps?.dispose();
+    this.gridMaps = null;
     outputWindows.setFrameDriver(null);
     for (const id of [...this.outputTargets.keys()]) this.disposeOutputSlot(id);
     this.depthPass?.dispose();

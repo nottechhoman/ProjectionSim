@@ -72,6 +72,9 @@ export function createMultiProjectiveMaterial(): THREE.ShaderMaterial {
       densityScaleMax: { value: DEFAULT_PREVIZ_SETTINGS.densityScaleMax },
       // v2 warp
       warpInv: { value: Array.from({ length: MAX }, () => new THREE.Matrix3()) },
+      // v10 grid warp maps (GridWarpMaps)
+      gridMaps: { value: Array.from({ length: MAX }, () => NO_FEED) },
+      gridMode: { value: new Int32Array(MAX) },
       // v2 blending
       blendMode: { value: 0 },
       blendCurve: { value: 1 },
@@ -105,6 +108,7 @@ export function updateMultiProjectiveMaterial(
   forceUvPreview = false,
   falloffPreview = false,
   feedTextures: (THREE.Texture | null)[] = [],
+  gridTextures: readonly (THREE.Texture | null)[] = [],
 ): void {
   const count = Math.min(projectors.length, MAX);
   material.uniforms.projectorCount.value = count;
@@ -125,8 +129,13 @@ export function updateMultiProjectiveMaterial(
   const projUnitArea = material.uniforms.projUnitArea.value as Float32Array;
   const projForward = material.uniforms.projForward.value as THREE.Vector3[];
   const projPxAt1m = material.uniforms.projPxAt1m.value as Float32Array;
+  const gridMaps = material.uniforms.gridMaps.value as THREE.Texture[];
+  const gridMode = material.uniforms.gridMode.value as Int32Array;
 
   for (let i = 0; i < MAX; i++) {
+    const grid = i < count ? gridTextures[i] ?? null : null;
+    gridMaps[i] = grid ?? NO_FEED;
+    gridMode[i] = grid ? 1 : 0;
     if (i >= count) {
       warpInv[i].identity();
       continue;
@@ -163,6 +172,7 @@ export function updateMultiProjectiveMaterial(
 
   material.uniforms.depthMaps.value = depthMaps;
   material.uniforms.feedMaps.value = feedMaps;
+  material.uniforms.gridMaps.value = gridMaps;
 
   material.uniforms.falloffPreview.value = falloffPreview ? 1 : 0;
 }

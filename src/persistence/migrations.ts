@@ -70,8 +70,48 @@ const v2ToV3: MigrationStep = {
   },
 };
 
+const IDENTITY_CORNERS = [
+  { x: 0, y: 0 },
+  { x: 1, y: 0 },
+  { x: 1, y: 1 },
+  { x: 0, y: 1 },
+];
+
+function identityGrid(cols: number, rows: number) {
+  const points: { x: number; y: number }[] = [];
+  for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) points.push({ x: c / (cols - 1), y: r / (rows - 1) });
+  return { cols, rows, points, interpolation: 'bezier' };
+}
+
+/**
+ * v3 → v4 (app v10): projector.warp { enabled, corners } becomes
+ * { mode, cornerPin: { corners }, grid }. The mode is 'cornerPin' only where the
+ * corner pin was enabled and not the identity — exactly when it changed the output
+ * before — else 'none' (the corners are kept). Every projector gets a 5 × 5 identity grid.
+ */
+const v3ToV4: MigrationStep = {
+  from: 3,
+  to: 4,
+  description: 'v3 → v4: warp modes (none / corner pin / grid)',
+  up(data) {
+    const projectors = (data.projectors as RawProject[]).map((p) => {
+      const old = isObject(p.warp) ? p.warp : {};
+      const corners =
+        Array.isArray(old.corners) && old.corners.length === 4
+          ? old.corners.map((c: unknown, i: number) =>
+              isObject(c) && typeof c.x === 'number' && typeof c.y === 'number' ? { x: c.x, y: c.y } : { ...IDENTITY_CORNERS[i] },
+            )
+          : IDENTITY_CORNERS.map((c) => ({ ...c }));
+      const identity = corners.every((c, i) => Math.abs(c.x - IDENTITY_CORNERS[i].x) < 1e-9 && Math.abs(c.y - IDENTITY_CORNERS[i].y) < 1e-9);
+      const mode = old.enabled === true && !identity ? 'cornerPin' : 'none';
+      return { ...p, warp: { mode, cornerPin: { corners }, grid: identityGrid(5, 5) } };
+    });
+    return { ...data, version: 4, projectors };
+  },
+};
+
 /** Ordered steps; MIGRATIONS[i].from === MIGRATIONS[0].from + i. */
-export const MIGRATIONS: readonly MigrationStep[] = [v1ToV2, v2ToV3];
+export const MIGRATIONS: readonly MigrationStep[] = [v1ToV2, v2ToV3, v3ToV4];
 
 export const OLDEST_PROJECT_VERSION = MIGRATIONS[0].from;
 

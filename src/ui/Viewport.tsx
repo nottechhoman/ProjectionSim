@@ -247,6 +247,7 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     showProjectionBeam: state.showProjectionBeam,
     calculationTargetId: state.calculationTargetId,
     rasterPreviewPanelVisible: state.rasterPreviewPanelVisible,
+    warpEditorOpen: state.uvEditorPanelVisible && state.studioTab === 'warp',
     blendSettings: state.blendSettings,
     previzSettings: state.previzSettings,
     maxOverlap: state.blendAnalysis?.maxOverlap ?? null,

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { ProjectorConfig, SceneObject } from '../types';
-import { DEFAULT_BLEND_SETTINGS } from '../types';
+import { DEFAULT_BLEND_SETTINGS, DEFAULT_PROJECTOR_WARP } from '../types';
 import { eulerYXZToQuaternion } from '../utils/euler';
 import { computeBlendAnalysis } from './blendAnalysis';
 
@@ -66,13 +66,16 @@ describe('v2 blend uniformity analysis', () => {
     const warped = projectors.map((p) => ({
       ...p,
       warp: {
-        enabled: true,
-        corners: [
-          { x: 0.05, y: 0.1 },
-          { x: 0.95, y: 0 },
-          { x: 0.95, y: 1 },
-          { x: 0.05, y: 0.9 },
-        ] as [never, never, never, never],
+        ...DEFAULT_PROJECTOR_WARP,
+        mode: 'cornerPin' as const,
+        cornerPin: {
+          corners: [
+            { x: 0.05, y: 0.1 },
+            { x: 0.95, y: 0 },
+            { x: 0.95, y: 1 },
+            { x: 0.05, y: 0.9 },
+          ] as [never, never, never, never],
+        },
       },
     }));
     const base = computeBlendAnalysis(screen, projectors, { ...DEFAULT_BLEND_SETTINGS, mode: 'auto' })!;

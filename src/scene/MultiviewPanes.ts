@@ -35,6 +35,8 @@ export interface PaneHost {
   projectors(): ProjectorConfig[];
   /** Raster preview canvas of a projector's output (kept up to date while an output pane is open). */
   feedCanvas(projectorId: string): HTMLCanvasElement | null;
+  /** v10: grid warp lines (raster UV, bottom-left origin) to draw over an output pane, or null. */
+  warpOverlay(projectorId: string): { x: number; y: number }[][] | null;
   /** Click in a pane (NDC) — select or measure like a click in the main view. */
   pick(ndc: THREE.Vector2, camera: THREE.Camera): void;
 }
@@ -235,7 +237,26 @@ export class MultiviewPanes {
           const s = Math.min(pw / feed.width, ph / feed.height);
           const dw = feed.width * s;
           const dh = feed.height * s;
-          ctx.drawImage(feed, (pw - dw) / 2, (ph - dh) / 2, dw, dh);
+          const x0 = (pw - dw) / 2;
+          const y0 = (ph - dh) / 2;
+          ctx.drawImage(feed, x0, y0, dw, dh);
+          const lines = this.host.warpOverlay(arg);
+          if (lines) {
+            ctx.save();
+            ctx.strokeStyle = 'rgba(255, 210, 60, 0.85)';
+            ctx.lineWidth = Math.max(1, dpr);
+            ctx.beginPath();
+            for (const line of lines) {
+              line.forEach((p, i) => {
+                const x = x0 + p.x * dw;
+                const y = y0 + (1 - p.y) * dh;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+              });
+            }
+            ctx.stroke();
+            ctx.restore();
+          }
         }
         continue;
       }

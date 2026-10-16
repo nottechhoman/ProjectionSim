@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parseProjectJson, serializeProject } from './projectSerializer';
+import { DEFAULT_PROJECTOR_WARP } from '../types';
 import { sliceToSnapshot, defaultPersistedSlice, snapshotToSlice } from '../store/persistenceHelpers';
 
 describe('v2 advanced fields persist', () => {
@@ -9,13 +10,16 @@ describe('v2 advanced fields persist', () => {
     slice.projectors[0] = {
       ...slice.projectors[0],
       warp: {
-        enabled: true,
-        corners: [
-          { x: 0.1, y: 0 },
-          { x: 0.9, y: 0.05 },
-          { x: 1, y: 1 },
-          { x: 0, y: 0.95 },
-        ],
+        ...DEFAULT_PROJECTOR_WARP,
+        mode: 'cornerPin',
+        cornerPin: {
+          corners: [
+            { x: 0.1, y: 0 },
+            { x: 0.9, y: 0.05 },
+            { x: 1, y: 1 },
+            { x: 0, y: 0.95 },
+          ],
+        },
       },
     };
     slice.show.mappings.push({
@@ -47,8 +51,8 @@ describe('v2 advanced fields persist', () => {
     expect(back.blendSettings.mode).toBe('auto');
     expect(back.blendSettings.curve).toBe('cosine');
     expect(back.blendSettings.blackLevel).toBeCloseTo(0.01, 9);
-    expect(back.projectors[0].warp!.enabled).toBe(true);
-    expect(back.projectors[0].warp!.corners[1]).toEqual({ x: 0.9, y: 0.05 });
+    expect(back.projectors[0].warp!.mode).toBe('cornerPin');
+    expect(back.projectors[0].warp!.cornerPin.corners[1]).toEqual({ x: 0.9, y: 0.05 });
     const feed = back.show.mappings.find((m) => m.id === 'map-feed')!;
     expect(feed.feed!.rects[0].wrap).toBe('mirror');
     expect(feed.feed!.rects[0].region.x).toBe(0.25);
@@ -62,7 +66,7 @@ describe('v2 advanced fields persist', () => {
     for (const p of raw.projectors) delete p.warp;
     const back = snapshotToSlice(parseProjectJson(JSON.stringify(raw)));
     expect(back.blendSettings.mode).toBe('manual');
-    expect(back.projectors[0].warp!.enabled).toBe(false);
+    expect(back.projectors[0].warp!.mode).toBe('none');
     expect(back.show.mappings.length).toBeGreaterThan(0);
   });
 });

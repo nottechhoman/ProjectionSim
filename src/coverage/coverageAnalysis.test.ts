@@ -259,7 +259,7 @@ describe('Coverage reliability — sampled analysis', () => {
 
   it('14. persistence and reports include analysis target and sampled metrics', () => {
     const slice = snapshotToSlice({
-      version: 3,
+      version: 4,
       show: defaultShow(),
       savedAt: new Date().toISOString(),
       name: 'Coverage',

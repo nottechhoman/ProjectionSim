@@ -90,9 +90,34 @@ export interface Vec2 {
  * image corners land inside the physical raster, in raster UV (0–1, bottom-left
  * origin). Order: bottom-left, bottom-right, top-right, top-left.
  */
-export interface ProjectorWarp {
-  enabled: boolean;
+export interface CornerPinWarp {
   corners: [Vec2, Vec2, Vec2, Vec2];
+}
+
+/** v10: 'bezier' = uniform Catmull-Rom through the control points (see src/warp/gridWarp.ts). */
+export type GridInterpolation = 'linear' | 'bezier';
+
+/**
+ * v10 grid (mesh) warp: cols × rows control points, raster UV (0–1, bottom-left
+ * origin), row-major with row 0 at the bottom. 2D output space only.
+ */
+export interface GridWarp {
+  cols: number;
+  rows: number;
+  points: Vec2[];
+  interpolation: GridInterpolation;
+}
+
+export type WarpMode = 'none' | 'cornerPin' | 'grid';
+
+/**
+ * v10 output warp: one active mode; the other mode's settings are kept so switching
+ * back restores them. Order in the pipeline: feed → (corner pin | grid) → blend mask.
+ */
+export interface ProjectorWarp {
+  mode: WarpMode;
+  cornerPin: CornerPinWarp;
+  grid: GridWarp;
 }
 
 export const IDENTITY_WARP_CORNERS: [Vec2, Vec2, Vec2, Vec2] = [
@@ -102,14 +127,16 @@ export const IDENTITY_WARP_CORNERS: [Vec2, Vec2, Vec2, Vec2] = [
   { x: 0, y: 1 },
 ];
 
+function identityGrid5(): GridWarp {
+  const points: Vec2[] = [];
+  for (let r = 0; r < 5; r++) for (let c = 0; c < 5; c++) points.push({ x: c / 4, y: r / 4 });
+  return { cols: 5, rows: 5, points, interpolation: 'bezier' };
+}
+
 export const DEFAULT_PROJECTOR_WARP: ProjectorWarp = {
-  enabled: false,
-  corners: [
-    { x: 0, y: 0 },
-    { x: 1, y: 0 },
-    { x: 1, y: 1 },
-    { x: 0, y: 1 },
-  ],
+  mode: 'none',
+  cornerPin: { corners: IDENTITY_WARP_CORNERS.map((c) => ({ ...c })) as CornerPinWarp['corners'] },
+  grid: identityGrid5(),
 };
 
 /** manual = per-edge feathers; auto = geometry-aware weights from real overlap. */

@@ -6,8 +6,12 @@ import type {
   ViewPreset,
 } from '../types';
 
-/** v4 project files (content on layers + mappings). v1 / v2 files are migrated on load. */
-export const PROJECT_FILE_VERSION = 3 as const;
+/**
+ * Current project file version. Older files are upgraded step by step on load
+ * (src/persistence/migrations.ts): 1 original, 2 Advanced, 3 content on layers +
+ * mappings (app v4–v9), 4 warp modes with grid warp (app v10).
+ */
+export const PROJECT_FILE_VERSION = 4 as const;
 export const PROJECT_FILE_VERSION_V2 = 2 as const;
 export const PROJECT_FILE_VERSION_LEGACY = 1 as const;
 

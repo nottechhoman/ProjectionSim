@@ -1,4 +1,4 @@
-import type { ProjectorWarp, Vec2 } from '../types';
+import type { CornerPinWarp, ProjectorWarp, Vec2 } from '../types';
 import { IDENTITY_WARP_CORNERS } from '../types';
 
 /** Row-major 3×3 matrix [a b c; d e f; g h i]. */
@@ -86,9 +86,8 @@ export function isValidWarpQuad(corners: readonly Vec2[]): boolean {
   return true;
 }
 
-export function isIdentityWarp(warp: ProjectorWarp | undefined): boolean {
-  if (!warp || !warp.enabled) return true;
-  return warp.corners.every(
+export function isIdentityCornerPin(pin: CornerPinWarp): boolean {
+  return pin.corners.every(
     (c, i) =>
       Math.abs(c.x - IDENTITY_WARP_CORNERS[i].x) < 1e-9 &&
       Math.abs(c.y - IDENTITY_WARP_CORNERS[i].y) < 1e-9,
@@ -96,12 +95,12 @@ export function isIdentityWarp(warp: ProjectorWarp | undefined): boolean {
 }
 
 /**
- * Inverse warp: physical raster UV → content (image) UV. Identity when the warp is
- * disabled or invalid. Used by the shader and the CPU blend analysis.
+ * Inverse corner pin: physical raster UV → content (image) UV. Identity unless the
+ * warp mode is corner pin with a valid quad. Used by the shader and the CPU blend analysis.
  */
 export function warpInverseMatrix(warp: ProjectorWarp | undefined): Mat3 {
-  if (!warp || !warp.enabled || !isValidWarpQuad(warp.corners)) return [...IDENTITY_MAT3];
-  const inv = invertMat3(squareToQuad(warp.corners));
+  if (!warp || warp.mode !== 'cornerPin' || !isValidWarpQuad(warp.cornerPin.corners)) return [...IDENTITY_MAT3];
+  const inv = invertMat3(squareToQuad(warp.cornerPin.corners));
   return inv ?? [...IDENTITY_MAT3];
 }
 
@@ -117,12 +116,12 @@ export function clampCorner(p: Vec2, limit = 0.5): Vec2 {
  * the projector's physical raster UV. Points outside the raster are clamped to it,
  * because a projector cannot emit light outside its own raster.
  */
-export function fitWarpToRasterPoints(points: readonly (Vec2 | null)[]): ProjectorWarp | null {
+export function fitWarpToRasterPoints(points: readonly (Vec2 | null)[]): CornerPinWarp | null {
   if (points.length !== 4 || points.some((p) => p === null)) return null;
   const corners = points.map((p) => ({
     x: Math.min(1, Math.max(0, p!.x)),
     y: Math.min(1, Math.max(0, p!.y)),
   })) as [Vec2, Vec2, Vec2, Vec2];
   if (!isValidWarpQuad(corners)) return null;
-  return { enabled: true, corners };
+  return { corners };
 }

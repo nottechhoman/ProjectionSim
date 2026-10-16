@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { MIGRATIONS, migrateProject, OLDEST_PROJECT_VERSION, type RawProject } from './migrations';
 import { parseProjectJson, ProjectValidationError } from './projectSerializer';
 import { PROJECT_FILE_VERSION } from './projectSchema';
+import { DEFAULT_PROJECTOR_WARP } from '../types';
 import v1Minimal from './fixtures/v1-minimal.projectionlab.json?raw';
 
 const BUNDLED = import.meta.glob('../../public/samples/*.json', { query: '?raw', import: 'default', eager: true }) as Record<string, string>;
@@ -91,13 +92,48 @@ describe('step 2 → 3 (content onto layers + mappings)', () => {
   });
 });
 
+describe('step 3 → 4 (warp modes)', () => {
+  const v3With = (warp: unknown): RawProject => {
+    const v3 = step(2).up(step(1).up(minimalV1()));
+    return { ...v3, projectors: (v3.projectors as RawProject[]).map((p) => ({ ...p, warp })) };
+  };
+  const pinned = [{ x: 0.1, y: 0 }, { x: 0.9, y: 0.05 }, { x: 1, y: 1 }, { x: 0, y: 0.95 }];
+  const warpOf = (out: RawProject) => (out.projectors as RawProject[])[0].warp as typeof DEFAULT_PROJECTOR_WARP;
+
+  it('an enabled, non-identity corner pin becomes mode "cornerPin" with the same corners', () => {
+    const out = step(3).up(v3With({ enabled: true, corners: pinned }));
+    expect(out.version).toBe(4);
+    expect(warpOf(out).mode).toBe('cornerPin');
+    expect(warpOf(out).cornerPin.corners).toEqual(pinned);
+    expect(warpOf(out).grid).toEqual(DEFAULT_PROJECTOR_WARP.grid);
+  });
+
+  it('a disabled pin keeps its corners but is mode "none"', () => {
+    const out = step(3).up(v3With({ enabled: false, corners: pinned }));
+    expect(warpOf(out).mode).toBe('none');
+    expect(warpOf(out).cornerPin.corners).toEqual(pinned);
+  });
+
+  it('an enabled identity pin, or no warp at all, is mode "none"', () => {
+    const identity = [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }];
+    expect(warpOf(step(3).up(v3With({ enabled: true, corners: identity })))).toEqual(DEFAULT_PROJECTOR_WARP);
+    expect(warpOf(step(3).up(v3With(undefined)))).toEqual(DEFAULT_PROJECTOR_WARP);
+  });
+
+  it('the default grid is 5×5, identity, smooth', () => {
+    const { grid } = warpOf(step(3).up(v3With(undefined)));
+    expect([grid.cols, grid.rows, grid.interpolation]).toEqual([5, 5, 'bezier']);
+    expect(grid.points[6]).toEqual({ x: 0.25, y: 0.25 });
+  });
+});
+
 describe('loading whole projects', () => {
   it('loads a hand-written v1-era minimal project', () => {
     const p = parseProjectJson(v1Minimal);
     expect(p.version).toBe(PROJECT_FILE_VERSION);
     expect(p.mediaAssets).toEqual([]);
     expect(p.sceneObjects.map((o) => o.id)).toEqual(['screen-1']);
-    expect(p.projectors[0].warp).toEqual({ enabled: false, corners: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }] });
+    expect(p.projectors[0].warp).toEqual(DEFAULT_PROJECTOR_WARP);
     expect(p.show.tracks[0].layers).toHaveLength(1);
   });
 

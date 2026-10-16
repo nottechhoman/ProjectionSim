@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_PROJECTOR_WARP } from '../types';
 import {
   applyMat3,
   fitWarpToRasterPoints,
@@ -40,8 +41,8 @@ describe('corner-pin homography', () => {
     expect(back.y).toBeCloseTo(p.y, 6);
   });
 
-  it('is identity when disabled', () => {
-    const inv = warpInverseMatrix({ enabled: false, corners: quad as never });
+  it('is identity unless the mode is corner pin', () => {
+    const inv = warpInverseMatrix({ ...DEFAULT_PROJECTOR_WARP, mode: 'none', cornerPin: { corners: quad as never } });
     expect(applyMat3(inv, { x: 0.3, y: 0.7 })).toEqual({ x: 0.3, y: 0.7 });
   });
 
@@ -57,7 +58,6 @@ describe('corner-pin homography', () => {
       { x: 0.9, y: 0.9 },
       { x: 0.1, y: 1.3 },
     ])!;
-    expect(warp.enabled).toBe(true);
     expect(warp.corners[0].x).toBe(0);
     expect(warp.corners[3].y).toBe(1);
   });
