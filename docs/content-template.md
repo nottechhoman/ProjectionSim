@@ -28,5 +28,5 @@ raster contains the point. `contentTemplateDraw.ts` turns the buffers into the P
 ## Limits
 
 - Blend zones ignore occlusion, projection sides and warp (same as blend uniformity).
-- Feed regions with repeat > 1 show only where the first tile lands per triangle sample (subdivided, so close).
+- Feed regions with repeat > 1 are subdivided like non-linear mappings; tile edges can be off by a pixel or two.
 - Canvases larger than 16384 px on a side are scaled down.
