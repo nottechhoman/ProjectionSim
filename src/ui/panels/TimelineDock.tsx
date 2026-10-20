@@ -8,7 +8,8 @@ import { moveClip, trimClipEnd, trimClipStart } from '../../playback/edit';
 import { formatTimecode, snapToFrame } from '../../playback/timecode';
 import { sectionAt } from '../../playback/showControl';
 import { mediaTextureCache } from '../../media';
-import type { KeyframeProp, Layer } from '../../types';
+import type { KeyframeEase, KeyframeProp, Layer, ObjectChannel, SceneObject } from '../../types';
+import { OBJECT_CHANNEL_COLOR, OBJECT_CHANNEL_LABEL, OBJECT_CHANNELS } from '../../playback/objectAnimation';
 import { KEYFRAME_LABEL, KEYFRAME_PROPS } from '../../playback/keyframes';
 
 export const KEY_COLORS: Record<KeyframeProp, string> = {
@@ -78,6 +79,99 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
   const setSelectedKeyframe = useAppStore((s) => s.setSelectedKeyframe);
   const updateKeyframe = useAppStore((s) => s.updateKeyframe);
   const scrub = useRef(false);
+
+  // v10: animated scene objects as collapsible rows below the layers.
+  const sceneObjects = useAppStore((s) => s.sceneObjects);
+  const autoKey = useAppStore((s) => s.autoKey);
+  const setAutoKey = useAppStore((s) => s.setAutoKey);
+  const selectedObjectKey = useAppStore((s) => s.selectedObjectKey);
+  const setSelectedObjectKey = useAppStore((s) => s.setSelectedObjectKey);
+  const updateObjectKeyframe = useAppStore((s) => s.updateObjectKeyframe);
+  const removeObjectKeyframe = useAppStore((s) => s.removeObjectKeyframe);
+  const selectObject = useAppStore((s) => s.setSelectedObject);
+  const selectedObjectId = useAppStore((s) => s.selectedObjectId);
+  const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  const objKeyDrag = useRef<{ objectId: string; channel: ObjectChannel; keyId: string; startX: number; timeSec: number; moved: boolean } | null>(null);
+  const longPress = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const animatedObjects: SceneObject[] = sceneObjects.filter((o) => track.objectAnimations?.[o.id] !== undefined);
+  type ObjRow = { kind: 'group'; obj: SceneObject } | { kind: 'channel'; obj: SceneObject; channel: ObjectChannel };
+  const objRows: ObjRow[] = animatedObjects.flatMap((obj) =>
+    collapsed.has(obj.id)
+      ? [{ kind: 'group' as const, obj }]
+      : [{ kind: 'group' as const, obj }, ...OBJECT_CHANNELS.map((channel) => ({ kind: 'channel' as const, obj, channel }))],
+  );
+  const selObjKey = selectedObjectKey
+    ? track.objectAnimations?.[selectedObjectKey.objectId]?.[selectedObjectKey.channel]?.find((k) => k.id === selectedObjectKey.keyId) ?? null
+    : null;
+  const toggleCollapsed = (id: string) =>
+    setCollapsed((c) => {
+      const n = new Set(c);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  const clearLongPress = () => {
+    if (longPress.current) clearTimeout(longPress.current);
+    longPress.current = null;
+  };
+
+  const objectDiamond = (obj: SceneObject, channel: ObjectChannel, key: { id: string; timeSec: number; ease: KeyframeEase }, top: string) => {
+    const sel = selectedObjectKey?.keyId === key.id && selectedObjectKey.objectId === obj.id && selectedObjectKey.channel === channel;
+    return (
+      <span
+        key={`${channel}-${key.id}`}
+        className={`${styles.diamond} ${sel ? styles.diamondSel : ''}`}
+        style={{ left: key.timeSec * pps, top, background: OBJECT_CHANNEL_COLOR[channel] }}
+        title={`${obj.name} · ${OBJECT_CHANNEL_LABEL[channel]} at ${formatTimecode(key.timeSec, fps)} (${key.ease}) — drag to move, right-click or long-press to delete`}
+        data-testid={`objkey-${obj.id}-${channel}-${key.id}`}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          clearLongPress();
+          removeObjectKeyframe(obj.id, channel, key.id);
+        }}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.stopPropagation();
+          e.preventDefault();
+          (e.currentTarget as Element).setPointerCapture?.(e.pointerId);
+          selectObject(obj.id);
+          setSelectedObjectKey({ objectId: obj.id, channel, keyId: key.id });
+          checkpoint();
+          objKeyDrag.current = { objectId: obj.id, channel, keyId: key.id, startX: e.clientX, timeSec: key.timeSec, moved: false };
+          if (e.pointerType !== 'mouse') {
+            clearLongPress();
+            longPress.current = setTimeout(() => {
+              longPress.current = null;
+              if (objKeyDrag.current && !objKeyDrag.current.moved) {
+                objKeyDrag.current = null;
+                removeObjectKeyframe(obj.id, channel, key.id);
+              }
+            }, 550);
+          }
+        }}
+        onPointerMove={(e) => {
+          const d = objKeyDrag.current;
+          if (!d) return;
+          if (Math.abs(e.clientX - d.startX) > 3) {
+            d.moved = true;
+            clearLongPress();
+          }
+          if (!d.moved) return;
+          const time = Math.max(0, snapToFrame(d.timeSec + (e.clientX - d.startX) / pps, fps));
+          updateObjectKeyframe(d.objectId, d.channel, d.keyId, { timeSec: time }, false);
+        }}
+        onPointerUp={() => {
+          clearLongPress();
+          objKeyDrag.current = null;
+        }}
+        onPointerCancel={() => {
+          clearLongPress();
+          objKeyDrag.current = null;
+        }}
+      />
+    );
+  };
 
   const secAt = (clientX: number) => {
     const el = scrollerRef.current;
@@ -152,6 +246,33 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
           onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
         />
         <span>s</span>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="With auto-key on, dragging the Move / Rotate gizmo on an animated object writes a key at the playhead">
+          <input type="checkbox" checked={autoKey} onChange={(e) => setAutoKey(e.target.checked)} data-testid="timeline-autokey" />
+          Auto-key
+        </label>
+        {selObjKey && selectedObjectKey ? (
+          <span style={{ display: 'flex', alignItems: 'center', gap: 4 }} data-testid="objkey-selected">
+            <span style={{ color: OBJECT_CHANNEL_COLOR[selectedObjectKey.channel] }}>◆</span>
+            {OBJECT_CHANNEL_LABEL[selectedObjectKey.channel]} {formatTimecode(selObjKey.timeSec, fps)}
+            <select
+              value={selObjKey.ease}
+              aria-label="Key easing"
+              data-testid="objkey-ease"
+              onChange={(e) => updateObjectKeyframe(selectedObjectKey.objectId, selectedObjectKey.channel, selObjKey.id, { ease: e.target.value as KeyframeEase })}
+            >
+              <option value="linear">Linear</option>
+              <option value="easeInOut">Ease in / out</option>
+            </select>
+            <button
+              type="button"
+              className={styles.zoomBtn}
+              title="Delete this key"
+              onClick={() => removeObjectKeyframe(selectedObjectKey.objectId, selectedObjectKey.channel, selObjKey.id)}
+            >
+              ✕
+            </button>
+          </span>
+        ) : null}
         <span className={styles.spacer} />
         <button type="button" className={styles.zoomBtn} onClick={() => setZoom((z) => Math.max(1, z / 1.5))} title="Zoom out" aria-label="Zoom out">−</button>
         <button type="button" className={styles.zoomBtn} onClick={() => setZoom((z) => Math.min(64, z * 1.5))} title="Zoom in" aria-label="Zoom in">+</button>
@@ -186,6 +307,35 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
               ) : null}
             </div>
           ))}
+          {objRows.map((r) =>
+            r.kind === 'group' ? (
+              <div
+                key={`g-${r.obj.id}`}
+                className={`${styles.label} ${r.obj.id === selectedObjectId ? styles.labelOn : ''}`}
+                onClick={() => selectObject(r.obj.id)}
+                title={`${r.obj.name} (animated object)`}
+                data-testid={`objrow-${r.obj.id}`}
+              >
+                <button
+                  type="button"
+                  className={styles.mini}
+                  aria-label={collapsed.has(r.obj.id) ? `Expand ${r.obj.name}` : `Collapse ${r.obj.name}`}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleCollapsed(r.obj.id);
+                  }}
+                >
+                  {collapsed.has(r.obj.id) ? '▸' : '▾'}
+                </button>
+                <span className={styles.labelName}>◇ {r.obj.name}</span>
+              </div>
+            ) : (
+              <div key={`c-${r.obj.id}-${r.channel}`} className={styles.label} style={{ paddingLeft: 30, color: 'var(--muted)' }}>
+                <span style={{ color: OBJECT_CHANNEL_COLOR[r.channel] }}>●</span>
+                <span className={styles.labelName}>{OBJECT_CHANNEL_LABEL[r.channel]}</span>
+              </div>
+            ),
+          )}
         </div>
         <div className={styles.scroller} ref={scrollerRef}>
           <div className={styles.lanes} style={{ width: laneWidth }}>
@@ -287,6 +437,24 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
               );
             })}
             {rows.length === 0 ? <div className={styles.empty}>No layers — add a video, image or pattern.</div> : null}
+            {objRows.map((r) => {
+              const anim = track.objectAnimations?.[r.obj.id];
+              if (r.kind === 'group') {
+                // Collapsed: every channel's keys on one row; expanded: a summary row.
+                return (
+                  <div key={`g-${r.obj.id}`} className={styles.lane}>
+                    {collapsed.has(r.obj.id)
+                      ? OBJECT_CHANNELS.flatMap((channel, ci) => (anim?.[channel] ?? []).map((key) => objectDiamond(r.obj, channel, key, `calc(50% + ${(ci - 1) * 3}px)`)))
+                      : null}
+                  </div>
+                );
+              }
+              return (
+                <div key={`c-${r.obj.id}-${r.channel}`} className={styles.lane}>
+                  {(anim?.[r.channel] ?? []).map((key) => objectDiamond(r.obj, r.channel, key, '50%'))}
+                </div>
+              );
+            })}
             <div className={styles.playhead} style={{ left: Math.min(t, track.durationSec) * pps }} data-testid="timeline-playhead" />
           </div>
         </div>

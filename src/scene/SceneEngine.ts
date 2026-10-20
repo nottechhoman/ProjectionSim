@@ -19,7 +19,8 @@ import { ScreenTextureBaker, SCREEN_TEXTURE_MAX, type BakeSurface } from '../map
 import { activeTrack, createShow } from '../mapping/model';
 import { mappingVisibleTo } from '../mapping/sample';
 import { applyUvAtlas, uvReportForMeshes, type UvReport } from '../mapping/uvAtlas';
-import { evaluate, type LiveLayer } from '../playback/evaluate';
+import { evaluateFrame, type LiveLayer } from '../playback/evaluate';
+import { isStopped, objectsAt, positionPath, type ResolvedTransform } from '../playback/objectAnimation';
 import { transport } from '../playback/clock';
 import { transportStep, type PlayMode } from '../playback/showControl';
 import { MediaSync } from '../playback/mediaSync';
@@ -84,6 +85,12 @@ export interface SceneEngineCallbacks {
   onWebglStatus?: (available: boolean) => void;
   onSelect?: (id: string) => void;
   onTransformChange?: (id: string, patch: { position?: Transform['position']; quaternion?: Transform['quaternion'] }) => void;
+  /** v10: gizmo drag on an object that is showing its animation (auto-key decides what happens). */
+  onAnimatedTransformChange?: (
+    id: string,
+    patch: { position: Transform['position']; quaternion: Transform['quaternion'] },
+    mode: 'translate' | 'rotate' | 'scale',
+  ) => void;
   onMeasurePoint?: (point: { x: number; y: number; z: number }) => void;
   onHistoryCheckpoint?: () => void;
   onRasterPreview?: () => void;
@@ -361,6 +368,16 @@ export class SceneEngine {
   private warpEditorOpen = false;
   private rasterPreviewWasVisible = false;
   private sceneObjects: SceneObject[] = [];
+  /** v10: objects currently showing their animated transform (not their static one). */
+  private animatedIds = new Set<string>();
+  /** v10: signature of the applied animated transforms (re-renders content feeds when it changes). */
+  private animSignature = '';
+  /** v10: footprints were last drawn for animated (true) or static (false) objects. */
+  private footprintsAnimated = false;
+  private selectedObjectId: string | null = null;
+  private showObjectPath = false;
+  private pathLine: THREE.Line | null = null;
+  private pathKey = '';
   private animationId: number | null = null;
   private disposed = false;
   private currentViewPreset: ViewPreset = 'persp';
@@ -697,6 +714,12 @@ export class SceneEngine {
 
     this.syncSceneObjects(state.sceneObjects, this.gizmoDragging);
     this.sceneObjects = state.sceneObjects;
+    this.selectedObjectId = state.selectedObjectId;
+    this.showObjectPath = state.showObjectPath;
+    // Syncs draw static footprints; the next frame redraws animated ones if needed.
+    // (Animated transforms are re-applied every frame; animatedIds stays so a gizmo
+    // event between a sync and the next frame never writes an animated pose as static.)
+    this.footprintsAnimated = false;
     this.materialPreviewMode = state.materialPreviewMode;
     this.projectionCompositeMode = state.projectionCompositeMode;
     this.show = state.show;
@@ -714,6 +737,7 @@ export class SceneEngine {
       state.sceneObjects,
       this.gizmoDragging,
     );
+    this.syncObjectPath();
     // After objects and projectors are synced, so a new scene (stage preset) frames itself.
     if (state.frameAllRequest !== this.handledFrameAllRequest) {
       this.handledFrameAllRequest = state.frameAllRequest;
@@ -913,6 +937,12 @@ export class SceneEngine {
     const id = obj.userData.id as string | undefined;
     if (!id) return;
 
+    if (this.animatedIds.has(id)) {
+      // The object shows its animation, not its static transform: never write the
+      // animated pose back as static. Only a drag counts (auto-key may key it).
+      if (this.gizmoDragging) this.callbacks.onAnimatedTransformChange?.(id, payload, this.currentTransformMode);
+      return;
+    }
     this.callbacks.onTransformChange?.(id, payload);
   }
 
@@ -1379,7 +1409,16 @@ export class SceneEngine {
     }
     const t = transport.time();
     this.lastPlayhead = t;
-    this.liveLayers = evaluate(track, t, (id) => mediaTextureCache.get(id)?.video?.duration ?? null, this.show.fps);
+    const frame = evaluateFrame(
+      track,
+      t,
+      isStopped(transport.playing, t) ? [] : this.sceneObjects,
+      (id) => mediaTextureCache.get(id)?.video?.duration ?? null,
+      this.show.fps,
+    );
+    this.liveLayers = frame.layers;
+    if (this.applyObjectAnimation(frame.objects)) this.editorScene.updateMatrixWorld(true);
+    this.syncAnimatedFootprints(track, t);
     this.mediaSync.setTime(t);
     // Pre-roll the next play() only when videos are involved.
     transport.prerollMs = track.layers.some((l) => l.enabled && l.media.kind === 'video') ? this.mediaSync.startupMs : 0;
@@ -1462,6 +1501,94 @@ export class SceneEngine {
     this.callbacks.onFrameTime?.(performance.now() - frameStart);
   }
 
+  /**
+   * v10: put animated transforms on the object meshes (and static ones back on
+   * objects that stopped animating). The object being dragged with the gizmo is left
+   * alone. Returns true when any mesh moved.
+   */
+  private applyObjectAnimation(resolved: Map<string, ResolvedTransform>): boolean {
+    let changed = false;
+    const dragged = this.gizmoDragging ? (this.transformControls?.object?.userData.id as string | undefined) : undefined;
+    for (const id of this.animatedIds) {
+      if (resolved.has(id)) continue;
+      const obj = this.sceneObjects.find((o) => o.id === id);
+      const mesh = this.objectMeshes.get(id);
+      if (obj && mesh) {
+        mesh.position.set(obj.transform.position.x, obj.transform.position.y, obj.transform.position.z);
+        mesh.quaternion.set(...obj.transform.quaternion);
+        mesh.scale.setScalar(obj.type === 'model' ? (obj.modelScale ?? 1) : 1);
+      }
+      this.animatedIds.delete(id);
+      changed = true;
+    }
+    const sig: string[] = [];
+    for (const [id, r] of resolved) {
+      const mesh = this.objectMeshes.get(id);
+      if (!mesh) continue;
+      this.animatedIds.add(id);
+      sig.push(`${id}:${r.position.x.toFixed(4)},${r.position.y.toFixed(4)},${r.position.z.toFixed(4)},${r.quaternion.map((q) => q.toFixed(5)).join(',')},${r.scale.x.toFixed(4)},${r.scale.y.toFixed(4)},${r.scale.z.toFixed(4)}`);
+      if (id === dragged) continue;
+      const base = this.sceneObjects.find((o) => o.id === id);
+      const k = base?.type === 'model' ? (base.modelScale ?? 1) : 1;
+      mesh.position.set(r.position.x, r.position.y, r.position.z);
+      mesh.quaternion.set(...r.quaternion);
+      mesh.scale.set(r.scale.x * k, r.scale.y * k, r.scale.z * k);
+      changed = true;
+    }
+    const signature = sig.join('|');
+    if (signature !== this.animSignature) {
+      this.animSignature = signature;
+      changed = true;
+    }
+    return changed;
+  }
+
+  /**
+   * v10: footprint outlines and beam helpers follow an animated calculation target
+   * (cheap: a few rays per projector). Static footprints come back when stopped.
+   */
+  private syncAnimatedFootprints(track: ReturnType<typeof activeTrack>, t: number): void {
+    const targetAnimated = this.calculationTargetId !== null && this.animatedIds.has(this.calculationTargetId);
+    if (!targetAnimated && !this.footprintsAnimated) return;
+    const objects = targetAnimated ? objectsAt(track, this.sceneObjects, t, transport.playing) : this.sceneObjects;
+    this.syncProjectors(this.allProjectors, this.selectedProjectorId, objects, true);
+    this.footprintsAnimated = targetAnimated;
+  }
+
+  /** v10 "Show path": the selected object's position keys as a line in the 3D view. */
+  private syncObjectPath(): void {
+    const id = this.showObjectPath ? this.selectedObjectId : null;
+    const track = activeTrack(this.show);
+    const anim = id ? track.objectAnimations?.[id] : undefined;
+    const pts = id ? positionPath(anim, track.durationSec) : [];
+    const key = pts.length ? `${id}:${JSON.stringify(anim?.position)}:${track.durationSec}` : '';
+    if (key === this.pathKey) return;
+    this.pathKey = key;
+    if (this.pathLine) {
+      this.helpersGroup.remove(this.pathLine);
+      this.pathLine.traverse((o) => {
+        const m = o as THREE.Line | THREE.Points;
+        m.geometry?.dispose();
+        (m.material as THREE.Material | undefined)?.dispose();
+      });
+      this.pathLine = null;
+    }
+    if (pts.length < 2) return;
+    const geometry = new THREE.BufferGeometry().setFromPoints(pts.map((p) => new THREE.Vector3(p.x, p.y, p.z)));
+    const keyPts = (anim?.position ?? []).map((k) => new THREE.Vector3(k.value.x, k.value.y, k.value.z));
+    const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xffd25a, depthTest: false, transparent: true, opacity: 0.9 }));
+    line.renderOrder = 10;
+    line.userData.isObjectPath = true;
+    const dots = new THREE.Points(
+      new THREE.BufferGeometry().setFromPoints(keyPts),
+      new THREE.PointsMaterial({ color: 0xffd25a, size: 8, sizeAttenuation: false, depthTest: false }),
+    );
+    dots.renderOrder = 10;
+    line.add(dots);
+    this.pathLine = line;
+    this.helpersGroup.add(line);
+  }
+
   /** Screens: visible projection receivers and LED walls. */
   private bakeSurfaces(): BakeSurface[] {
     const out: BakeSurface[] = [];
@@ -1507,6 +1634,7 @@ export class SceneEngine {
     const hasVideo = this.liveLayers.some((l) => l.layer.media.kind === 'video');
     const key = [
       this.syncRevision,
+      this.animSignature,
       mediaTextureCache.version,
       outputWindows.list().length,
       getDeviceProfile(),

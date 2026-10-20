@@ -11,6 +11,7 @@ import {
 } from '../media/assetImport';
 import type { PlayMode } from '../playback/showControl';
 import { keyAt, upsertKeyframe, withPropKeys } from '../playback/keyframes';
+import { objectsAt, pruneObjectAnimations, removeObjectKey, setObjectKey, updateObjectKey } from '../playback/objectAnimation';
 import type {
   Keyframe,
   KeyframeProp,
@@ -37,6 +38,9 @@ import type {
   PaneView,
   ViewLayout,
   WorkspaceMode,
+  ObjectAnimation,
+  ObjectChannel,
+  Track,
 } from '../types';
 import { buildSetPiece, buildStagePreset, type SetPieceId, type StagePresetId, STAGE_PRESETS } from '../stage/presets';
 import { readMultiviewPrefs, writeMultiviewPrefs, workspaceLayout } from '../ui/multiview/layouts';
@@ -71,7 +75,7 @@ import {
   setActiveTrackInShow,
 } from '../mapping/model';
 import { deriveAutoBlendEdgesFromOverlap } from '../blending/autoBlend';
-import { eulerYXZToQuaternion } from '../utils/euler';
+import { eulerYXZToQuaternion, quaternionToEulerYXZ } from '../utils/euler';
 import {
   buildInitialPersistedState,
   defaultPersistedSlice,
@@ -184,6 +188,30 @@ interface AppState extends PersistedStateSlice {
   setKeyframe: (layerId: string, prop: KeyframeProp, timeSec: number, value: number) => void;
   updateKeyframe: (layerId: string, prop: KeyframeProp, keyId: string, patch: Partial<Keyframe>, recordHistory?: boolean) => void;
   removeKeyframe: (layerId: string, prop: KeyframeProp, keyId: string) => void;
+  // v10 scene-object animation (on the active track)
+  /** Timeline: write keys when dragging the Move / Rotate gizmo (UI preference, default off). */
+  autoKey: boolean;
+  setAutoKey: (on: boolean) => void;
+  /** Draw the selected object's position keys as a path in the 3D view. */
+  showObjectPath: boolean;
+  setShowObjectPath: (on: boolean) => void;
+  selectedObjectKey: { objectId: string; channel: ObjectChannel; keyId: string } | null;
+  setSelectedObjectKey: (sel: { objectId: string; channel: ObjectChannel; keyId: string } | null) => void;
+  /** Inspector "Animate": on adds an (empty) animation entry; off removes it and its keys. */
+  setObjectAnimate: (objectId: string, on: boolean) => void;
+  setObjectKeyframe: (objectId: string, channel: ObjectChannel, timeSec: number, value: Vec3, recordHistory?: boolean) => void;
+  updateObjectKeyframe: (
+    objectId: string,
+    channel: ObjectChannel,
+    keyId: string,
+    patch: Partial<Pick<Keyframe<Vec3>, 'timeSec' | 'value' | 'ease'>>,
+    recordHistory?: boolean,
+  ) => void;
+  removeObjectKeyframe: (objectId: string, channel: ObjectChannel, keyId: string) => void;
+  /** Gizmo drag on an animated object (not stopped): keys it when auto-key is on. */
+  keyObjectFromGizmo: (objectId: string, patch: Pick<Transform, 'position' | 'quaternion'>, mode: 'translate' | 'rotate' | 'scale') => void;
+  /** Track time the coverage / brightness numbers were computed at (null: static scene). */
+  calculationsAtSec: number | null;
   // v4 setlist
   addTrack: () => void;
   duplicateTrack: (id: string) => void;
@@ -390,6 +418,15 @@ function defaultRect(screenId: string) {
 }
 
 /** Switching tracks starts the new one from the top, stopped. */
+const AUTO_KEY_HINT = 'This object is animated: turn on Auto-key in the timeline to key gizmo moves, or stop to edit its static transform.';
+
+function withAnimations(track: Track, anims: Record<string, ObjectAnimation>): Track {
+  const next = { ...track };
+  if (Object.keys(anims).length > 0) next.objectAnimations = anims;
+  else delete next.objectAnimations;
+  return next;
+}
+
 function resetTransport(): void {
   transport.pause();
   transport.seek(0);
@@ -601,10 +638,18 @@ export const useAppStore = create<AppState>((set, get) => ({
       selectedObjectId = next[0]?.id ?? null;
     }
 
+    const ids = new Set(next.map((o) => o.id));
     set({
       sceneObjects: next,
       selectedObjectId,
       projectMessage: `Deleted ${target.name}`,
+      show: {
+        ...state.show,
+        tracks: state.show.tracks.map((t) => {
+          const anims = pruneObjectAnimations(t.objectAnimations, ids);
+          return anims === t.objectAnimations ? t : withAnimations(t, anims ?? {});
+        }),
+      },
     });
     applyReliabilityReconcile(set, get);
     get().recomputeCalculations();
@@ -763,6 +808,74 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
   selectedKeyframe: null,
   setSelectedKeyframe: (sel) => set({ selectedKeyframe: sel }),
+  autoKey: false,
+  setAutoKey: (on) => set({ autoKey: on }),
+  showObjectPath: false,
+  setShowObjectPath: (on) => set({ showObjectPath: on }),
+  selectedObjectKey: null,
+  setSelectedObjectKey: (sel) => set({ selectedObjectKey: sel }),
+  calculationsAtSec: null,
+  setObjectAnimate: (objectId, on) => {
+    const anims = activeTrack(get().show).objectAnimations;
+    if (on === !!anims?.[objectId]) return;
+    pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => {
+        const next = { ...(track.objectAnimations ?? {}) };
+        if (on) next[objectId] = {};
+        else delete next[objectId];
+        return withAnimations(track, next);
+      }),
+      selectedObjectKey: !on && s.selectedObjectKey?.objectId === objectId ? null : s.selectedObjectKey,
+    }));
+    get().recomputeCalculations();
+  },
+  setObjectKeyframe: (objectId, channel, timeSec, value, recordHistory = true) => {
+    const frame = 1 / get().show.fps;
+    const anim = activeTrack(get().show).objectAnimations?.[objectId];
+    const res = setObjectKey(anim, channel, timeSec, value, newId('key'), frame);
+    if (recordHistory) pushSceneHistory(get, set);
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => withAnimations(track, { ...(track.objectAnimations ?? {}), [objectId]: res.anim })),
+      selectedObjectKey: { objectId, channel, keyId: res.keyId },
+    }));
+    get().recomputeCalculations();
+  },
+  updateObjectKeyframe: (objectId, channel, keyId, patch, recordHistory = true) => {
+    const anim = activeTrack(get().show).objectAnimations?.[objectId];
+    if (!anim?.[channel]) return;
+    if (recordHistory) pushSceneHistory(get, set);
+    const next = updateObjectKey(anim, channel, keyId, patch) ?? {};
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => withAnimations(track, { ...(track.objectAnimations ?? {}), [objectId]: next })),
+    }));
+    get().recomputeCalculations();
+  },
+  removeObjectKeyframe: (objectId, channel, keyId) => {
+    const anim = activeTrack(get().show).objectAnimations?.[objectId];
+    if (!anim?.[channel]) return;
+    pushSceneHistory(get, set);
+    const next = removeObjectKey(anim, channel, keyId) ?? {};
+    set((s) => ({
+      show: updateActiveTrack(s.show, (track) => withAnimations(track, { ...(track.objectAnimations ?? {}), [objectId]: next })),
+      selectedObjectKey: s.selectedObjectKey?.keyId === keyId ? null : s.selectedObjectKey,
+    }));
+    get().recomputeCalculations();
+  },
+  keyObjectFromGizmo: (objectId, patch, mode) => {
+    const st = get();
+    if (!st.autoKey) {
+      if (st.projectMessage !== AUTO_KEY_HINT) set({ projectMessage: AUTO_KEY_HINT });
+      return;
+    }
+    const t = transport.time();
+    if (mode === 'translate') {
+      st.setObjectKeyframe(objectId, 'position', t, patch.position, false);
+    } else if (mode === 'rotate') {
+      const e = quaternionToEulerYXZ(patch.quaternion);
+      st.setObjectKeyframe(objectId, 'rotation', t, { x: e.pitch, y: e.yaw, z: e.roll }, false);
+    }
+  },
   setKeyframe: (layerId, prop, timeSec, value) => {
     const layer = activeTrack(get().show).layers.find((l) => l.id === layerId);
     if (!layer) return;
@@ -1142,12 +1255,18 @@ export const useAppStore = create<AppState>((set, get) => ({
     })),
   setTransformMode: (mode) => set({ transformMode: mode }),
   recomputeCalculations: () => {
+    // v10: with animated objects the numbers are for the scene at the playhead
+    // (static when stopped). Not re-run per frame while playing; see the transport
+    // subscription below.
+    const t = transport.time();
+    const sceneObjects = objectsAt(activeTrack(get().show), get().sceneObjects, t, transport.playing);
+    set({ calculationsAtSec: sceneObjects === get().sceneObjects ? null : t });
     {
       const st = get();
-      const target = getCalculationTargetObject(st.sceneObjects, st.calculationTargetId);
+      const target = getCalculationTargetObject(sceneObjects, st.calculationTargetId);
       set({ blendAnalysis: computeBlendAnalysis(target ?? null, st.projectors, st.blendSettings) });
     }
-    const { projectors, sceneObjects, selectedProjectorId, calculationTargetId, analysisQuality, calculationTargetSide } = get();
+    const { projectors, selectedProjectorId, calculationTargetId, analysisQuality, calculationTargetSide } = get();
     const proj = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
     if (!proj) {
       set({
@@ -1545,6 +1664,20 @@ useAppStore.subscribe((state, prev) => {
   autosaveTimer = setTimeout(() => {
     writeAutosave(useAppStore.getState().getSnapshot());
   }, 2000);
+});
+
+// v10: coverage / brightness numbers follow animated objects, but are not
+// recomputed every frame while playing: once after a pause, stop or scrub.
+let calcTimer: ReturnType<typeof setTimeout> | null = null;
+transport.subscribe(() => {
+  if (transport.playing) return;
+  const st = useAppStore.getState();
+  if (!activeTrack(st.show).objectAnimations && st.calculationsAtSec === null) return;
+  if (calcTimer) clearTimeout(calcTimer);
+  calcTimer = setTimeout(() => {
+    calcTimer = null;
+    if (!transport.playing) useAppStore.getState().recomputeCalculations();
+  }, 120);
 });
 
 export function scheduleAutosaveNow(): void {

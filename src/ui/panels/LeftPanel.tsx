@@ -1,9 +1,13 @@
 import { useAppStore } from '../../store';
 import styles from './LeftPanel.module.css';
+import { activeTrack } from '../../mapping/model';
+import { hasKeys } from '../../playback/objectAnimation';
+import { AnimatedBadge } from './ObjectTransformSection';
 
 export function LeftPanel() {
   const sceneObjects = useAppStore((s) => s.sceneObjects);
   const projectors = useAppStore((s) => s.projectors);
+  const objectAnimations = useAppStore((s) => activeTrack(s.show).objectAnimations);
   const selectedObjectId = useAppStore((s) => s.selectedObjectId);
   const setSelectedObject = useAppStore((s) => s.setSelectedObject);
   const setSelectedProjector = useAppStore((s) => s.setSelectedProjector);
@@ -44,6 +48,7 @@ export function LeftPanel() {
               onClick={() => setSelectedObject(obj.id)}
             >
               <span className={styles.name}>{obj.name}</span>
+              {hasKeys(objectAnimations?.[obj.id]) ? <AnimatedBadge /> : null}
               <span className={styles.type}>{obj.type}</span>
               <button
                 type="button"

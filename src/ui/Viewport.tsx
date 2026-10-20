@@ -57,6 +57,9 @@ export function Viewport({ viewOnly = false }: { viewOnly?: boolean } = {}) {
           state.setSelectedObject(id);
         }
       },
+      onAnimatedTransformChange: (id, patch, mode) => {
+        useAppStore.getState().keyObjectFromGizmo(id, patch, mode);
+      },
       onTransformChange: (id, patch) => {
         const state = useAppStore.getState();
         if (state.projectors.some((p) => p.id === id)) {
@@ -248,6 +251,7 @@ function getEngineSyncState(state: ReturnType<typeof useAppStore.getState>) {
     calculationTargetId: state.calculationTargetId,
     rasterPreviewPanelVisible: state.rasterPreviewPanelVisible,
     warpEditorOpen: state.uvEditorPanelVisible && state.studioTab === 'warp',
+    showObjectPath: state.showObjectPath,
     blendSettings: state.blendSettings,
     previzSettings: state.previzSettings,
     maxOverlap: state.blendAnalysis?.maxOverlap ?? null,

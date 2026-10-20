@@ -12,6 +12,7 @@ import { fromDisplayUnit, toDisplayUnit } from '../../utils/units';
 import { NumInput } from '../components/NumInput';
 import { CalcResults } from './CalcResults';
 import { ProjectorModelSection } from './ProjectorModelSection';
+import { ObjectTransformSection } from './ObjectTransformSection';
 import styles from './Inspector.module.css';
 
 export function Inspector() {
@@ -152,6 +153,9 @@ export function Inspector() {
         <div className={styles.error}>{opticsError}</div>
       )}
 
+      {sceneObject && !projector ? (
+        <ObjectTransformSection obj={sceneObject} />
+      ) : (
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Transform</div>
         <p className={styles.hint}>Click a value to type · drag gizmo rings for local X / Y / Z rotation</p>
@@ -194,6 +198,7 @@ export function Inspector() {
           </p>
         )}
       </div>
+      )}
 
       {projector && (
         <div className={styles.section}>
