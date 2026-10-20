@@ -1,4 +1,5 @@
 import { useAppStore } from '../../store';
+import { formatTimecode } from '../../playback/timecode';
 import { listCalculationTargets } from '../../store/reliabilitySettings';
 import { percentOfReceiver } from '../../coverage/coverageAnalysis';
 import { formatLength } from '../../utils/units';
@@ -29,11 +30,18 @@ export function CalcResults() {
       : 'No eligible receiver';
 
   const receiverArea = coverageAnalysis?.receiverArea ?? 0;
+  const calculationsAtSec = useAppStore((s) => s.calculationsAtSec);
+  const fps = useAppStore((s) => s.show.fps);
 
   return (
     <>
       <div className={styles.section}>
         <div className={styles.sectionTitle}>Calculation target</div>
+        {calculationsAtSec !== null ? (
+          <p className={styles.hint}>
+            Numbers are for the animated scene (at {formatTimecode(calculationsAtSec, fps)}); they update after pause, stop or scrub, not while playing.
+          </p>
+        ) : null}
         <div className={styles.row}>
           <label htmlFor="calculation-target-select">Target</label>
           <select

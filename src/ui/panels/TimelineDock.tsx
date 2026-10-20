@@ -247,7 +247,7 @@ export function TimelineDock({ compact = false }: { compact?: boolean }) {
         />
         <span>s</span>
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="With auto-key on, dragging the Move / Rotate gizmo on an animated object writes a key at the playhead">
-          <input type="checkbox" checked={autoKey} onChange={(e) => setAutoKey(e.target.checked)} data-testid="timeline-autokey" />
+          <input type="checkbox" style={{ width: 'auto' }} checked={autoKey} onChange={(e) => setAutoKey(e.target.checked)} data-testid="timeline-autokey" />
           Auto-key
         </label>
         {selObjKey && selectedObjectKey ? (

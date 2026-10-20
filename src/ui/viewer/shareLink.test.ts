@@ -16,3 +16,17 @@ describe('share link', () => {
     expect(viewPayloadFromHash('#settings')).toBeNull();
   });
 });
+
+describe('share link keeps v10 object animation', () => {
+  it('a #view= link carries the track animation', async () => {
+    const { defaultPersistedSlice, sliceToSnapshot, snapshotToSlice } = await import('../../store/persistenceHelpers');
+    const { parseProjectJson, serializeProject } = await import('../../persistence/projectSerializer');
+    const slice = defaultPersistedSlice();
+    const anim = { position: [{ id: 'k0', timeSec: 0, value: { x: 0, y: 1.5, z: 0 }, ease: 'linear' as const }, { id: 'k1', timeSec: 2, value: { x: 2, y: 1.5, z: 0 }, ease: 'easeInOut' as const }] };
+    slice.show.tracks[0] = { ...slice.show.tracks[0], objectAnimations: { [slice.sceneObjects[0].id]: anim } };
+    const link = await buildViewLink(serializeProject(sliceToSnapshot(slice)), 'https://example.org/');
+    const json = await decodeProjectFromLink(viewPayloadFromHash(link.slice(link.indexOf('#')))!);
+    const back = snapshotToSlice(parseProjectJson(json));
+    expect(back.show.tracks[0].objectAnimations).toEqual({ [slice.sceneObjects[0].id]: anim });
+  });
+});

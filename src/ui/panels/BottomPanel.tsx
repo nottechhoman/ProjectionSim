@@ -2,6 +2,7 @@ import { useAppStore } from '../../store';
 import { distance3 } from '../../utils/distance';
 import { formatLength } from '../../utils/units';
 import styles from './BottomPanel.module.css';
+import { formatTimecode } from '../../playback/timecode';
 
 export function BottomPanel() {
   const webgl2Available = useAppStore((s) => s.webgl2Available);
@@ -21,6 +22,8 @@ export function BottomPanel() {
   const projectorCount = useAppStore((s) => s.projectors.length);
   const selectedProjectorId = useAppStore((s) => s.selectedProjectorId);
   const projectors = useAppStore((s) => s.projectors);
+  const calculationsAtSec = useAppStore((s) => s.calculationsAtSec);
+  const fps = useAppStore((s) => s.show.fps);
   const projector = projectors.find((p) => p.id === selectedProjectorId) ?? projectors[0];
 
   const webglStatus =
@@ -50,6 +53,12 @@ export function BottomPanel() {
         <span>WebGL2:</span>
         <span className={webglClass}>{webglStatus}</span>
       </div>
+      {calculationsAtSec !== null ? (
+        <div className={styles.item} title="Coverage, brightness and pixel-density numbers are for the animated scene at this time; they update after pause, stop or scrub, not while playing." data-testid="calcs-at">
+          <span>Calculations:</span>
+          <span>(at {formatTimecode(calculationsAtSec, fps)})</span>
+        </div>
+      ) : null}
       <div className={styles.item}>
         <span>Frame:</span>
         <span>{frameTimeMs > 0 ? `${frameTimeMs.toFixed(1)} ms` : '—'}</span>
