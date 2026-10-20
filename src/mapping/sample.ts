@@ -156,31 +156,45 @@ export function mappingCanvasUv(
   projectors: ProjectorConfig[],
   matrix: THREE.Matrix4 = mappingMatrix(mapping, projectors),
 ): Vec2 | null {
+  const uv = mappingCanvasUvUnclipped(mapping, ctx, projectors, matrix);
+  if (!uv || mapping.kind === 'feed') return uv;
+  return uv.x >= 0 && uv.x <= 1 && uv.y >= 0 && uv.y <= 1 ? uv : null;
+}
+
+/**
+ * Like mappingCanvasUv, but a point that lands outside the canvas still gets its
+ * (out-of-range) canvas UV, so triangles crossing the canvas edge can be clipped.
+ * Null only when the mapping cannot place the point at all.
+ */
+export function mappingCanvasUvUnclipped(
+  mapping: Mapping,
+  ctx: TexelContext,
+  projectors: ProjectorConfig[],
+  matrix: THREE.Matrix4 = mappingMatrix(mapping, projectors),
+): Vec2 | null {
   if (!mapping.screenIds.includes(ctx.screenId)) return null;
   const res = mappingResolution(mapping, projectors);
-  const inside = (uv: Vec2 | null) =>
-    uv && uv.x >= 0 && uv.x <= 1 && uv.y >= 0 && uv.y <= 1 ? uv : null;
   const world = new THREE.Vector3(ctx.world.x, ctx.world.y, ctx.world.z);
   switch (mapping.kind) {
     case 'direct':
-      return inside(fitUv(ctx.surfaceUv, mapping.direct?.fit ?? 'stretch', res.w / res.h, ctx.screenAspect, ctx, res));
+      return fitUv(ctx.surfaceUv, mapping.direct?.fit ?? 'stretch', res.w / res.h, ctx.screenAspect, ctx, res);
     case 'perspective': {
       const clip = new THREE.Vector4(world.x, world.y, world.z, 1).applyMatrix4(matrix);
       if (clip.w <= 1e-6) return null;
       const ndc = { x: clip.x / clip.w, y: clip.y / clip.w };
-      return inside({ x: ndc.x * 0.5 + 0.5, y: ndc.y * 0.5 + 0.5 });
+      return { x: ndc.x * 0.5 + 0.5, y: ndc.y * 0.5 + 0.5 };
     }
     case 'parallel': {
       const l = world.applyMatrix4(matrix);
       const size = mapping.parallel!.size;
-      return inside({ x: l.x / size.w + 0.5, y: l.y / size.h + 0.5 });
+      return { x: l.x / size.w + 0.5, y: l.y / size.h + 0.5 };
     }
     case 'cylindrical': {
       const l = world.applyMatrix4(matrix);
       const c = mapping.cylindrical!;
       const arc = (c.arcDeg * Math.PI) / 180;
       const t = wrapPi(Math.atan2(l.x, l.z));
-      return inside({ x: 0.5 - t / arc, y: l.y / c.height + 0.5 });
+      return { x: 0.5 - t / arc, y: l.y / c.height + 0.5 };
     }
     case 'spherical': {
       const l = world.applyMatrix4(matrix);
@@ -189,7 +203,7 @@ export function mappingCanvasUv(
       const elev = (s.elevationDeg * Math.PI) / 180;
       const t = wrapPi(Math.atan2(l.x, l.z));
       const f = Math.atan2(l.y, Math.max(Math.hypot(l.x, l.z), 1e-6));
-      return inside({ x: 0.5 - t / arc, y: f / elev + 0.5 });
+      return { x: 0.5 - t / arc, y: f / elev + 0.5 };
     }
     case 'feed': {
       const rect = mapping.feed?.rects.find((r) => r.screenId === ctx.screenId);
