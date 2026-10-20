@@ -498,15 +498,33 @@ export interface LayerRect {
 export type KeyframeProp = 'opacity' | 'x' | 'y' | 'scale' | 'rotationDeg';
 export type KeyframeEase = 'linear' | 'easeInOut';
 
-/** A value at a time (seconds from the layer's start); ease shapes the segment to the next key. */
-export interface Keyframe {
+/**
+ * A value at a time; ease shapes the segment to the next key. Layer keys count
+ * seconds from the layer's start, object keys (v10) seconds on the track.
+ */
+export interface Keyframe<T = number> {
   id: string;
   timeSec: number;
-  value: number;
+  value: T;
   ease: KeyframeEase;
 }
 
-export type LayerKeyframes = Partial<Record<KeyframeProp, Keyframe[]>>;
+/** Keys of one animated property, sorted by time. */
+export type KeyframeChannel<T = number> = Keyframe<T>[];
+
+export type LayerKeyframes = Partial<Record<KeyframeProp, KeyframeChannel<number>>>;
+
+/** v10: animatable scene-object transform channels. */
+export type ObjectChannel = 'position' | 'rotation' | 'scale';
+
+/**
+ * v10: one scene object's animation on a track. position in metres; rotation in
+ * Euler degrees (x = pitch, y = yaw, z = roll, applied in the Inspector's YXZ order);
+ * scale multiplies the object's size (static scale is 1, 1, 1). A missing channel
+ * uses the object's static transform. Further channels (shape parameters, flags,
+ * projectors) can be added later without changing these.
+ */
+export type ObjectAnimation = Partial<Record<ObjectChannel, KeyframeChannel<Vec3>>>;
 
 export interface Layer {
   id: string;
@@ -543,6 +561,11 @@ export interface Track {
   layers: Layer[];
   sections: TrackSection[];
   cues: Cue[];
+  /**
+   * v10: scene-object animation on this track, by object id. Lives on the track so
+   * setlist tracks can animate the same stage differently. Absent = nothing animated.
+   */
+  objectAnimations?: Record<string, ObjectAnimation>;
 }
 
 export type SectionEndAction = 'continue' | 'stop' | 'hold' | 'loop';

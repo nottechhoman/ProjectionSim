@@ -21,6 +21,7 @@ import type {
 } from '../types';
 import { quaternionToEulerYXZ } from '../utils/euler';
 import { normalizeKeyframes } from '../playback/keyframes';
+import { normalizeObjectAnimations } from '../playback/objectAnimation';
 
 /**
  * v4 content model: mappings (how a canvas lands on screens) and layers (what is
@@ -410,6 +411,10 @@ export function createShow(mappings: Mapping[] = [], layers: Layer[] = []): Show
   return { fps: DEFAULT_FPS, mappings, tracks: [track], activeTrackId: track.id };
 }
 
+function withObjectAnimations(anims: Track['objectAnimations']): Pick<Track, 'objectAnimations'> {
+  return anims ? { objectAnimations: anims } : {};
+}
+
 export function normalizeShow(raw: unknown): Show {
   if (!isObject(raw)) return createShow();
   const mappings = Array.isArray(raw.mappings) ? raw.mappings.map(normalizeMapping) : [];
@@ -437,6 +442,7 @@ export function normalizeShow(raw: unknown): Show {
               timeSec: Math.max(0, num(c.timeSec, 0)),
             }))
           : [],
+        ...withObjectAnimations(normalizeObjectAnimations(t.objectAnimations)),
       }))
     : [];
   if (tracks.length === 0) tracks.push(createTrack());

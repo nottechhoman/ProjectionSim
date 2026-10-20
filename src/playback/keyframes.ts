@@ -17,10 +17,13 @@ export function ease(kind: KeyframeEase, a: number): number {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
 
-/** Value at local time t: held before the first / after the last key, interpolated between. */
-export function sampleKeyframes(keys: Keyframe[] | undefined, t: number, fallback: number): number {
+/**
+ * Value of a channel at time t: held before the first / after the last key,
+ * interpolated between with the earlier key's ease. Generic over the value type.
+ */
+export function sampleChannel<T>(keys: readonly Keyframe<T>[] | undefined, t: number, fallback: T, lerp: (a: T, b: T, u: number) => T): T {
   if (!keys || keys.length === 0) return fallback;
-  const k = [...keys].sort((a, b) => a.timeSec - b.timeSec);
+  const k = isSorted(keys) ? keys : [...keys].sort((a, b) => a.timeSec - b.timeSec);
   if (t <= k[0].timeSec) return k[0].value;
   const last = k[k.length - 1];
   if (t >= last.timeSec) return last.value;
@@ -30,10 +33,22 @@ export function sampleKeyframes(keys: Keyframe[] | undefined, t: number, fallbac
     if (t >= a.timeSec && t <= b.timeSec) {
       const span = b.timeSec - a.timeSec;
       const u = span > 1e-9 ? (t - a.timeSec) / span : 1;
-      return a.value + (b.value - a.value) * ease(a.ease, u);
+      return lerp(a.value, b.value, ease(a.ease, u));
     }
   }
   return last.value;
+}
+
+function isSorted(keys: readonly Keyframe<unknown>[]): boolean {
+  for (let i = 1; i < keys.length; i++) if (keys[i].timeSec < keys[i - 1].timeSec) return false;
+  return true;
+}
+
+const lerpNumber = (a: number, b: number, u: number) => a + (b - a) * u;
+
+/** Value at local time t: held before the first / after the last key, interpolated between. */
+export function sampleKeyframes(keys: Keyframe[] | undefined, t: number, fallback: number): number {
+  return sampleChannel(keys, t, fallback, lerpNumber);
 }
 
 /** Un-animated value of a property. */
@@ -83,12 +98,12 @@ export function animateLayer(layer: Pick<Layer, 'opacity' | 'rect' | 'keyframes'
 }
 
 /** Insert or replace (within half a frame) a key. */
-export function upsertKeyframe(keys: Keyframe[] | undefined, key: Keyframe, frameSec = 1 / 30): Keyframe[] {
+export function upsertKeyframe<T = number>(keys: Keyframe<T>[] | undefined, key: Keyframe<T>, frameSec = 1 / 30): Keyframe<T>[] {
   const list = (keys ?? []).filter((k) => Math.abs(k.timeSec - key.timeSec) > frameSec / 2 && k.id !== key.id);
   return [...list, key].sort((a, b) => a.timeSec - b.timeSec);
 }
 
-export function keyAt(keys: Keyframe[] | undefined, t: number, frameSec = 1 / 30): Keyframe | null {
+export function keyAt<T = number>(keys: Keyframe<T>[] | undefined, t: number, frameSec = 1 / 30): Keyframe<T> | null {
   return keys?.find((k) => Math.abs(k.timeSec - t) <= frameSec / 2) ?? null;
 }
 

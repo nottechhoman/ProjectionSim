@@ -1,5 +1,6 @@
-import type { Layer, LayerPlayMode, LayerRect, Track } from '../types';
+import type { Layer, LayerPlayMode, LayerRect, SceneObject, Track } from '../types';
 import { animateLayer } from './keyframes';
+import { evaluateObjects, type ResolvedTransform } from './objectAnimation';
 
 /**
  * Pure timeline evaluation: which layers are live at time t, how opaque they are
@@ -103,4 +104,23 @@ export function evaluate(track: Track, t: number, mediaDuration: MediaDurationLo
     out.push({ layer, index, opacity, mediaTimeSec, localSec: local, rect: anim.rect });
   });
   return out;
+}
+
+/** v10: everything the track resolves to at time t. */
+export interface FrameState {
+  /** Live layers, bottom to top (same as evaluate()). */
+  layers: LiveLayer[];
+  /** Resolved transforms of animated scene objects (others keep their static transform). */
+  objects: Map<string, ResolvedTransform>;
+}
+
+/** evaluate() plus the animated scene-object transforms at t. Pure. */
+export function evaluateFrame(
+  track: Track,
+  t: number,
+  objects: readonly SceneObject[],
+  mediaDuration: MediaDurationLookup = () => null,
+  fps = 30,
+): FrameState {
+  return { layers: evaluate(track, t, mediaDuration, fps), objects: evaluateObjects(track, t, objects) };
 }

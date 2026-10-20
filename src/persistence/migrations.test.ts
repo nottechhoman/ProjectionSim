@@ -127,6 +127,20 @@ describe('step 3 → 4 (warp modes)', () => {
   });
 });
 
+describe('step 4 → 5 (object animation on tracks)', () => {
+  it('only bumps the version', () => {
+    const v4 = step(3).up(step(2).up(step(1).up(minimalV1())));
+    const out = step(4).up(v4);
+    expect(out).toEqual({ ...v4, version: 5 });
+    expect((out.show as { tracks: Record<string, unknown>[] }).tracks[0]).not.toHaveProperty('objectAnimations');
+  });
+
+  it('a loaded old project animates nothing', () => {
+    const p = parseProjectJson(v1Minimal);
+    expect(p.show.tracks.every((t) => t.objectAnimations === undefined)).toBe(true);
+  });
+});
+
 describe('loading whole projects', () => {
   it('loads a hand-written v1-era minimal project', () => {
     const p = parseProjectJson(v1Minimal);

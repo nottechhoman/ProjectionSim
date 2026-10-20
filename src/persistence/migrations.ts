@@ -110,8 +110,16 @@ const v3ToV4: MigrationStep = {
   },
 };
 
+const v4ToV5: MigrationStep = {
+  from: 4,
+  to: 5,
+  description: 'v4 → v5: track.objectAnimations (optional; nothing to convert)',
+  // No-op: older tracks have no object animation, which means "static transforms".
+  up: (data) => ({ ...data, version: 5 }),
+};
+
 /** Ordered steps; MIGRATIONS[i].from === MIGRATIONS[0].from + i. */
-export const MIGRATIONS: readonly MigrationStep[] = [v1ToV2, v2ToV3, v3ToV4];
+export const MIGRATIONS: readonly MigrationStep[] = [v1ToV2, v2ToV3, v3ToV4, v4ToV5];
 
 export const OLDEST_PROJECT_VERSION = MIGRATIONS[0].from;
 
