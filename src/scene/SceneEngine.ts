@@ -1766,6 +1766,16 @@ export class SceneEngine {
     );
   }
 
+  /** Live root and fitted surface frame of a scene object (content templates). */
+  getSurfaceRoot(objectId: string): { root: THREE.Object3D; frame: SurfaceUvFrame } | null {
+    const root = this.objectMeshes.get(objectId);
+    if (!root) return null;
+    root.updateMatrixWorld(true);
+    const frame = (root.userData.surfaceFrame as SurfaceUvFrame | undefined) ?? computeRootSurfaceFrame(root);
+    root.userData.surfaceFrame = frame;
+    return { root, frame };
+  }
+
   /**
    * v2: wireframe of a receiving object's raw surface UV layout for the UV editor
    * (segments in 0–1 surface UV, before region / flip / rotate).

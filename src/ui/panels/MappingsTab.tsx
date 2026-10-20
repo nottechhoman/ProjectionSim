@@ -22,6 +22,21 @@ import {
   mappingResolution,
 } from '../../mapping/model';
 import { feedRectUv } from '../../mapping/sample';
+import {
+  buildContentTemplate,
+  contentTemplateCsv,
+  templateFileBase,
+  type ContentTemplate,
+  type TemplateSurface,
+} from '../../mapping/contentTemplate';
+import {
+  DEFAULT_TEMPLATE_OPTIONS,
+  drawContentTemplate,
+  templateGridStep,
+  type TemplateDrawOptions,
+} from '../../mapping/contentTemplateDraw';
+import { downloadTextFile } from '../../persistence/reportExport';
+import { downloadCanvas } from './StudioPanel';
 import { quaternionToEulerYXZ } from '../../utils/euler';
 import type { SceneEngine } from '../../scene/SceneEngine';
 import { MiniNum, svgPoint } from './studioControls';
@@ -418,7 +433,106 @@ function MappingEditor({ mapping, screens }: { mapping: Mapping; screens: SceneO
       ) : null}
 
       {mapping.kind === 'feed' ? <FeedEditor mapping={mapping} screens={screens} /> : null}
+      <ContentTemplateSection mapping={mapping} screens={screens} />
     </>
+  );
+}
+
+/** Content template: a PNG of the mapping canvas showing where each screen and blend zone sits. */
+function ContentTemplateSection({ mapping, screens }: { mapping: Mapping; screens: SceneObject[] }) {
+  const projectors = useAppStore((s) => s.projectors);
+  const mappings = useAppStore((s) => s.show.mappings);
+  const [opts, setOpts] = useState<TemplateDrawOptions>(DEFAULT_TEMPLATE_OPTIONS);
+  const [result, setResult] = useState<{ template: ContentTemplate; canvas: HTMLCanvasElement; url: string } | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const res = mappingResolution(mapping, projectors);
+
+  useEffect(() => () => {
+    if (result) URL.revokeObjectURL(result.url);
+  }, [result]);
+
+  const build = (): { template: ContentTemplate; canvas: HTMLCanvasElement } | null => {
+    const surfaces: TemplateSurface[] = [];
+    for (const obj of screens) {
+      if (!mapping.screenIds.includes(obj.id)) continue;
+      const live = engine()?.getSurfaceRoot(obj.id);
+      if (live) surfaces.push({ obj, root: live.root, frame: live.frame });
+    }
+    if (surfaces.length === 0) {
+      setError('Tick at least one screen on this mapping first.');
+      return null;
+    }
+    setError(null);
+    const template = buildContentTemplate(mapping, projectors, surfaces, mappings);
+    const canvas = drawContentTemplate(template, opts);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      setResult({ template, canvas, url: URL.createObjectURL(blob) });
+    }, 'image/png');
+    return { template, canvas };
+  };
+
+  const download = () => {
+    const built = build();
+    if (built) downloadCanvas(built.canvas, `${templateFileBase(built.template)}.png`);
+  };
+
+  const downloadCsv = () => {
+    const t = result?.template ?? build()?.template;
+    if (t) downloadTextFile(contentTemplateCsv(t), `${templateFileBase(t)}.csv`, 'text/csv');
+  };
+
+  return (
+    <div className={styles.section} data-testid="content-template">
+      <div className={styles.sectionTitle}>Content template</div>
+      <p className={styles.hint}>
+        A {res.w} × {res.h} px PNG of this mapping&apos;s canvas: each screen in its own colour with name, pixel
+        size and position, blend zones hatched where 2+ projectors overlap, and a {templateGridStep(res.w, res.h)} px
+        grid. Give it to whoever makes the content.
+      </p>
+      <div className={styles.btnRow}>
+        <label className={styles.check}>
+          <input type="checkbox" checked={opts.grid} onChange={(e) => setOpts({ ...opts, grid: e.target.checked })} /> Grid
+        </label>
+        <label className={styles.check}>
+          <input type="checkbox" checked={opts.labels} onChange={(e) => setOpts({ ...opts, labels: e.target.checked })} /> Labels
+        </label>
+        <label className={styles.check}>
+          <input type="checkbox" checked={opts.blendZones} onChange={(e) => setOpts({ ...opts, blendZones: e.target.checked })} /> Blend zones
+        </label>
+      </div>
+      <div className={styles.btnRow}>
+        <button type="button" className={styles.btn} onClick={() => build()} data-testid="template-preview">
+          Preview
+        </button>
+        <button type="button" className={`${styles.btn} ${styles.btnPrimary}`} onClick={download} data-testid="template-download">
+          Download PNG
+        </button>
+        <button type="button" className={styles.btn} onClick={downloadCsv} data-testid="template-csv">
+          Regions CSV
+        </button>
+      </div>
+      {error ? <p className={styles.hint} style={{ color: '#e0c070' }}>{error}</p> : null}
+      {result ? (
+        <>
+          <img
+            src={result.url}
+            alt={`Content template for ${result.template.mappingName}`}
+            data-testid="template-image"
+            style={{ width: '100%', marginTop: 6, border: '1px solid #3a3a40', imageRendering: 'auto' }}
+          />
+          <div data-testid="template-screens">
+            {result.template.screens.map((s) => (
+              <p key={s.id} className={styles.hint} style={{ margin: '2px 0' }}>
+                <span style={{ color: s.color }}>■</span> {s.name}:{' '}
+                {s.bbox ? `${s.bbox.w} × ${s.bbox.h} px at ${s.bbox.x}, ${s.bbox.y}` : 'not on this canvas'}
+                {s.blendPixels > 0 ? ` · blend ${Math.round((100 * s.blendPixels) / s.pixels)} %` : ''}
+              </p>
+            ))}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 
