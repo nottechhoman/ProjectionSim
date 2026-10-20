@@ -13,6 +13,9 @@ type W = Window & {
   __projectionLabEngine: unknown;
 };
 
+// Scrubbing an animated screen re-renders every projector feed per frame: slow on a software GPU.
+test.describe.configure({ timeout: 180_000 });
+
 const positionKeys = (page: Page) =>
   page.evaluate(() => {
     const s = (window as unknown as W).__projectionLabStore.getState();
